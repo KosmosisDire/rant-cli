@@ -14,7 +14,7 @@ use crate::paths;
 use crate::scan::{self, Cache, NodeKind};
 use crate::workspace::{WorkspaceConfig, MANIFEST};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct NodeType {
     pub package: String,
     pub name: String,

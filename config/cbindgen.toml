@@ -9,4 +9,4 @@ usize_is_size_t = true
 parse_deps = false
 
 [export]
-include = ["RantConfigWorkspaceView", "RantConfigDiagnostic"]
+include = ["RantConfigWorkspaceView", "RantConfigPlanView", "RantConfigDiagnostic"]

@@ -11,6 +11,7 @@ mod manifest;
 mod model;
 mod package;
 mod paths;
+mod plan;
 mod refs;
 mod scan;
 mod source;
