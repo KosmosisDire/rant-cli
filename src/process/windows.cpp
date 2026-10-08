@@ -241,8 +241,9 @@ static std::vector<DWORD> job_pids(HANDLE job) {
 
 static const wchar_t* HELPER_FLAG = L"--rant-ctrl-break";
 
-/* Runs this executable as the Ctrl-Break helper, with no console of its own, and waits. */
-static void send_ctrl_break(uint64_t group, uint64_t attach) {
+/* Runs this executable as the Ctrl-Break helper, with no console of its own, and waits.
+ * True when the event went out. */
+static bool send_ctrl_break(uint64_t group, uint64_t attach) {
     wchar_t self[MAX_PATH];
     DWORD n = GetModuleFileNameW(nullptr, self, MAX_PATH);
     std::wstring cmd = L"\"" + std::wstring(self, n) + L"\" " + HELPER_FLAG + L" " + std::to_wstring(group) + L" " +
@@ -251,10 +252,12 @@ static void send_ctrl_break(uint64_t group, uint64_t attach) {
     si.cb = sizeof si;
     PROCESS_INFORMATION pi{};
     if (!CreateProcessW(self, cmd.data(), nullptr, nullptr, FALSE, DETACHED_PROCESS, nullptr, nullptr, &si, &pi))
-        return;
-    WaitForSingleObject(pi.hProcess, 3000);
+        return false;
+    DWORD code = 1;
+    if (WaitForSingleObject(pi.hProcess, 3000) == WAIT_OBJECT_0) GetExitCodeProcess(pi.hProcess, &code);
     CloseHandle(pi.hThread);
     CloseHandle(pi.hProcess);
+    return code == 0;
 }
 
 std::optional<int> helper_main(int argc, char** argv) {
@@ -278,13 +281,28 @@ static bool wait_gone(const Tracking& t, std::chrono::milliseconds limit) {
     return true;
 }
 
+/* Sends Ctrl-Break until it goes out, then waits for the job to empty, all within grace.
+ * A process stopped right after it started may not have its console yet, so the first
+ * attach can fail. */
+static bool ask_to_stop(const Tracking& t, HANDLE job, std::chrono::milliseconds grace) {
+    auto deadline = std::chrono::steady_clock::now() + grace;
+    bool sent = false;
+    while (alive(t)) {
+        if (std::chrono::steady_clock::now() >= deadline) return false;
+        if (!sent) {
+            auto pids = job_pids(job);
+            bool first = std::find(pids.begin(), pids.end(), (DWORD)t.pid) != pids.end();
+            sent = send_ctrl_break(t.pid, first || pids.empty() ? t.pid : pids[0]);
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(sent ? 20 : 50));
+    }
+    return true;
+}
+
 Stopped stop(const Tracking& t, std::chrono::milliseconds grace) {
     Handle job = open_job(t, JOB_OBJECT_QUERY | JOB_OBJECT_TERMINATE);
     if (!job || active_processes(job.get()) == 0) return Stopped::AlreadyGone;
-    auto pids = job_pids(job.get());
-    uint64_t attach = std::find(pids.begin(), pids.end(), (DWORD)t.pid) != pids.end() || pids.empty() ? t.pid : pids[0];
-    send_ctrl_break(t.pid, attach);
-    if (wait_gone(t, grace)) return Stopped::Gracefully;
+    if (ask_to_stop(t, job.get(), grace)) return Stopped::Gracefully;
     TerminateJobObject(job.get(), 1);
     wait_gone(t, std::chrono::seconds(2));
     return Stopped::Killed;
