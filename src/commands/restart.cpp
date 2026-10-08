@@ -4,6 +4,7 @@
 #include "app/failure.hpp"
 #include "commands/commands.hpp"
 #include "commands/plan_output.hpp"
+#include "commands/start.hpp"
 #include "complete/complete.hpp"
 #include "run/nodes.hpp"
 #include "ui/prompt.hpp"
@@ -110,21 +111,23 @@ static void restart_root(app::Context& ctx, run::Session& s, const state::Root& 
     }
 }
 
-static std::vector<state::Root> group_roots(app::Context& ctx, run::Session& s, const std::string& group,
+/* The running roots of a group: the one its params name, else every one of it. Empty when
+ * it is not running. */
+static std::vector<state::Root> group_roots(app::Context& ctx, const state::State& st, const std::string& group,
                                             const std::vector<std::string>& params) {
+    std::vector<state::Root> out;
     if (!params.empty()) {
         config::Plan plan = config::plan_group(ctx.cwd, group, params);
         require_plan(ctx, plan);
         state::Root root{ "group", plan.group, plan.params };
-        if (!s.state().root(root.key())) throw app::Failure("`" + root.key().substr(6) + "` is not running, see `rant ls`");
-        return { root };
+        for (auto& r : st.roots)
+            if (r.key() == root.key()) out.push_back(r);
+        return out;
     }
     config::GroupInfo info = config::describe_group(ctx.cwd, group);
     std::string name = info.diagnostics.empty() ? info.name : group;
-    std::vector<state::Root> out;
-    for (auto& r : s.state().roots)
+    for (auto& r : st.roots)
         if (r.kind == "group" && r.name == name) out.push_back(r);
-    if (out.empty()) throw app::Failure("group `" + name + "` is not running, see `rant ls`");
     return out;
 }
 
@@ -159,27 +162,39 @@ static int run(app::Context& ctx) {
     if (w.empty()) return restart_all(ctx);
     if (w.size() < 2 || (w[0] != "node" && w[0] != "group"))
         throw app::UsageError("say what to restart: `rant restart node <name>` or `rant restart group <name>`");
+    /* what is not running starts, looked up first without holding the state, which start takes */
     if (w[0] == "node") {
         if (w.size() != 2) throw app::UsageError("restart node takes one name");
-        return restart_node(ctx, w[1]);
+        if (run::snapshot(ctx).instance(w[1])) return restart_node(ctx, w[1]);
+        ctx.out.note("`" + w[1] + "` is not running, starting it");
+        return start_node(ctx, w[1]);
+    }
+    std::vector<std::string> params(w.begin() + 2, w.end());
+    if (group_roots(ctx, run::snapshot(ctx), w[1], params).empty()) {
+        ctx.out.note("group `" + w[1] + "` is not running, starting it");
+        return start_group(ctx, w[1], params);
     }
     run::Session s(ctx.require_workspace());
-    for (auto& r : group_roots(ctx, s, w[1], { w.begin() + 2, w.end() })) restart_root(ctx, s, r);
+    for (auto& r : group_roots(ctx, s.state(), w[1], params)) restart_root(ctx, s, r);
     return 0;
 }
 
 static complete::Candidates complete_words(complete::Request& r) {
     auto& w = r.words;
     if (w.empty()) return { { "node", "group" } };
-    if (w[0] == "node" && w.size() == 1) return { r.running_nodes() };
+    if (w[0] == "node" && w.size() == 1) {
+        std::vector<std::string> out = r.running_nodes();
+        for (auto& n : r.node_types()) out.push_back(n);
+        return { out };
+    }
     if (w[0] != "group") return {};
-    if (w.size() == 1) return { r.running_groups() };
+    if (w.size() == 1) return { r.groups() };
     return { complete::params(r.group(w[1]), r.partial, { w.begin() + 2, w.end() }) };
 }
 
 app::Command restart() {
     app::Command c{ "restart", "[node <name> | group <name> [key=value...]]",
-                    "stop and start again what start started, as it is configured now, all of it when nothing is named",
+                    "stop and start again as configured now, start what is not running, all of it when nothing is named",
                     app::Section::Workspace, {}, run };
     c.complete = complete_words;
     return c;

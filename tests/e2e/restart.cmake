@@ -31,9 +31,17 @@ expect_match("${OUT}" "roots: group nav range=30 speed=1\n")
 expect_match("${ERR}" "Restart all 3 nodes[?] [[]y/N[]] y")
 
 rant(restart node nowhere FAILS)
-expect_match("${ERR}" "rant runs no node named `nowhere`")
-rant(restart group nav speed=9 FAILS)
-expect_match("${ERR}" "`nav range=30 speed=9` is not running")
+expect_match("${ERR}" "`nowhere` is not running, starting it")
+expect_match("${ERR}" "no node named `nowhere`")
+
+# What is not running starts.
+rant(restart group nav speed=9)
+expect_match("${ERR}" "group `nav` is not running, starting it")
+expect_match("${OUT}" "planner")
+rant(stop group nav speed=9)
+rant(restart node sensor)
+expect_match("${ERR}" "`sensor` is not running, starting it")
+expect_match("${OUT}" "started sensor, pid [0-9]+")
 rant(restart group FAILS)
 expect_match("${ERR}" "say what to restart")
 

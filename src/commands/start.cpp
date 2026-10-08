@@ -6,6 +6,7 @@
 #include "app/failure.hpp"
 #include "commands/commands.hpp"
 #include "commands/plan_output.hpp"
+#include "commands/start.hpp"
 #include "complete/complete.hpp"
 #include "run/nodes.hpp"
 #include "ui/prompt.hpp"
@@ -53,7 +54,7 @@ static void report(app::Context& ctx, const config::Workspace& ws, const std::ve
 
 /* One node of a node type, named after it. Starting the same type again gives the copy a
  * free name, talker_1, then talker_2, since two nodes of one name collide on the mesh. */
-static int start_node(app::Context& ctx, const std::string& ref) {
+int start_node(app::Context& ctx, const std::string& ref) {
     config::Plan plan = config::plan_node(ctx.cwd, ref);
     require_plan(ctx, plan);
     if (ctx.args.has("dry-run")) {
@@ -96,7 +97,7 @@ static void group_help(app::Context& ctx, const std::string& group) {
 /* A group root: its nodes start in plan order. A node already running for another root
  * with the same settings is shared, and a node of that name on the mesh that rant did not
  * start can stand in after a question. Every check runs before the first node starts. */
-static int start_group(app::Context& ctx, const std::string& group, const std::vector<std::string>& params) {
+int start_group(app::Context& ctx, const std::string& group, const std::vector<std::string>& params) {
     if (ctx.args.has("help")) {
         group_help(ctx, group);
         return 0;
