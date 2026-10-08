@@ -44,6 +44,12 @@ std::string show(const T& v) {
     return s.str();
 }
 
+inline std::string show(const std::vector<std::string>& v) {
+    std::string s = "[";
+    for (size_t i = 0; i < v.size(); i++) s += (i ? ", \"" : "\"") + v[i] + "\"";
+    return s + "]";
+}
+
 }
 
 #define TEST(name)                                                  \

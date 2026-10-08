@@ -15,6 +15,7 @@ const std::vector<app::Command>& all() {
         get(),
         set(),
         call(),
+        setup(),
     };
     return list;
 }

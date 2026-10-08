@@ -4,6 +4,7 @@
 
 #include "app/failure.hpp"
 #include "commands/commands.hpp"
+#include "complete/complete.hpp"
 #include "mesh/access.hpp"
 #include "util/interrupt.hpp"
 
@@ -54,11 +55,18 @@ static int run(app::Context& ctx) {
     return 0;
 }
 
+static complete::Candidates complete_words(complete::Request& r) {
+    if (!r.words.empty()) return {};
+    return { r.entities({ rant::EntityKind::Topic }), true };
+}
+
 app::Command pub() {
-    return { "pub", "<topic> <value>", "publish a value once, or at a rate", app::Section::Mesh,
-             { { "rate", 'r', "HZ", "publish this many times a second until Ctrl-C" },
+    app::Command c{ "pub", "<topic> <value>", "publish a value once, or at a rate", app::Section::Mesh,
+                    { { "rate", 'r', "HZ", "publish this many times a second until Ctrl-C" },
                { "count", 'n', "N", "stop after N messages" } },
-             run };
+                    run };
+    c.complete = complete_words;
+    return c;
 }
 
 }

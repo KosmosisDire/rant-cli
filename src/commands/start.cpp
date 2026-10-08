@@ -5,6 +5,7 @@
 
 #include "app/failure.hpp"
 #include "commands/commands.hpp"
+#include "complete/complete.hpp"
 #include "commands/plan_output.hpp"
 #include "run/nodes.hpp"
 #include "ui/prompt.hpp"
@@ -199,11 +200,21 @@ static int run(app::Context& ctx) {
     return start_node(ctx, w[1]);
 }
 
+static complete::Candidates complete_words(complete::Request& r) {
+    auto& w = r.words;
+    if (w.empty()) return { { "node", "group" } };
+    if (w[0] == "node" && w.size() == 1) return { r.node_types() };
+    if (w[0] != "group") return {};
+    if (w.size() == 1) return { r.groups() };
+    return { complete::params(r.group(w[1]), r.partial, { w.begin() + 2, w.end() }) };
+}
+
 app::Command start() {
     app::Command c{ "start", "node <node type> | group <name> [key=value...]",
                     "start nodes, detached, logging to the logs folder", app::Section::Workspace,
                     { { "dry-run", 0, "", "show what would run without starting it" } }, run };
     c.own_help = true;
+    c.complete = complete_words;
     return c;
 }
 

@@ -20,5 +20,6 @@ app::Command pub();
 app::Command get();
 app::Command set();
 app::Command call();
+app::Command setup();
 
 }

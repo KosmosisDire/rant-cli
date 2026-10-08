@@ -5,6 +5,7 @@
 
 #include "app/failure.hpp"
 #include "commands/commands.hpp"
+#include "complete/complete.hpp"
 #include "commands/format.hpp"
 #include "mesh/access.hpp"
 #include "ui/yaml.hpp"
@@ -129,9 +130,16 @@ static int run(app::Context& ctx) {
     return call_function(ctx, mesh, name, values, timeout);
 }
 
+static complete::Candidates complete_words(complete::Request& r) {
+    if (!r.words.empty()) return {};
+    return { r.entities({ rant::EntityKind::Function, rant::EntityKind::Task }), true };
+}
+
 app::Command call() {
-    return { "call", "<function|task> [value]", "call a function and print the reply, or run a task", app::Section::Mesh,
-             { { "timeout", 't', "S", "seconds to wait for an answer, 5 by default" }, csv_option() }, run };
+    app::Command c{ "call", "<function|task> [value]", "call a function and print the reply, or run a task", app::Section::Mesh,
+                    { { "timeout", 't', "S", "seconds to wait for an answer, 5 by default" }, csv_option() }, run };
+    c.complete = complete_words;
+    return c;
 }
 
 }

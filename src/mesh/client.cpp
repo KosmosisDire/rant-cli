@@ -5,9 +5,13 @@
 #include <mutex>
 #include <thread>
 
+#include "mesh/snapshot.hpp"
+
 namespace mesh {
 
 bool is_internal(std::string_view name) { return name.rfind("@rant/", 0) == 0; }
+
+bool is_placeholder(std::string_view name) { return name.size() == 10 && name.rfind("0x", 0) == 0; }
 
 const char* kind_name(rant::EntityKind k) {
     switch (k) {
@@ -29,14 +33,13 @@ static rant::NodeOptions observer_options(uint16_t domain) {
     return o;
 }
 
-Client::Client(uint16_t domain) : node_("@rant/cli", observer_options(domain)) {
+Client::Client(uint16_t domain) : node_("@rant/cli", observer_options(domain)), domain_(domain) {
     node_.on_event([](const rant::Event&) {});    /* a peer's schema clash is not the CLI's error */
 }
 
-/* A placeholder name ("0x1234abcd") means the entity's details have not arrived yet. */
 static bool details_pending(const std::vector<rant::Entity>& es) {
     for (auto& e : es)
-        if (e.name.size() == 10 && e.name.rfind("0x", 0) == 0) return true;
+        if (is_placeholder(e.name)) return true;
     return false;
 }
 
@@ -46,6 +49,11 @@ void Client::settle(std::chrono::milliseconds limit) {
     auto r = node_.reflection();
     while (details_pending(r.mesh()) && std::chrono::steady_clock::now() < deadline)
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    /* a full settle saw the whole mesh and replaces the snapshot, a shorter one may have
+       missed peers and only adds to it */
+    Snapshot s = limit >= full_settle ? Snapshot{} : Snapshot::load(domain_);
+    s.add(*this);
+    s.save(domain_);
 }
 
 std::vector<Peer> Client::peers() const {

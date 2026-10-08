@@ -28,9 +28,11 @@ foreach(state_file IN LISTS leftover_states)
 endforeach()
 
 # Every run starts from an empty scratch directory, the working directory of the commands.
+# Mesh snapshots and shell hooks go there too, never to the real home.
 file(REMOVE_RECURSE "${SCRATCH}" "${OTHER}")
 file(MAKE_DIRECTORY "${SCRATCH}")
 set(CWD "${SCRATCH}")
+set(ENV{RANT_HOME} "${SCRATCH}/home/.rant")
 file(WRITE "${SCRATCH}/.empty-stdin" "")
 
 # Checks one CLI run's exit code against FAILS and hands its output to the caller's caller

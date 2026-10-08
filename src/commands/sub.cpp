@@ -5,6 +5,7 @@
 
 #include "app/failure.hpp"
 #include "commands/commands.hpp"
+#include "complete/complete.hpp"
 #include "commands/format.hpp"
 #include "mesh/client.hpp"
 #include "mesh/values.hpp"
@@ -153,12 +154,19 @@ static int run(app::Context& ctx) {
     return 0;
 }
 
+static complete::Candidates complete_words(complete::Request& r) {
+    if (!r.words.empty()) return {};
+    return { r.entities({ rant::EntityKind::Topic }), true };
+}
+
 app::Command sub() {
-    return { "sub", "<topic>", "show the newest message on a topic until Ctrl-C", app::Section::Mesh,
-             { { "count", 'n', "N", "stop after N messages" },
+    app::Command c{ "sub", "<topic>", "show the newest message on a topic until Ctrl-C", app::Section::Mesh,
+                    { { "count", 'n', "N", "stop after N messages" },
                { "lines", 'l', "", "print each message on its own line instead of updating in place" },
                csv_option() },
-             run };
+                    run };
+    c.complete = complete_words;
+    return c;
 }
 
 }

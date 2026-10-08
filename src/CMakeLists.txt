@@ -19,14 +19,18 @@ add_library(rant_cli_core STATIC
   commands/plan_output.cpp
   commands/pub.cpp
   commands/set.cpp
+  commands/setup.cpp
   commands/start.cpp
   commands/stop.cpp
   commands/sub.cpp
+  complete/complete.cpp
+  complete/shells.cpp
   config/config.cpp
   mesh/access.cpp
   mesh/client.cpp
   mesh/encode.cpp
   mesh/schema_text.cpp
+  mesh/snapshot.cpp
   mesh/text.cpp
   mesh/values.cpp
   process/command.cpp
@@ -40,6 +44,7 @@ add_library(rant_cli_core STATIC
   ui/table.cpp
   ui/terminal.cpp
   ui/yaml.cpp
+  util/home.cpp
   util/interrupt.cpp
   util/match.cpp)
 

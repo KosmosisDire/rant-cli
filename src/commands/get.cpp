@@ -1,5 +1,6 @@
 #include "app/failure.hpp"
 #include "commands/commands.hpp"
+#include "complete/complete.hpp"
 #include "commands/format.hpp"
 #include "mesh/access.hpp"
 
@@ -18,8 +19,15 @@ static int run(app::Context& ctx) {
     return 0;
 }
 
+static complete::Candidates complete_words(complete::Request& r) {
+    if (!r.words.empty()) return {};
+    return { r.entities({ rant::EntityKind::Variable }), true };
+}
+
 app::Command get() {
-    return { "get", "<variable>", "print a variable's current value", app::Section::Mesh, { csv_option() }, run };
+    app::Command c{ "get", "<variable>", "print a variable's current value", app::Section::Mesh, { csv_option() }, run };
+    c.complete = complete_words;
+    return c;
 }
 
 }

@@ -7,12 +7,17 @@
 #include "app/args.hpp"
 #include "app/context.hpp"
 
+namespace complete {
+struct Candidates;
+class Request;
+}
+
 namespace app {
 
-enum class Section { Workspace, Mesh };
+enum class Section { Workspace, Mesh, Setup };
 
 /* One subcommand. own_help makes --help reach run, for help that depends on the words,
- * such as a group's params. */
+ * such as a group's params. complete offers the words at the cursor for tab completion. */
 struct Command {
     std::string_view        name;
     std::string_view        usage;      /* the words after the name, "<topic>" */
@@ -21,6 +26,7 @@ struct Command {
     std::vector<OptionSpec> options;
     int                   (*run)(Context&);
     bool                    own_help = false;
+    complete::Candidates  (*complete)(complete::Request&) = nullptr;
 };
 
 const std::vector<OptionSpec>& global_options();

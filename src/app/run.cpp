@@ -3,6 +3,7 @@
 #include "app/command.hpp"
 #include "app/failure.hpp"
 #include "commands/commands.hpp"
+#include "complete/complete.hpp"
 #include "rant.hpp"
 
 namespace app {
@@ -42,8 +43,10 @@ static std::string main_help() {
     std::string s =
         "rant: build, run and inspect Rant nodes\n\n"
         "Usage: rant <command> [args] [options]\n";
-    for (auto section : { Section::Workspace, Section::Mesh }) {
-        s += section == Section::Workspace ? "\nIn a workspace:\n" : "\nOn the mesh, anywhere:\n";
+    for (auto section : { Section::Workspace, Section::Mesh, Section::Setup }) {
+        s += section == Section::Workspace ? "\nIn a workspace:\n"
+             : section == Section::Mesh    ? "\nOn the mesh, anywhere:\n"
+                                           : "\nSetting up:\n";
         for (auto& c : commands::all()) {
             if (c.section != section) continue;
             std::string left = std::string(c.name) + " " + std::string(c.usage);
@@ -71,6 +74,7 @@ static uint16_t parse_domain(const std::string& s) {
 }
 
 int run(Context& ctx, const std::vector<std::string>& tokens) {
+    if (!tokens.empty() && tokens[0] == "__complete") return complete::run(ctx, { tokens.begin() + 1, tokens.end() });
     size_t consumed = 0;
     Args global = parse_args(tokens, global_options(), true, &consumed);
     if (global.has("version")) {

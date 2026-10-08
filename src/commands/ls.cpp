@@ -3,6 +3,7 @@
 
 #include "app/failure.hpp"
 #include "commands/commands.hpp"
+#include "complete/complete.hpp"
 #include "mesh/client.hpp"
 #include "mesh/values.hpp"
 #include "run/nodes.hpp"
@@ -140,9 +141,16 @@ static int run(app::Context& ctx) {
     return 0;
 }
 
+static complete::Candidates complete_words(complete::Request& r) {
+    if (r.words.empty()) return { { "nodes", "entities" } };
+    return {};
+}
+
 app::Command ls() {
-    return { "ls", "[nodes|entities] [pattern]", "list the running nodes and what they talk through",
-             app::Section::Mesh, {}, run };
+    app::Command c{ "ls", "[nodes|entities] [pattern]", "list the running nodes and what they talk through",
+                    app::Section::Mesh, {}, run };
+    c.complete = complete_words;
+    return c;
 }
 
 }

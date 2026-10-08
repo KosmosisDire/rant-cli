@@ -5,6 +5,7 @@
 
 #include "app/failure.hpp"
 #include "commands/commands.hpp"
+#include "complete/complete.hpp"
 #include "process/command.hpp"
 #include "ui/prompt.hpp"
 #include "ui/table.hpp"
@@ -138,9 +139,18 @@ static int run(app::Context& ctx) {
     return 0;
 }
 
+static complete::Candidates complete_words(complete::Request& r) {
+    std::vector<std::string> out;
+    for (auto& p : r.packages())
+        if (std::find(r.words.begin(), r.words.end(), p) == r.words.end()) out.push_back(p);
+    return { out };
+}
+
 app::Command build() {
-    return { "build", "[package...]", "build packages in dependency order", app::Section::Workspace,
-             { { "dry-run", 0, "", "show the packages, dependencies, order and commands without building" } }, run };
+    app::Command c{ "build", "[package...]", "build packages in dependency order", app::Section::Workspace,
+                    { { "dry-run", 0, "", "show the packages, dependencies, order and commands without building" } }, run };
+    c.complete = complete_words;
+    return c;
 }
 
 }

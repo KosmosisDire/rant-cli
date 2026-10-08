@@ -2,6 +2,7 @@
 
 #include "app/failure.hpp"
 #include "commands/commands.hpp"
+#include "complete/complete.hpp"
 #include "mesh/access.hpp"
 #include "mesh/schema_text.hpp"
 #include "run/nodes.hpp"
@@ -174,8 +175,18 @@ static int run(app::Context& ctx) {
     return 0;
 }
 
+static complete::Candidates complete_words(complete::Request& r) {
+    if (!r.words.empty()) return {};
+    std::vector<std::string> out = r.entities();
+    for (auto& n : r.mesh_nodes()) out.push_back(n);
+    for (auto& n : r.running_nodes()) out.push_back(n);
+    return { out, true };
+}
+
 app::Command info() {
-    return { "info", "<name>", "explain one node or entity", app::Section::Mesh, {}, run };
+    app::Command c{ "info", "<name>", "explain one node or entity", app::Section::Mesh, {}, run };
+    c.complete = complete_words;
+    return c;
 }
 
 }

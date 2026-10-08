@@ -2,6 +2,7 @@
 
 #include "app/failure.hpp"
 #include "commands/commands.hpp"
+#include "complete/complete.hpp"
 #include "commands/plan_output.hpp"
 #include "run/nodes.hpp"
 #include "ui/prompt.hpp"
@@ -116,9 +117,20 @@ static int run(app::Context& ctx) {
     return stop_node(ctx, w[1]);
 }
 
+static complete::Candidates complete_words(complete::Request& r) {
+    auto& w = r.words;
+    if (w.empty()) return { { "node", "group" } };
+    if (w[0] == "node" && w.size() == 1) return { r.running_nodes() };
+    if (w[0] != "group") return {};
+    if (w.size() == 1) return { r.running_groups() };
+    return { complete::params(r.group(w[1]), r.partial, { w.begin() + 2, w.end() }) };
+}
+
 app::Command stop() {
-    return { "stop", "node <name> | group <name> [key=value...]", "stop what start started", app::Section::Workspace,
-             {}, run };
+    app::Command c{ "stop", "node <name> | group <name> [key=value...]", "stop what start started",
+                    app::Section::Workspace, {}, run };
+    c.complete = complete_words;
+    return c;
 }
 
 }
