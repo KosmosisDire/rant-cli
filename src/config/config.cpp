@@ -140,26 +140,19 @@ GroupInfo describe_group(const fs::path& start, const std::string& group) {
     return out;
 }
 
-static const char* builtin_of(const TemplateOrigin& o) { return o.builtin.empty() ? nullptr : o.builtin.c_str(); }
-
-TemplateInfo describe_template(const TemplateOrigin& origin) {
-    std::string dir = to_utf8(origin.dir);
-    std::unique_ptr<RantConfigTemplate, decltype(&rant_config_template_free)> h(
-        rant_config_template(builtin_of(origin), dir.c_str()), &rant_config_template_free);
-    const RantConfigTemplateView* v = rant_config_template_view(h.get());
-    return { str(v->description), params_of(v->params, v->param_count), diagnostics(v->diagnostics, v->diagnostic_count) };
-}
-
-Made make(const TemplateOrigin& origin, const fs::path& dest, const std::string& name, const std::vector<std::string>& params) {
+TemplateManifest read_template(const std::string& text, const fs::path& path, const std::vector<std::string>& params, bool bind) {
     std::vector<const char*> raw;
     for (auto& p : params) raw.push_back(p.c_str());
-    std::string dir = to_utf8(origin.dir), to = to_utf8(dest);
-    std::unique_ptr<RantConfigMade, decltype(&rant_config_made_free)> h(
-        rant_config_make(builtin_of(origin), dir.c_str(), to.c_str(), name.c_str(), raw.data(), raw.size()), &rant_config_made_free);
-    const RantConfigMadeView* v = rant_config_made_view(h.get());
-    Made out;
-    for (auto& f : strs(v->files, v->file_count)) out.files.push_back(from_utf8(f));
+    std::string where = to_utf8(path);
+    std::unique_ptr<RantConfigTemplate, decltype(&rant_config_template_free)> h(
+        rant_config_template(text.c_str(), where.c_str(), raw.data(), raw.size(), bind), &rant_config_template_free);
+    const RantConfigTemplateView* v = rant_config_template_view(h.get());
+    TemplateManifest out;
+    out.description = str(v->description);
+    out.includes = strs(v->includes, v->include_count);
     out.next = str(v->next);
+    out.params = params_of(v->params, v->param_count);
+    out.values = str(v->values);
     out.diagnostics = diagnostics(v->diagnostics, v->diagnostic_count);
     return out;
 }

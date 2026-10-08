@@ -6,6 +6,7 @@
 #include "complete/complete.hpp"
 #include "library/library.hpp"
 #include "process/command.hpp"
+#include "scaffold/scaffold.hpp"
 #include "ui/prompt.hpp"
 #include "util/home.hpp"
 
@@ -39,7 +40,7 @@ static std::string language_here(app::Context& ctx) {
 
 /* A template named on the command line, fetched with git when it is a repository. The
  * clone sits in ~/.rant/cache until the next one. */
-static config::TemplateOrigin named_template(app::Context& ctx, const std::string& name) {
+static scaffold::Origin named_template(app::Context& ctx, const std::string& name) {
     std::string url;
     if (name.rfind("gh:", 0) == 0) url = "https://github.com/" + name.substr(3) + ".git";
     else if (name.find("://") != std::string::npos || name.rfind("git@", 0) == 0) url = name;
@@ -61,7 +62,7 @@ static config::TemplateOrigin named_template(app::Context& ctx, const std::strin
 
 /* The template a command line asks for. A C# node is a project of its own, so it is the
  * package template. */
-static config::TemplateOrigin chosen(app::Context& ctx, const std::string& kind) {
+static scaffold::Origin chosen(app::Context& ctx, const std::string& kind) {
     if (auto t = ctx.args.get("template")) return named_template(ctx, *t);
     if (kind == "group") return { "group", {} };
     std::string lang = ctx.args.get("lang").value_or(kind == "node" ? language_here(ctx) : "");
@@ -71,8 +72,8 @@ static config::TemplateOrigin chosen(app::Context& ctx, const std::string& kind)
     return { (kind == "node" && lang != "csharp" ? "node-" : "package-") + lang, {} };
 }
 
-static config::TemplateInfo describe(app::Context& ctx, const config::TemplateOrigin& origin) {
-    config::TemplateInfo t = config::describe_template(origin);
+static config::TemplateManifest describe(app::Context& ctx, const scaffold::Origin& origin) {
+    config::TemplateManifest t = scaffold::describe(origin);
     if (!t.diagnostics.empty()) {
         for (auto& d : t.diagnostics) ctx.out.error(d.str());
         throw app::Failure("");
@@ -81,7 +82,7 @@ static config::TemplateInfo describe(app::Context& ctx, const config::TemplateOr
 }
 
 /* Asks for each required param not given, when someone is there to answer. */
-static void ask_missing(const config::TemplateInfo& t, std::vector<std::string>& given) {
+static void ask_missing(const config::TemplateManifest& t, std::vector<std::string>& given) {
     for (auto& p : t.params) {
         bool set = std::any_of(given.begin(), given.end(), [&](const std::string& g) { return g.rfind(p.name + "=", 0) == 0; });
         if (set || p.default_value) continue;
@@ -101,8 +102,8 @@ static int run(app::Context& ctx) {
     const std::string& kind = w[0];
     if (w.size() < 2) throw app::UsageError("new " + kind + " needs a name");
     const std::string& name = w[1];
-    config::TemplateOrigin origin = chosen(ctx, kind);
-    config::TemplateInfo t = describe(ctx, origin);
+    scaffold::Origin origin = chosen(ctx, kind);
+    config::TemplateManifest t = describe(ctx, origin);
     if (ctx.args.has("help")) {
         ctx.out.line("Usage: rant new " + kind + " " + name + (t.params.empty() ? "" : " [key=value...]"));
         if (!t.description.empty()) ctx.out.line("\n" + t.description);
@@ -114,11 +115,7 @@ static int run(app::Context& ctx) {
     ask_missing(t, params);
     bool package = kind == "package" || origin.builtin == "package-csharp";
     fs::path dest = package ? ctx.cwd / config::from_utf8(name) : ctx.cwd;
-    config::Made made = config::make(origin, dest, name, params);
-    if (!made.diagnostics.empty()) {
-        for (auto& d : made.diagnostics) ctx.out.error(d.str());
-        throw app::Failure("");
-    }
+    scaffold::Made made = scaffold::make(origin, dest, name, params);
     for (auto& f : made.files) ctx.out.line("created " + ctx.shown(f));
     if (!made.next.empty()) ctx.out.note(made.next);
     if (!package) return 0;

@@ -108,29 +108,20 @@ struct GroupInfo {
 
 GroupInfo describe_group(const fs::path& start, const std::string& group);
 
-/* A template for rant new: compiled in by name, else the folder dir. */
-struct TemplateOrigin {
-    std::string builtin;
-    fs::path    dir;
+/* What a template.hcl declares. values holds every param's value as a JSON object when the
+ * params were bound. Nothing but diagnostics is set when they are not empty. */
+struct TemplateManifest {
+    std::string              description;
+    std::vector<std::string> includes;
+    std::string              next;
+    std::vector<Param>       params;
+    std::string              values;
+    std::vector<Diagnostic>  diagnostics;
 };
 
-struct TemplateInfo {
-    std::string             description;
-    std::vector<Param>      params;
-    std::vector<Diagnostic> diagnostics;
-};
-
-TemplateInfo describe_template(const TemplateOrigin& origin);
-
-/* What a template made. Nothing is written when diagnostics is not empty. */
-struct Made {
-    std::vector<fs::path>   files;
-    std::string             next;    /* the next steps it suggests, maybe empty */
-    std::vector<Diagnostic> diagnostics;
-};
-
-/* Makes name from a template in dest with "key=value" params, never overwriting a file. */
-Made make(const TemplateOrigin& origin, const fs::path& dest, const std::string& name, const std::vector<std::string>& params);
+/* Reads a template.hcl from its text, path naming it in errors, and with bind checks the
+ * "key=value" params against it. */
+TemplateManifest read_template(const std::string& text, const fs::path& path, const std::vector<std::string>& params, bool bind);
 
 /* One package's build. configure, when not empty, runs first once the user agrees. */
 struct BuildStep {

@@ -3,7 +3,7 @@
     <OutputType>Exe</OutputType>
     <TargetFramework>net8.0</TargetFramework>
     <AssemblyName>{{ name }}</AssemblyName>
-    <RootNamespace>{{ name | pascal }}</RootNamespace>
+    <RootNamespace>{{ pascal(name) }}</RootNamespace>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>

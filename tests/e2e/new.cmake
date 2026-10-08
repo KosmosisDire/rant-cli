@@ -39,7 +39,7 @@ template {
   next = "open http://localhost:{{ port }}"
 }
 ]])
-file(WRITE "${SCRATCH}/tpl/{{name}}/{{name.snake}}.txt" "{{ name | pascal }} on {{ port }} in {{ theme }}\n")
+file(WRITE "${SCRATCH}/tpl/{{name}}/{{snake(name)}}.txt" "{{ pascal(name) }} on {{ port }} in {{ theme }}\n")
 rant(new package "Web Panel" --template tpl --help)
 expect_match("${OUT}" "A web panel")
 expect_match("${OUT}" "port=<int> +required +Where it listens")
