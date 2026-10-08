@@ -53,12 +53,21 @@ static NodeType node_type(const RantConfigNodeType& n) {
 
 using Handle = std::unique_ptr<RantConfigWorkspace, decltype(&rant_config_free)>;
 
+/* A workspace with its paths only, packages and groups left empty. */
+static Workspace paths_only(const char* root, const char* logs, const char* data) {
+    Workspace ws;
+    ws.root = from_utf8(root);
+    ws.logs = from_utf8(str(logs));
+    ws.data = from_utf8(str(data));
+    return ws;
+}
+
 static Opened read(Handle h) {
     const RantConfigWorkspaceView* v = rant_config_view(h.get());
     Opened out;
     out.diagnostics = diagnostics(v->diagnostics, v->diagnostic_count);
     if (!v->root) return out;
-    Workspace ws{ from_utf8(v->root), from_utf8(str(v->logs)), from_utf8(str(v->data)), {}, {}, {} };
+    Workspace ws = paths_only(v->root, v->logs, v->data);
     for (size_t i = 0; i < v->package_count; i++) {
         const RantConfigPackage& p = v->packages[i];
         Package pkg{ str(p.name), from_utf8(str(p.dir)), {} };
@@ -75,7 +84,7 @@ static Opened read(Handle h) {
 static Plan read_plan(const RantConfigPlanView* v) {
     Plan out;
     out.diagnostics = diagnostics(v->diagnostics, v->diagnostic_count);
-    if (v->root) out.workspace = Workspace{ from_utf8(v->root), from_utf8(str(v->logs)), from_utf8(str(v->data)), {}, {} };
+    if (v->root) out.workspace = paths_only(v->root, v->logs, v->data);
     out.group = str(v->group);
     for (size_t i = 0; i < v->param_count; i++) out.params[str(v->params[i].name)] = str(v->params[i].value);
     for (size_t i = 0; i < v->instance_count; i++) {
