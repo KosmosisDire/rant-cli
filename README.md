@@ -3,6 +3,16 @@
 The command line tool for Rant. It finds the packages and nodes in a workspace, builds
 them in order, starts and stops nodes and groups of nodes, and reads and writes the mesh.
 
+## Install
+
+```
+curl -fsSL https://raw.githubusercontent.com/KosmosisDire/rant-cli/main/install.sh | sh                 # Linux, macOS
+irm https://raw.githubusercontent.com/KosmosisDire/rant-cli/main/install.ps1 | iex                     # Windows
+```
+
+Each lists what it will do and asks first: rant goes to `~/.rant/bin`, that folder onto PATH,
+then `rant setup` adds tab completion.
+
 ## Use
 
 ```

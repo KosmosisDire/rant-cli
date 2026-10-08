@@ -1,2 +1,4 @@
 # The built in templates are compiled in, so what rant new writes is the same on every OS.
 templates/** text eol=lf
+# A shell script with Windows line ends does not run.
+*.sh text eol=lf
