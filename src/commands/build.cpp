@@ -123,7 +123,8 @@ static int run(app::Context& ctx) {
         for (auto& c : s.commands) run_command(s, c);
         built++;
     }
-    ctx.out.line("built " + std::to_string(built) + (built == 1 ? " package" : " packages"));
+    if (built == 0) ctx.out.line("nothing to build: no package here has a build step");
+    else ctx.out.line("built " + std::to_string(built) + (built == 1 ? " package" : " packages"));
     return 0;
 }
 
