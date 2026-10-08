@@ -26,4 +26,9 @@ size_t visible_width(const std::string& s);
 std::vector<std::string> columns(const std::vector<std::vector<std::string>>& cells, size_t width,
                                  const std::string& indent = "  ");
 
+/* Several lists of cells on one grid, every column as wide as the widest cell, so a column
+ * lines up from one list to the next. Each list fills down then across. */
+std::vector<std::vector<std::string>> columns(const std::vector<std::vector<std::vector<std::string>>>& lists,
+                                              size_t width, const std::string& indent);
+
 }

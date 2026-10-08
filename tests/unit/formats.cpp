@@ -77,6 +77,14 @@ TEST(columns_fill_down_then_across_as_wide_as_fits) {
     CHECK_EQ(ui::columns(cells, 1, "").size(), size_t(5));
 }
 
+TEST(lists_on_one_grid_line_up_their_columns) {
+    std::vector<std::vector<std::vector<std::string>>> lists = { { { "ft" }, { "lector" }, { "visionary" } }, { { "cage-plc" }, { "hmi" } } };
+    auto laid = ui::columns(lists, 40, "    ");
+    CHECK_EQ(laid[0], (Lines{ "    ft           lector       visionary" }));
+    CHECK_EQ(laid[1], (Lines{ "    cage-plc     hmi" }));
+    CHECK_EQ(ui::columns(lists, 0, "  ")[0].size(), size_t(3));
+}
+
 TEST(columns_line_up_the_parts_of_each_cell) {
     std::vector<std::vector<std::string>> cells = { { "odom", "topic" }, { "rate", "var" }, { "camera/left", "topic" } };
     CHECK_EQ(ui::columns(cells, 40, "  "), (Lines{ "  odom  topic    camera/left  topic", "  rate  var" }));

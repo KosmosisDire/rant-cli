@@ -149,17 +149,30 @@ static int list_mesh(app::Context& ctx, std::optional<Kind> kind, const std::str
     }
 
     if (show_nodes) {
-        std::vector<std::string> lines;
+        /* every list of nodes on one grid, those outside a group under a header of their own
+           when there are groups, so the columns line up all the way down */
+        std::vector<std::string> headers;
+        std::vector<std::vector<std::vector<std::string>>> lists;
         auto cells = [&](const std::vector<Row>& rows) {
             std::vector<std::vector<std::string>> out;
             for (auto& r : rows) out.push_back({ node_cell(ctx, r) });
             return out;
         };
         for (auto& g : nodes.groups) {
-            lines.push_back("  " + ctx.out.paint(ui::Style::Faint, g.header + ":"));
-            for (auto& l : ui::columns(cells(g.nodes), width(), "    ")) lines.push_back(l);
+            headers.push_back(g.header);
+            lists.push_back(cells(g.nodes));
         }
-        for (auto& l : ui::columns(cells(nodes.loose), width(), "  ")) lines.push_back(l);
+        bool grouped = !nodes.groups.empty();
+        if (!nodes.loose.empty()) {
+            headers.push_back("other");
+            lists.push_back(cells(nodes.loose));
+        }
+        std::vector<std::string> lines;
+        auto laid = ui::columns(lists, width(), grouped ? "    " : "  ");
+        for (size_t i = 0; i < laid.size(); i++) {
+            if (grouped) lines.push_back("  " + ctx.out.paint(ui::Style::Faint, headers[i] + ":"));
+            for (auto& l : laid[i]) lines.push_back(l);
+        }
         section(ctx, "NODES", lines);
     }
     if (all) {

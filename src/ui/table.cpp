@@ -65,6 +65,43 @@ std::vector<std::string> columns(const std::vector<std::vector<std::string>>& ce
     return out;
 }
 
+std::vector<std::vector<std::string>> columns(const std::vector<std::vector<std::vector<std::string>>>& lists,
+                                              size_t width, const std::string& indent) {
+    std::vector<size_t> parts;
+    for (auto& list : lists)
+        for (auto& cell : list) {
+            if (parts.size() < cell.size()) parts.resize(cell.size(), 0);
+            for (size_t p = 0; p < cell.size(); p++) parts[p] = std::max(parts[p], visible_width(cell[p]));
+        }
+    size_t cell = 0;
+    for (size_t p = 0; p < parts.size(); p++) cell += parts[p] + (p ? part_gap : 0);
+    size_t cols = 1;
+    while (width > 0 && indent.size() + (cols + 1) * cell + cols * column_gap <= width) cols++;
+
+    std::vector<std::vector<std::string>> out;
+    for (auto& list : lists) {
+        std::vector<std::string> lines;
+        size_t rows = (list.size() + cols - 1) / cols;
+        for (size_t r = 0; r < rows; r++) {
+            std::string line = indent;
+            for (size_t c = 0; c < cols; c++) {
+                size_t i = c * rows + r;
+                if (i >= list.size()) break;
+                if (c) line += std::string(column_gap, ' ');
+                for (size_t p = 0; p < parts.size(); p++) {
+                    std::string part = p < list[i].size() ? list[i][p] : "";
+                    if (p) line += std::string(part_gap, ' ');
+                    line += part + std::string(parts[p] - visible_width(part), ' ');
+                }
+            }
+            while (!line.empty() && line.back() == ' ') line.pop_back();
+            lines.push_back(line);
+        }
+        out.push_back(lines);
+    }
+    return out;
+}
+
 std::vector<std::string> Table::lines(const std::string& indent) const {
     std::vector<size_t> widths;
     for (auto& r : rows_) {
