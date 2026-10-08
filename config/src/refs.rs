@@ -45,14 +45,23 @@ pub fn resolve(model: &Model, reference: &str, from_dir: &Path) -> Result<NodeTy
             .cloned()
             .ok_or_else(|| format!("package `{pkg}` has no node type `{name}`{}", known(&p.nodes)));
     }
-    let matches: Vec<&NodeType> = model.packages.iter().flat_map(|p| p.nodes.iter()).filter(|n| n.name == reference).collect();
+    let matches: Vec<&NodeType> = model.node_types().filter(|n| n.name == reference).collect();
     match matches.as_slice() {
         [one] => Ok((*one).clone()),
         [] => Err(format!("no node type named `{reference}`, see `rant build --dry-run` for the node types")),
         many => Err(format!(
             "`{reference}` is a node type in several packages, name one: {}",
-            many.iter().map(|n| format!("{}/{}", n.package, n.name)).collect::<Vec<_>>().join(", ")
+            many.iter().map(|n| shown(n)).collect::<Vec<_>>().join(", ")
         )),
+    }
+}
+
+/// How to name one of several node types: package and name, or the file of one outside
+/// every package.
+fn shown(n: &NodeType) -> String {
+    match (&n.path, n.package.is_empty()) {
+        (Some(p), true) => paths::normalize(p).display().to_string(),
+        _ => format!("{}/{}", n.package, n.name),
     }
 }
 
@@ -79,7 +88,7 @@ fn by_path(model: &Model, path: &Path, reference: &str) -> Result<NodeType, Stri
     if cfg!(windows) && !path.is_file() && path.extension().is_none() {
         path.set_extension("exe");
     }
-    for n in model.packages.iter().flat_map(|p| p.nodes.iter()) {
+    for n in model.node_types() {
         if n.path.as_deref().is_some_and(|p| paths::same(p, &path)) {
             return Ok(n.clone());
         }

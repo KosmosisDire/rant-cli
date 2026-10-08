@@ -1,6 +1,7 @@
 //! Whole workspace tests: discovery, naming, scanning and references working together.
 
 use crate::model::Model;
+use crate::paths;
 use crate::refs;
 use crate::scan::NodeKind;
 use crate::testdir::TestDir;
@@ -124,7 +125,7 @@ fn the_scan_cache_is_written_and_reused() {
 }
 
 #[test]
-fn python_folders_are_packages_without_a_manifest() {
+fn python_nodes_outside_packages_have_no_package() {
     let t = TestDir::new();
     t.write("rant.hcl", "workspace {}\n");
     t.write("Services/pick/main.py", "import rant\n\ndef main():\n    pass\n");
@@ -132,11 +133,10 @@ fn python_folders_are_packages_without_a_manifest() {
     t.write("IO/ft/ft.py", "import rant\nnode = rant.Node()\n");
     t.write("IO/lector/lector.py", "import serial\n");
     let m = load(&t);
-    let mut names: Vec<&str> = m.packages.iter().map(|p| p.name.as_str()).collect();
-    names.sort();
-    assert_eq!(names, ["ft", "pick"]);
-    let pick = &m.package("pick").unwrap().nodes;
-    assert_eq!(pick.len(), 1, "{pick:?}");
-    assert_eq!(pick[0].name, "pick", "main.py takes its folder's name");
-    assert_eq!(m.package("ft").unwrap().nodes[0].name, "ft");
+    assert!(m.packages.is_empty(), "a folder of scripts is no package");
+    let names: Vec<&str> = m.loose.iter().map(|n| n.name.as_str()).collect();
+    assert_eq!(names, ["ft", "pick"], "main.py takes its folder's name");
+    let ft = refs::resolve(&m, "ft", t.root()).unwrap();
+    assert_eq!(ft.package, "");
+    assert!(paths::same(&ft.cwd, &t.path("IO/ft")));
 }

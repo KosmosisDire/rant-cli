@@ -75,6 +75,9 @@ pub struct RantConfigWorkspaceView {
     pub data: *const c_char,
     pub packages: *const RantConfigPackage,
     pub package_count: usize,
+    /// Python nodes outside every package.
+    pub loose: *const RantConfigNodeType,
+    pub loose_count: usize,
     pub groups: *const RantConfigGroupFile,
     pub group_count: usize,
     pub diagnostics: *const RantConfigDiagnostic,
@@ -282,6 +285,8 @@ fn workspace_handle(loaded: &Loaded, extra: Vec<Diag>) -> *mut RantConfigWorkspa
     let packages: Vec<RantConfigPackage> =
         loaded.model.iter().flat_map(|m| m.packages.iter()).map(|p| store.package(p)).collect();
     let (packages, package_count) = store.array(packages);
+    let loose: Vec<RantConfigNodeType> = loaded.model.iter().flat_map(|m| m.loose.iter()).map(|n| store.node_type(n)).collect();
+    let (loose, loose_count) = store.array(loose);
     let groups: Vec<RantConfigGroupFile> = loaded
         .model
         .iter()
@@ -292,8 +297,19 @@ fn workspace_handle(loaded: &Loaded, extra: Vec<Diag>) -> *mut RantConfigWorkspa
     let diags: Vec<Diag> = loaded.diags.iter().cloned().chain(extra).collect();
     let (diagnostics, diagnostic_count) = store.diags(&diags);
     let [root, logs, data] = store.roots(loaded.config.as_ref());
-    let view =
-        RantConfigWorkspaceView { root, logs, data, packages, package_count, groups, group_count, diagnostics, diagnostic_count };
+    let view = RantConfigWorkspaceView {
+        root,
+        logs,
+        data,
+        packages,
+        package_count,
+        loose,
+        loose_count,
+        groups,
+        group_count,
+        diagnostics,
+        diagnostic_count,
+    };
     Box::into_raw(Box::new(RantConfigWorkspace { view, store }))
 }
 

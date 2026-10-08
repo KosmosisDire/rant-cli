@@ -31,7 +31,7 @@ struct NodeType {
     NodeKind                 kind = NodeKind::Native;
     std::optional<fs::path>  path;      /* the artifact or source, none when declared */
     std::vector<std::string> run;       /* argv, never run through a shell */
-    fs::path                 cwd;       /* the package root */
+    fs::path                 cwd;       /* the package root, or a loose file's folder */
 
     std::string ref() const { return package.empty() ? name : package + "/" + name; }
 };
@@ -52,6 +52,7 @@ struct Workspace {
     fs::path               logs;
     fs::path               data;        /* .rant/, the state file and caches */
     std::vector<Package>   packages;    /* filled when opened with packages */
+    std::vector<NodeType>  loose;       /* Python nodes outside every package, likewise */
     std::vector<GroupFile> groups;      /* filled when opened with packages */
 };
 

@@ -58,13 +58,14 @@ static Opened read(Handle h) {
     Opened out;
     out.diagnostics = diagnostics(v->diagnostics, v->diagnostic_count);
     if (!v->root) return out;
-    Workspace ws{ from_utf8(v->root), from_utf8(str(v->logs)), from_utf8(str(v->data)), {}, {} };
+    Workspace ws{ from_utf8(v->root), from_utf8(str(v->logs)), from_utf8(str(v->data)), {}, {}, {} };
     for (size_t i = 0; i < v->package_count; i++) {
         const RantConfigPackage& p = v->packages[i];
         Package pkg{ str(p.name), from_utf8(str(p.dir)), {} };
         for (size_t j = 0; j < p.node_count; j++) pkg.nodes.push_back(node_type(p.nodes[j]));
         ws.packages.push_back(std::move(pkg));
     }
+    for (size_t i = 0; i < v->loose_count; i++) ws.loose.push_back(node_type(v->loose[i]));
     for (size_t i = 0; i < v->group_count; i++)
         ws.groups.push_back({ str(v->groups[i].name), from_utf8(str(v->groups[i].file)) });
     out.workspace = std::move(ws);

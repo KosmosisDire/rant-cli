@@ -40,6 +40,8 @@ pub struct Package {
 pub struct Model {
     pub config: WorkspaceConfig,
     pub packages: Vec<Package>,
+    /// Python nodes outside every package, named by file alone and run from their folder.
+    pub loose: Vec<NodeType>,
     pub groups: Vec<GroupFile>,
 }
 
@@ -52,8 +54,8 @@ impl Model {
         let mut diags = Vec::new();
         let cache_path = cache_dir(&config.root).join("scan.json");
         let mut cache = Cache::load(&cache_path);
-        let found = discover::walk(&config, &mut cache, &mut diags);
-        let mut candidates = found.packages;
+        let mut found = discover::walk(&config, &mut cache, &mut diags);
+        let mut candidates = std::mem::take(&mut found.packages);
         candidates.sort_by(|a, b| a.dir.cmp(&b.dir));
         let mut packages = name_packages(candidates, &mut diags);
         let groups = group::name_files(found.group_files, &packages, &mut diags);
@@ -73,7 +75,19 @@ impl Model {
             pkg.nodes = node_types(pkg, found, &config.root);
         }
         cache.save(&cache_path);
-        (Model { config, packages, groups }, diags)
+        let mut loose: Vec<NodeType> = found
+            .python_nodes
+            .into_iter()
+            .filter(|f| !dirs.iter().any(|d| paths::within(f, d)))
+            .map(|f| loose_node(f, &config.root))
+            .collect();
+        loose.sort_by(|a, b| a.path.cmp(&b.path));
+        (Model { config, packages, loose, groups }, diags)
+    }
+
+    /// Every node type, in packages and outside them.
+    pub fn node_types(&self) -> impl Iterator<Item = &NodeType> {
+        self.packages.iter().flat_map(|p| p.nodes.iter()).chain(self.loose.iter())
     }
 
     pub fn package(&self, name: &str) -> Option<&Package> {
@@ -116,14 +130,29 @@ fn name_packages(candidates: Vec<Candidate>, diags: &mut Vec<Diag>) -> Vec<Packa
 
 /// A node type is named after its file, except a Python `main.py` or `__main__.py`, which
 /// is named after its folder, so `pick/main.py` is the node type `pick`.
-fn node_name(f: &scan::Found) -> String {
-    let stem = f.path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
-    if f.kind == NodeKind::Python && (stem == "main" || stem == "__main__") {
-        if let Some(dir) = f.path.parent().and_then(|d| d.file_name()) {
+fn node_name(path: &Path, kind: NodeKind) -> String {
+    let stem = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    if kind == NodeKind::Python && (stem == "main" || stem == "__main__") {
+        if let Some(dir) = path.parent().and_then(|d| d.file_name()) {
             return dir.to_string_lossy().into_owned();
         }
     }
     stem
+}
+
+fn loose_node(path: PathBuf, root: &Path) -> NodeType {
+    let dir = path.parent().unwrap_or(root).to_path_buf();
+    let mut run = python(None, &dir, root);
+    run.push(slash(&path));
+    NodeType {
+        package: String::new(),
+        name: node_name(&path, NodeKind::Python),
+        kind: NodeKind::Python,
+        path: Some(path),
+        run,
+        cwd: dir,
+        shadowed: Vec::new(),
+    }
 }
 
 /// One node type per name: the newest artifact wins and the rest are kept as shadowed.
@@ -132,7 +161,7 @@ fn node_types(pkg: &Package, mut found: Vec<scan::Found>, root: &Path) -> Vec<No
     found.sort_by(|a, b| b.modified.cmp(&a.modified));
     let mut by_name: BTreeMap<String, NodeType> = BTreeMap::new();
     for f in found {
-        let name = node_name(&f);
+        let name = node_name(&f.path, f.kind);
         if let Some(existing) = by_name.get_mut(&name) {
             existing.shadowed.push(f.path);
             continue;

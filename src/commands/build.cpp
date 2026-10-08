@@ -25,18 +25,21 @@ static void require(app::Context& ctx, const std::vector<config::Diagnostic>& di
     throw app::Failure("");
 }
 
+static json node_types_json(const std::vector<config::NodeType>& types) {
+    json nodes = json::array();
+    for (auto& n : types)
+        nodes.push_back({ { "name", n.name },
+                          { "kind", config::kind_name(n.kind) },
+                          { "path", n.path ? json(config::to_utf8(*n.path)) : json(nullptr) },
+                          { "run", n.run },
+                          { "cwd", config::to_utf8(n.cwd) } });
+    return nodes;
+}
+
 static json dry_run_json(const config::Workspace& ws, const config::Build& b) {
     json packages = json::array();
-    for (auto& p : ws.packages) {
-        json nodes = json::array();
-        for (auto& n : p.nodes)
-            nodes.push_back({ { "name", n.name },
-                              { "kind", config::kind_name(n.kind) },
-                              { "path", n.path ? json(config::to_utf8(*n.path)) : json(nullptr) },
-                              { "run", n.run },
-                              { "cwd", config::to_utf8(n.cwd) } });
-        packages.push_back({ { "name", p.name }, { "dir", config::to_utf8(p.dir) }, { "nodes", nodes } });
-    }
+    for (auto& p : ws.packages)
+        packages.push_back({ { "name", p.name }, { "dir", config::to_utf8(p.dir) }, { "nodes", node_types_json(p.nodes) } });
     json edges = json::array();
     for (auto& e : b.edges) edges.push_back({ { "from", e.from }, { "to", e.to }, { "source", e.source } });
     json steps = json::array();
@@ -46,7 +49,11 @@ static json dry_run_json(const config::Workspace& ws, const config::Build& b) {
         step["commands"] = s.commands;
         steps.push_back(step);
     }
-    return { { "workspace", config::to_utf8(ws.root) }, { "packages", packages }, { "dependencies", edges }, { "build", steps } };
+    return { { "workspace", config::to_utf8(ws.root) },
+             { "packages", packages },
+             { "loose", node_types_json(ws.loose) },
+             { "dependencies", edges },
+             { "build", steps } };
 }
 
 /* Everything a build would do, and why: the packages, their node types, every dependency
@@ -60,12 +67,15 @@ static void dry_run(app::Context& ctx, const config::Workspace& ws, const config
     for (auto& p : ws.packages) sorted.push_back(&p);
     std::sort(sorted.begin(), sorted.end(), [](auto* a, auto* b) { return a->name < b->name; });
     ui::Table packages, nodes, edges;
+    auto node_row = [&](const config::NodeType& n) {
+        nodes.row({ n.ref(), ctx.out.paint(ui::Style::Dim, config::kind_name(n.kind)),
+                    n.path ? shown_path(ws, *n.path) : process::shown(n.run) });
+    };
     for (auto* p : sorted) {
         packages.row({ p->name, ctx.out.paint(ui::Style::Dim, shown_path(ws, p->dir)) });
-        for (auto& n : p->nodes)
-            nodes.row({ n.ref(), ctx.out.paint(ui::Style::Dim, config::kind_name(n.kind)),
-                        n.path ? shown_path(ws, *n.path) : process::shown(n.run) });
+        for (auto& n : p->nodes) node_row(n);
     }
+    for (auto& n : ws.loose) node_row(n);
     for (auto& e : b.edges) edges.row({ e.from + " -> " + e.to, ctx.out.paint(ui::Style::Dim, e.source) });
 
     auto section = [&](const char* title, const ui::Table& t) {

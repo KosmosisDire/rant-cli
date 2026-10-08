@@ -1,6 +1,7 @@
-//! The walk that finds packages and group files: every directory under the workspace root
-//! that uses Rant, declares `package {}` or holds a Python node, and every `*.hcl` file
-//! whose first block is `group`, skipping gitignored paths and the workspace `ignore` globs.
+//! The walk that finds packages, group files and Python nodes: every directory under the
+//! workspace root that declares `package {}` or has a manifest that uses Rant, every `*.hcl`
+//! file whose first block is `group`, and every Python file that is a node, skipping
+//! gitignored paths and the workspace `ignore` globs.
 
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -25,6 +26,8 @@ pub struct Candidate {
 pub struct Found {
     pub packages: Vec<Candidate>,
     pub group_files: Vec<PathBuf>,
+    /// Python nodes anywhere, also those outside every package.
+    pub python_nodes: Vec<PathBuf>,
 }
 
 /// Globs where `*` stops at a slash and `**` crosses any number of directories.
@@ -79,17 +82,6 @@ fn is_group_file(path: &Path) -> bool {
     read.is_ok() && first_identifier(&String::from_utf8_lossy(&head)) == Some("group")
 }
 
-/// A folder of Python scripts with no manifest still uses Rant when one of its own files is
-/// a node, so the folder is a package. Its subfolders are judged on their own.
-fn holds_python_node(dir: &Path, cache: &mut Cache) -> bool {
-    let Ok(entries) = std::fs::read_dir(dir) else { return false };
-    entries.flatten().any(|e| {
-        let p = e.path();
-        p.extension().is_some_and(|x| x == "py")
-            && e.metadata().is_ok_and(|m| m.is_file() && cache.classify(&p, &m) == Some(NodeKind::Python))
-    })
-}
-
 pub fn walk(config: &WorkspaceConfig, cache: &mut Cache, diags: &mut Vec<Diag>) -> Found {
     let ignore = match glob_set(&config.ignore, &config.root.join(MANIFEST)) {
         Ok(g) => g,
@@ -119,13 +111,16 @@ pub fn walk(config: &WorkspaceConfig, cache: &mut Cache, diags: &mut Vec<Diag>) 
         })
         .build();
 
-    let mut found = Found { packages: Vec::new(), group_files: Vec::new() };
+    let mut found = Found { packages: Vec::new(), group_files: Vec::new(), python_nodes: Vec::new() };
     for entry in walker.flatten() {
         let path = entry.path();
         if entry.file_type().is_some_and(|t| t.is_file()) {
-            let hcl = path.extension().is_some_and(|e| e == "hcl");
-            if hcl && path.file_name().is_some_and(|n| n != MANIFEST) && is_group_file(path) {
+            let ext = path.extension().unwrap_or_default();
+            if ext == "hcl" && path.file_name().is_some_and(|n| n != MANIFEST) && is_group_file(path) {
                 found.group_files.push(path.to_path_buf());
+            }
+            if ext == "py" && entry.metadata().is_ok_and(|m| cache.classify(path, &m) == Some(NodeKind::Python)) {
+                found.python_nodes.push(path.to_path_buf());
             }
             continue;
         }
@@ -138,7 +133,7 @@ pub fn walk(config: &WorkspaceConfig, cache: &mut Cache, diags: &mut Vec<Diag>) 
             }
         };
         let manifests = manifest::in_dir(path);
-        if block.is_some() || manifests.iter().any(|m| m.uses_rant) || holds_python_node(path, cache) {
+        if block.is_some() || manifests.iter().any(|m| m.uses_rant) {
             found.packages.push(Candidate { dir: path.to_path_buf(), manifests, block });
         }
     }
