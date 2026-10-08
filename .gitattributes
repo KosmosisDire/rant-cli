@@ -1,0 +1,2 @@
+# The built in templates are compiled in, so what rant new writes is the same on every OS.
+config/templates/** text eol=lf
