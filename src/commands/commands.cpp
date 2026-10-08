@@ -18,6 +18,7 @@ const std::vector<app::Command>& all() {
         call(),
         setup(),
         lib(),
+        explore(),
     };
     return list;
 }

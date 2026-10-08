@@ -23,5 +23,6 @@ app::Command set();
 app::Command call();
 app::Command setup();
 app::Command lib();
+app::Command explore();
 
 }
