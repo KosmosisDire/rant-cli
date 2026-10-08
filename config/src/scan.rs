@@ -42,7 +42,8 @@ struct Entry {
     node: Option<NodeKind>,
 }
 
-const CACHE_VERSION: u32 = 1;
+/// Bumped whenever the rules for what is a node change, so old verdicts are dropped.
+const CACHE_VERSION: u32 = 2;
 
 impl Cache {
     pub fn load(path: &Path) -> Cache {
@@ -69,7 +70,7 @@ impl Cache {
         }
     }
 
-    fn classify(&mut self, path: &Path, meta: &std::fs::Metadata) -> Option<NodeKind> {
+    pub fn classify(&mut self, path: &Path, meta: &std::fs::Metadata) -> Option<NodeKind> {
         let key = path.to_string_lossy().into_owned();
         let modified = meta.modified().ok().and_then(|t| t.duration_since(UNIX_EPOCH).ok()).map(|d| d.as_nanos()).unwrap_or(0);
         if let Some(e) = self.files.get(&key) {
@@ -155,21 +156,24 @@ fn classify(path: &Path) -> Option<NodeKind> {
     let ext = path.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
     if ext == "py" {
         let text = std::fs::read_to_string(path).ok()?;
-        return python_node(&text).then_some(NodeKind::Python);
+        return python_node(path, &text).then_some(NodeKind::Python);
     }
     let bytes = std::fs::read(path).ok()?;
     native_node(&bytes).then_some(NodeKind::Native)
 }
 
-/// A Python file is a node when it can run as a program and imports rant itself.
-pub fn python_node(text: &str) -> bool {
+/// A Python file is a node when it imports rant itself and either runs as a program, with a
+/// main guard or a main function, or is named after its folder, as `camera/camera.py`.
+pub fn python_node(path: &Path, text: &str) -> bool {
     static MAIN: OnceLock<Regex> = OnceLock::new();
     static IMPORT: OnceLock<Regex> = OnceLock::new();
     let main = MAIN.get_or_init(|| {
         Regex::new(r#"(?m)^\s*if\s+__name__\s*==\s*['"]__main__['"]\s*:|^def\s+main\s*\("#).unwrap()
     });
     let import = IMPORT.get_or_init(|| Regex::new(r"(?m)^\s*(import\s+rant\b|from\s+rant(\.\w+)*\s+import\b)").unwrap());
-    main.is_match(text) && import.is_match(text)
+    let stem = path.file_stem();
+    let named_for_folder = stem.is_some() && path.parent().and_then(|d| d.file_name()) == stem;
+    import.is_match(text) && (named_for_folder || main.is_match(text))
 }
 
 /// The prefix every binary that links Rant carries. Assembled at run time, so the search
@@ -204,11 +208,19 @@ mod tests {
 
     #[test]
     fn python_needs_a_main_and_a_direct_import() {
-        assert!(python_node("import rant\n\nif __name__ == \"__main__\":\n    main()\n"));
-        assert!(python_node("from rant import Node\n\ndef main():\n    pass\n"));
-        assert!(!python_node("import rant\n"));
-        assert!(!python_node("import grant\nif __name__ == '__main__':\n  pass\n"));
-        assert!(!python_node("from helpers import node\nif __name__ == '__main__':\n  pass\n"));
+        let p = Path::new("pkg/tool.py");
+        assert!(python_node(p, "import rant\n\nif __name__ == \"__main__\":\n    main()\n"));
+        assert!(python_node(p, "from rant import Node\n\ndef main():\n    pass\n"));
+        assert!(!python_node(p, "import rant\n"));
+        assert!(!python_node(p, "import grant\nif __name__ == '__main__':\n  pass\n"));
+        assert!(!python_node(p, "from helpers import node\nif __name__ == '__main__':\n  pass\n"));
+    }
+
+    #[test]
+    fn python_named_for_its_folder_needs_only_the_import() {
+        assert!(python_node(Path::new("camera/camera.py"), "import rant\nnode = rant.Node()\n"));
+        assert!(!python_node(Path::new("camera/camera.py"), "import os\n"));
+        assert!(!python_node(Path::new("camera/helpers.py"), "import rant\n"));
     }
 
     #[test]
