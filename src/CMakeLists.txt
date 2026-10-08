@@ -9,11 +9,19 @@ add_library(rant_cli_core STATIC
   app/context.cpp
   app/run.cpp
   commands/commands.cpp
+  commands/info.cpp
   commands/init.cpp
+  commands/ls.cpp
+  commands/sub.cpp
   config/config.cpp
+  mesh/access.cpp
+  mesh/client.cpp
+  mesh/values.cpp
   ui/output.cpp
   ui/prompt.cpp
-  ui/terminal.cpp)
+  ui/terminal.cpp
+  util/interrupt.cpp
+  util/match.cpp)
 
 target_include_directories(rant_cli_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 target_compile_definitions(rant_cli_core PUBLIC RANT_CLI_VERSION="${PROJECT_VERSION}")
