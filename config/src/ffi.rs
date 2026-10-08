@@ -7,6 +7,7 @@ use std::ffi::{c_char, CStr, CString};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
+use crate::build_plan;
 use crate::diag::Diag;
 use crate::group::{self, GroupDef, Groups, Param};
 use crate::model::{Model, NodeType, Package};
@@ -559,5 +560,120 @@ pub unsafe extern "C" fn rant_config_plan_view(plan: *const RantConfigPlan) -> *
 pub unsafe extern "C" fn rant_config_plan_free(plan: *mut RantConfigPlan) {
     if !plan.is_null() {
         drop(Box::from_raw(plan));
+    }
+}
+
+/// One command as argv. argc 0 means no command.
+#[repr(C)]
+pub struct RantConfigCommand {
+    pub argv: *const *const c_char,
+    pub argc: usize,
+}
+
+/// One package's build: configure, when not empty, runs first and only after the user
+/// agrees, then the commands in order, all in dir.
+#[repr(C)]
+pub struct RantConfigBuildStep {
+    pub package: *const c_char,
+    pub dir: *const c_char,
+    pub configure: RantConfigCommand,
+    pub commands: *const RantConfigCommand,
+    pub command_count: usize,
+}
+
+/// `from` depends on `to`, found where `source` says.
+#[repr(C)]
+pub struct RantConfigEdge {
+    pub from: *const c_char,
+    pub to: *const c_char,
+    pub source: *const c_char,
+}
+
+/// A build plan in build order, and the dependencies between the packages it holds.
+#[repr(C)]
+pub struct RantConfigBuildView {
+    pub steps: *const RantConfigBuildStep,
+    pub step_count: usize,
+    pub edges: *const RantConfigEdge,
+    pub edge_count: usize,
+    pub diagnostics: *const RantConfigDiagnostic,
+    pub diagnostic_count: usize,
+}
+
+/// A build plan and everything its view points into.
+pub struct RantConfigBuild {
+    view: RantConfigBuildView,
+    #[allow(dead_code)]
+    store: Store,
+}
+
+impl Store {
+    fn command(&mut self, argv: &[String]) -> RantConfigCommand {
+        let (argv, argc) = self.strs(argv);
+        RantConfigCommand { argv, argc }
+    }
+}
+
+/// The build plan for the named packages and all they depend on, every package when
+/// count is 0. Never NULL: failures are in the view's diagnostics.
+///
+/// # Safety
+/// start_dir must be NULL or a NUL terminated UTF-8 string, and packages must point at
+/// count such strings.
+#[no_mangle]
+pub unsafe extern "C" fn rant_config_build(
+    start_dir: *const c_char,
+    packages: *const *const c_char,
+    count: usize,
+) -> *mut RantConfigBuild {
+    let start = arg_path(start_dir);
+    let wanted: Vec<String> = (0..count).map(|i| arg_str(*packages.add(i))).collect();
+    let loaded = load(&start, true);
+    let mut store = Store::default();
+    let mut diags = loaded.diags.clone();
+    let planned = match &loaded.model {
+        Some(m) if diags.is_empty() => build_plan::plan(m, &wanted).map_err(|d| diags.push(d)).ok(),
+        Some(_) => None,
+        None => {
+            diags.push(no_workspace());
+            None
+        }
+    };
+    let plan = planned.unwrap_or_default();
+    let steps: Vec<RantConfigBuildStep> = plan
+        .steps
+        .iter()
+        .map(|st| {
+            let configure = store.command(st.configure.as_deref().unwrap_or(&[]));
+            let commands: Vec<RantConfigCommand> = st.commands.iter().map(|c| store.command(c)).collect();
+            let (commands, command_count) = store.array(commands);
+            RantConfigBuildStep { package: store.str(&st.package), dir: store.path(&st.dir), configure, commands, command_count }
+        })
+        .collect();
+    let (steps, step_count) = store.array(steps);
+    let edges: Vec<RantConfigEdge> = plan
+        .edges
+        .iter()
+        .map(|e| RantConfigEdge { from: store.str(&e.from), to: store.str(&e.to), source: store.str(&e.source) })
+        .collect();
+    let (edges, edge_count) = store.array(edges);
+    let (diagnostics, diagnostic_count) = store.diags(&diags);
+    let view = RantConfigBuildView { steps, step_count, edges, edge_count, diagnostics, diagnostic_count };
+    Box::into_raw(Box::new(RantConfigBuild { view, store }))
+}
+
+/// # Safety
+/// `build` must be a live handle from rant_config_build.
+#[no_mangle]
+pub unsafe extern "C" fn rant_config_build_view(build: *const RantConfigBuild) -> *const RantConfigBuildView {
+    &(*build).view
+}
+
+/// # Safety
+/// `build` must be NULL or a live handle, and is invalid afterwards.
+#[no_mangle]
+pub unsafe extern "C" fn rant_config_build_free(build: *mut RantConfigBuild) {
+    if !build.is_null() {
+        drop(Box::from_raw(build));
     }
 }

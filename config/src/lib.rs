@@ -3,6 +3,7 @@
 //! the C ABI in `ffi`.
 
 mod argv;
+mod build_plan;
 mod diag;
 mod discover;
 mod eval;
