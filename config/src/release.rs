@@ -25,12 +25,16 @@ impl Release {
 }
 
 fn agent() -> ureq::Agent {
-    ureq::Agent::config_builder()
+    let config = ureq::Agent::config_builder()
         .timeout_global(Some(Duration::from_secs(120)))
         .http_status_as_error(false)
         .user_agent("rant-cli")
-        .build()
-        .into()
+        .build();
+    // the static Linux binary must not resolve names through glibc, see dns.rs
+    #[cfg(target_os = "linux")]
+    return ureq::Agent::with_parts(config, ureq::unversioned::transport::DefaultConnector::new(), crate::dns::OwnResolver);
+    #[cfg(not(target_os = "linux"))]
+    config.into()
 }
 
 fn get(url: &str, api: bool) -> Result<ureq::http::Response<ureq::Body>, String> {
