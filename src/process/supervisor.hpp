@@ -25,6 +25,9 @@ struct Tracking {
  * Throws app::Failure when it cannot start. */
 Tracking start_detached(const Command& c, const fs::path& log, const std::string& job);
 
+/* This executable's own path. */
+fs::path self_path();
+
 /* Some process of the tracked group or job still runs. */
 bool alive(const Tracking& t);
 

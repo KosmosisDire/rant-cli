@@ -17,12 +17,26 @@
 
 #ifdef __APPLE__
 #include <libproc.h>
+#include <mach-o/dyld.h>
 #endif
 
 #include "app/failure.hpp"
 #include "process/supervisor.hpp"
 
 namespace process {
+
+fs::path self_path() {
+#ifdef __APPLE__
+    uint32_t size = 0;
+    _NSGetExecutablePath(nullptr, &size);
+    std::string buf(size, '\0');
+    if (_NSGetExecutablePath(buf.data(), &size) == 0) return fs::weakly_canonical(fs::path(buf.c_str()));
+    return {};
+#else
+    std::error_code ec;
+    return fs::read_symlink("/proc/self/exe", ec);
+#endif
+}
 
 /* Everything exec needs, built before fork: the child may only make async signal safe
  * calls, since other threads (the Rant node's) hold locks at the moment of the fork. */

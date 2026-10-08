@@ -241,17 +241,24 @@ static std::vector<DWORD> job_pids(HANDLE job) {
 
 static const wchar_t* HELPER_FLAG = L"--rant-ctrl-break";
 
+fs::path self_path() {
+    std::wstring buf(MAX_PATH, L'\0');
+    for (;;) {    /* a path longer than the buffer comes back cut, so grow until it fits */
+        DWORD n = GetModuleFileNameW(nullptr, buf.data(), (DWORD)buf.size());
+        if (n < buf.size()) return fs::path(buf.substr(0, n));
+        buf.resize(buf.size() * 2);
+    }
+}
+
 /* Runs this executable as the Ctrl-Break helper, with no console of its own, and waits.
  * True when the event went out. */
 static bool send_ctrl_break(uint64_t group, uint64_t attach) {
-    wchar_t self[MAX_PATH];
-    DWORD n = GetModuleFileNameW(nullptr, self, MAX_PATH);
-    std::wstring cmd = L"\"" + std::wstring(self, n) + L"\" " + HELPER_FLAG + L" " + std::to_wstring(group) + L" " +
-                       std::to_wstring(attach);
+    std::wstring self = self_path().wstring();
+    std::wstring cmd = L"\"" + self + L"\" " + HELPER_FLAG + L" " + std::to_wstring(group) + L" " + std::to_wstring(attach);
     STARTUPINFOW si{};
     si.cb = sizeof si;
     PROCESS_INFORMATION pi{};
-    if (!CreateProcessW(self, cmd.data(), nullptr, nullptr, FALSE, DETACHED_PROCESS, nullptr, nullptr, &si, &pi))
+    if (!CreateProcessW(self.c_str(), cmd.data(), nullptr, nullptr, FALSE, DETACHED_PROCESS, nullptr, nullptr, &si, &pi))
         return false;
     DWORD code = 1;
     if (WaitForSingleObject(pi.hProcess, 3000) == WAIT_OBJECT_0) GetExitCodeProcess(pi.hProcess, &code);
