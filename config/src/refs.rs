@@ -22,6 +22,7 @@ fn is_path(r: &str) -> bool {
 }
 
 pub fn resolve(model: &Model, reference: &str, from_dir: &Path) -> Result<NodeType, String> {
+    let reference = reference.trim(); // a space at either end never means anything
     if reference.is_empty() {
         return Err("empty node type".into());
     }

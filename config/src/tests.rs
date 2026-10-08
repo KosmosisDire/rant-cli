@@ -79,6 +79,7 @@ fn references_in_every_form() {
     let m = load(&t);
     assert_eq!(refs::resolve(&m, "inner/tool", t.root()).unwrap().name, "tool");
     assert_eq!(refs::resolve(&m, "inner_node", t.root()).unwrap().package, "inner");
+    assert_eq!(refs::resolve(&m, " inner_node ", t.root()).unwrap().package, "inner");
     assert_eq!(refs::resolve(&m, "./py/sub:tool", t.root()).unwrap().package, "inner");
     let by_path = refs::resolve(&m, "./detector.py", &t.path("py")).unwrap();
     assert_eq!(by_path.package, "detector");
