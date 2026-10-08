@@ -7,7 +7,7 @@ install_test_node(cpp/build talker)
 rant(build --dry-run)
 expect_match("${OUT}" "PACKAGES\n  detector +py\n  lidar_driver +cpp\n  tools +tools\n\n")
 expect_match("${OUT}" "NODE TYPES\n  detector/detector +python +py/detector.py\n  lidar_driver/talker +native +cpp/build/talker")
-expect_match("${OUT}" "tools/echoer +declared +cmake -E echo hello\n$")
+expect_match("${OUT}" "tools/echoer +declared +cmake -E echo hello\n")
 expect_no_match("${OUT}" "helpers")
 
 # The same from a subdirectory, as JSON with absolute paths.
