@@ -17,6 +17,7 @@ endfunction()
 
 e2e_test(init)
 e2e_test(mesh_read)
+e2e_test(mesh_write)
 e2e_test(discovery)
 e2e_test(single_node)
 e2e_test(groups)
