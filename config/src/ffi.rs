@@ -240,7 +240,7 @@ fn kind(k: NodeKind) -> RantConfigNodeKind {
 
 /// # Safety
 /// `s` must be NULL or a NUL terminated string.
-unsafe fn arg_str(s: *const c_char) -> String {
+pub(crate) unsafe fn arg_str(s: *const c_char) -> String {
     if s.is_null() {
         return String::new();
     }
@@ -249,7 +249,7 @@ unsafe fn arg_str(s: *const c_char) -> String {
 
 /// # Safety
 /// `s` must be NULL or a NUL terminated string.
-unsafe fn arg_path(s: *const c_char) -> PathBuf {
+pub(crate) unsafe fn arg_path(s: *const c_char) -> PathBuf {
     if s.is_null() {
         return PathBuf::from(".");
     }

@@ -1,7 +1,7 @@
-// Writes the C header for src/ffi.rs to the path in RANT_CONFIG_HEADER, which the CMake
-// build sets. A plain cargo build or test leaves it unset and skips the header.
+// Writes the C header for the C ABI in src/ffi*.rs to the path in RANT_CONFIG_HEADER,
+// which the CMake build sets. A plain cargo build or test leaves it unset and skips it.
 fn main() {
-    println!("cargo:rerun-if-changed=src/ffi.rs");
+    println!("cargo:rerun-if-changed=src");
     println!("cargo:rerun-if-changed=cbindgen.toml");
     println!("cargo:rerun-if-env-changed=RANT_CONFIG_HEADER");
     let Ok(out) = std::env::var("RANT_CONFIG_HEADER") else {

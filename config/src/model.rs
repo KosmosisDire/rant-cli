@@ -239,17 +239,8 @@ pub fn python(block: Option<&PackageBlock>, source_dir: &Path, root: &Path) -> V
     if let Some(p) = block.and_then(|b| b.python.as_ref()) {
         return vec![slash(p)];
     }
-    for dir in source_dir.ancestors() {
-        for venv in [".venv", "venv"] {
-            let v = dir.join(venv);
-            if v.join("pyvenv.cfg").is_file() {
-                let exe = if cfg!(windows) { v.join("Scripts").join("python.exe") } else { v.join("bin").join("python") };
-                return vec![slash(&exe)];
-            }
-        }
-        if paths::same(dir, root) {
-            break;
-        }
+    if let Some(v) = nearest_venv(source_dir, Some(root)) {
+        return vec![slash(&venv_python(&v))];
     }
     if cfg!(windows) {
         match python_on_path() {
@@ -258,6 +249,31 @@ pub fn python(block: Option<&PackageBlock>, source_dir: &Path, root: &Path) -> V
         }
     } else {
         vec!["python3".into()]
+    }
+}
+
+/// The nearest `.venv` or `venv` holding a pyvenv.cfg, from dir up to root, or to the top
+/// of the filesystem without one.
+pub fn nearest_venv(dir: &Path, root: Option<&Path>) -> Option<PathBuf> {
+    for d in dir.ancestors() {
+        for name in [".venv", "venv"] {
+            let v = d.join(name);
+            if v.join("pyvenv.cfg").is_file() {
+                return Some(v);
+            }
+        }
+        if root.is_some_and(|r| paths::same(d, r)) {
+            break;
+        }
+    }
+    None
+}
+
+pub fn venv_python(venv: &Path) -> PathBuf {
+    if cfg!(windows) {
+        venv.join("Scripts").join("python.exe")
+    } else {
+        venv.join("bin").join("python")
     }
 }
 

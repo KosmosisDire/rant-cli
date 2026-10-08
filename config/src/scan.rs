@@ -167,15 +167,19 @@ fn classify(path: &Path) -> Option<NodeKind> {
 /// `camera/camera.py`, or `main.py`.
 pub fn python_node(path: &Path, text: &str) -> bool {
     static MAIN: OnceLock<Regex> = OnceLock::new();
-    static IMPORT: OnceLock<Regex> = OnceLock::new();
     let main = MAIN.get_or_init(|| {
         Regex::new(r#"(?m)^\s*if\s+__name__\s*==\s*['"]__main__['"]\s*:|^def\s+main\s*\("#).unwrap()
     });
-    let import = IMPORT.get_or_init(|| Regex::new(r"(?m)^\s*(import\s+rant\b|from\s+rant(\.\w+)*\s+import\b)").unwrap());
     let stem = path.file_stem();
     let folder_script = stem.is_some_and(|s| s == "main" || s == "__main__")
         || (stem.is_some() && path.parent().and_then(|d| d.file_name()) == stem);
-    import.is_match(text) && (folder_script || main.is_match(text))
+    imports_rant(text) && (folder_script || main.is_match(text))
+}
+
+/// Python source that imports rant itself, as `import rant` or `from rant import`.
+pub fn imports_rant(text: &str) -> bool {
+    static IMPORT: OnceLock<Regex> = OnceLock::new();
+    IMPORT.get_or_init(|| Regex::new(r"(?m)^\s*(import\s+rant\b|from\s+rant(\.\w+)*\s+import\b)").unwrap()).is_match(text)
 }
 
 /// The prefix every binary that links Rant carries. Assembled at run time, so the search
