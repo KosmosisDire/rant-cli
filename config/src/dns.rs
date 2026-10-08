@@ -155,8 +155,8 @@ mod tests {
 
     #[test]
     fn hosts_and_resolv_conf_are_read() {
-        let hosts = "127.0.0.1 localhost\n# 10.0.0.1 nope\n10.0.0.2 karbon.lan karbon # lab\n";
-        assert_eq!(in_hosts(hosts, "KARBON"), vec!["10.0.0.2".parse::<IpAddr>().unwrap()]);
+        let hosts = "127.0.0.1 localhost\n# 10.0.0.1 nope\n10.0.0.2 robot.lan robot # lab\n";
+        assert_eq!(in_hosts(hosts, "ROBOT"), vec!["10.0.0.2".parse::<IpAddr>().unwrap()]);
         assert!(in_hosts(hosts, "nope").is_empty());
         let conf = "search lan\nnameserver 127.0.0.53\nnameserver fe80::1%eth0\noptions edns0\n";
         assert_eq!(nameservers(conf), vec!["127.0.0.53".parse::<IpAddr>().unwrap(), "fe80::1".parse().unwrap()]);
