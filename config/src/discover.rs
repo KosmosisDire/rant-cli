@@ -1,6 +1,6 @@
 //! The walk that finds packages and group files: every directory under the workspace root
-//! that uses Rant or declares `package {}`, and every `*.hcl` file whose first block is
-//! `group`, skipping gitignored paths and the workspace `ignore` globs.
+//! that uses Rant, declares `package {}` or holds a Python node, and every `*.hcl` file
+//! whose first block is `group`, skipping gitignored paths and the workspace `ignore` globs.
 
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -11,7 +11,7 @@ use crate::diag::Diag;
 use crate::manifest::{self, Manifest};
 use crate::package::{self, PackageBlock};
 use crate::paths;
-use crate::scan::skipped_dir;
+use crate::scan::{skipped_dir, Cache, NodeKind};
 use crate::workspace::{WorkspaceConfig, MANIFEST};
 
 /// A directory that is a package, before it is named and scanned.
@@ -79,7 +79,18 @@ fn is_group_file(path: &Path) -> bool {
     read.is_ok() && first_identifier(&String::from_utf8_lossy(&head)) == Some("group")
 }
 
-pub fn walk(config: &WorkspaceConfig, diags: &mut Vec<Diag>) -> Found {
+/// A folder of Python scripts with no manifest still uses Rant when one of its own files is
+/// a node, so the folder is a package. Its subfolders are judged on their own.
+fn holds_python_node(dir: &Path, cache: &mut Cache) -> bool {
+    let Ok(entries) = std::fs::read_dir(dir) else { return false };
+    entries.flatten().any(|e| {
+        let p = e.path();
+        p.extension().is_some_and(|x| x == "py")
+            && e.metadata().is_ok_and(|m| m.is_file() && cache.classify(&p, &m) == Some(NodeKind::Python))
+    })
+}
+
+pub fn walk(config: &WorkspaceConfig, cache: &mut Cache, diags: &mut Vec<Diag>) -> Found {
     let ignore = match glob_set(&config.ignore, &config.root.join(MANIFEST)) {
         Ok(g) => g,
         Err(d) => {
@@ -127,7 +138,7 @@ pub fn walk(config: &WorkspaceConfig, diags: &mut Vec<Diag>) -> Found {
             }
         };
         let manifests = manifest::in_dir(path);
-        if block.is_some() || manifests.iter().any(|m| m.uses_rant) {
+        if block.is_some() || manifests.iter().any(|m| m.uses_rant) || holds_python_node(path, cache) {
             found.packages.push(Candidate { dir: path.to_path_buf(), manifests, block });
         }
     }

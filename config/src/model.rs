@@ -50,14 +50,14 @@ pub fn cache_dir(root: &Path) -> PathBuf {
 impl Model {
     pub fn load(config: WorkspaceConfig) -> (Model, Vec<Diag>) {
         let mut diags = Vec::new();
-        let found = discover::walk(&config, &mut diags);
+        let cache_path = cache_dir(&config.root).join("scan.json");
+        let mut cache = Cache::load(&cache_path);
+        let found = discover::walk(&config, &mut cache, &mut diags);
         let mut candidates = found.packages;
         candidates.sort_by(|a, b| a.dir.cmp(&b.dir));
         let mut packages = name_packages(candidates, &mut diags);
         let groups = group::name_files(found.group_files, &packages, &mut diags);
 
-        let cache_path = cache_dir(&config.root).join("scan.json");
-        let mut cache = Cache::load(&cache_path);
         let dirs: Vec<PathBuf> = packages.iter().map(|p| p.dir.clone()).collect();
         for pkg in &mut packages {
             let nested: Vec<PathBuf> =
@@ -114,13 +114,25 @@ fn name_packages(candidates: Vec<Candidate>, diags: &mut Vec<Diag>) -> Vec<Packa
     out
 }
 
+/// A node type is named after its file, except a Python `main.py` or `__main__.py`, which
+/// is named after its folder, so `pick/main.py` is the node type `pick`.
+fn node_name(f: &scan::Found) -> String {
+    let stem = f.path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    if f.kind == NodeKind::Python && (stem == "main" || stem == "__main__") {
+        if let Some(dir) = f.path.parent().and_then(|d| d.file_name()) {
+            return dir.to_string_lossy().into_owned();
+        }
+    }
+    stem
+}
+
 /// One node type per name: the newest artifact wins and the rest are kept as shadowed.
 /// A declared node replaces a found one of the same name.
 fn node_types(pkg: &Package, mut found: Vec<scan::Found>, root: &Path) -> Vec<NodeType> {
     found.sort_by(|a, b| b.modified.cmp(&a.modified));
     let mut by_name: BTreeMap<String, NodeType> = BTreeMap::new();
     for f in found {
-        let name = f.path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+        let name = node_name(&f);
         if let Some(existing) = by_name.get_mut(&name) {
             existing.shadowed.push(f.path);
             continue;

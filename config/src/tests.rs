@@ -121,3 +121,21 @@ fn the_scan_cache_is_written_and_reused() {
     load(&t);
     assert_eq!(std::fs::metadata(&cache).unwrap().modified().unwrap(), before, "an unchanged tree rewrites nothing");
 }
+
+#[test]
+fn python_folders_are_packages_without_a_manifest() {
+    let t = TestDir::new();
+    t.write("rant.hcl", "workspace {}\n");
+    t.write("Services/pick/main.py", "import rant\n\ndef main():\n    pass\n");
+    t.write("Services/pick/schemas.py", "import rant\n");
+    t.write("IO/ft/ft.py", "import rant\nnode = rant.Node()\n");
+    t.write("IO/lector/lector.py", "import serial\n");
+    let m = load(&t);
+    let mut names: Vec<&str> = m.packages.iter().map(|p| p.name.as_str()).collect();
+    names.sort();
+    assert_eq!(names, ["ft", "pick"]);
+    let pick = &m.package("pick").unwrap().nodes;
+    assert_eq!(pick.len(), 1, "{pick:?}");
+    assert_eq!(pick[0].name, "pick", "main.py takes its folder's name");
+    assert_eq!(m.package("ft").unwrap().nodes[0].name, "ft");
+}
