@@ -20,6 +20,7 @@ mod plan;
 mod refs;
 mod release;
 mod scan;
+mod template;
 mod source;
 mod workspace;
 

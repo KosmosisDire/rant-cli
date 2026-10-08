@@ -10,8 +10,8 @@ use std::rc::Rc;
 use crate::build_plan;
 use crate::diag::Diag;
 use crate::group::{GroupDef, Groups};
-use crate::param::{self, Param};
 use crate::model::{Model, NodeType, Package};
+use crate::param::{self, Param};
 use crate::paths;
 use crate::plan::{self, Plan};
 use crate::scan::NodeKind;
@@ -180,6 +180,25 @@ impl Store {
                 line: d.line,
                 column: d.column,
                 message: self.str(&d.message),
+            })
+            .collect();
+        self.array(v)
+    }
+
+    pub fn params(&mut self, params: &[Param]) -> (*const RantConfigParam, usize) {
+        let v: Vec<RantConfigParam> = params
+            .iter()
+            .map(|p| {
+                let opts: Vec<String> = p.options.iter().map(param::text).collect();
+                let (options, option_count) = self.strs(&opts);
+                RantConfigParam {
+                    name: self.str(&p.name),
+                    type_name: self.str(p.ty.name()),
+                    default_value: p.default.as_ref().map(|d| self.str(&param::text(d))).unwrap_or(std::ptr::null()),
+                    options,
+                    option_count,
+                    description: p.description.as_deref().map(|d| self.str(d)).unwrap_or(std::ptr::null()),
+                }
             })
             .collect();
         self.array(v)
@@ -462,7 +481,7 @@ pub unsafe extern "C" fn rant_config_plan_group(
     plan_handle(&loaded, planned)
 }
 
-/// One param of a group's interface. default_value is NULL for a required param.
+/// One param of a group or template. default_value is NULL for a required param.
 #[repr(C)]
 pub struct RantConfigParam {
     pub name: *const c_char,
@@ -524,22 +543,7 @@ pub unsafe extern "C" fn rant_config_group(start_dir: *const c_char, group: *con
             view.name = store.str(&def.file.name);
             view.file = store.path(&def.file.path);
             view.description = def.description.as_deref().map(|d| store.str(d)).unwrap_or(std::ptr::null());
-            let params: Vec<RantConfigParam> = iface
-                .iter()
-                .map(|p| {
-                    let opts: Vec<String> = p.options.iter().map(param::text).collect();
-                    let (options, option_count) = store.strs(&opts);
-                    RantConfigParam {
-                        name: store.str(&p.name),
-                        type_name: store.str(p.ty.name()),
-                        default_value: p.default.as_ref().map(|d| store.str(&param::text(d))).unwrap_or(std::ptr::null()),
-                        options,
-                        option_count,
-                        description: p.description.as_deref().map(|d| store.str(d)).unwrap_or(std::ptr::null()),
-                    }
-                })
-                .collect();
-            (view.params, view.param_count) = store.array(params);
+            (view.params, view.param_count) = store.params(&iface);
         }
         Ok(_) => {}
         Err(d) => diags.push(d),

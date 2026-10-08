@@ -15,6 +15,7 @@ hcl-edit = "0.9"
 hcl-rs = "0.19"
 ignore = "0.4.33"
 memchr = "2.8.3"
+minijinja = "2"
 regex = "1.13.1"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"

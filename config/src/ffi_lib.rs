@@ -1,14 +1,15 @@
-//! The C ABI for adding and updating the Rant library in packages, and for the GitHub
-//! releases and downloads that `rant lib` and `rant explore` need. Same rules as `ffi`:
-//! every handle owns what its view points into.
+//! The C ABI for adding and updating the Rant library in packages, the GitHub releases and
+//! downloads that `rant lib` and `rant explore` need, and the templates of `rant new`. Same
+//! rules as `ffi`: every handle owns what its view points into.
 
 use std::ffi::c_char;
 use std::path::{Path, PathBuf};
 
-use crate::ffi::{arg_path, arg_str, Store};
+use crate::ffi::{arg_path, arg_str, RantConfigDiagnostic, RantConfigParam, Store};
 use crate::lib_use::{self, How, Kind};
 use crate::model::{python, venv_python};
 use crate::release;
+use crate::template::{self, Origin};
 use crate::workspace;
 
 #[repr(C)]
@@ -259,5 +260,126 @@ pub unsafe extern "C" fn rant_config_outcome_view(o: *const RantConfigOutcome) -
 pub unsafe extern "C" fn rant_config_outcome_free(o: *mut RantConfigOutcome) {
     if !o.is_null() {
         drop(Box::from_raw(o));
+    }
+}
+
+/// A template, compiled in by name or a folder, and the params it takes. Never NULL:
+/// failures are in the view's diagnostics.
+#[repr(C)]
+pub struct RantConfigTemplateView {
+    pub description: *const c_char,
+    pub params: *const RantConfigParam,
+    pub param_count: usize,
+    pub diagnostics: *const RantConfigDiagnostic,
+    pub diagnostic_count: usize,
+}
+
+pub struct RantConfigTemplate {
+    view: RantConfigTemplateView,
+    #[allow(dead_code)]
+    store: Store,
+}
+
+/// What a template made: every file written, and the next steps it suggests or NULL.
+#[repr(C)]
+pub struct RantConfigMadeView {
+    pub files: *const *const c_char,
+    pub file_count: usize,
+    pub next: *const c_char,
+    pub diagnostics: *const RantConfigDiagnostic,
+    pub diagnostic_count: usize,
+}
+
+pub struct RantConfigMade {
+    view: RantConfigMadeView,
+    #[allow(dead_code)]
+    store: Store,
+}
+
+/// builtin names a compiled in template, else dir is the template's folder.
+unsafe fn origin(builtin: *const c_char, dir: *const c_char) -> Origin {
+    if builtin.is_null() {
+        Origin::Dir(arg_path(dir))
+    } else {
+        Origin::Builtin(arg_str(builtin))
+    }
+}
+
+/// # Safety
+/// `builtin` and `dir` must each be NULL or a NUL terminated UTF-8 string.
+#[no_mangle]
+pub unsafe extern "C" fn rant_config_template(builtin: *const c_char, dir: *const c_char) -> *mut RantConfigTemplate {
+    let mut store = Store::default();
+    let (description, params, diags) = match template::load(&origin(builtin, dir)) {
+        Ok(t) => {
+            let d = t.description.as_deref().map(|d| store.str(d)).unwrap_or(std::ptr::null());
+            (d, store.params(&t.params), Vec::new())
+        }
+        Err(d) => (std::ptr::null(), (std::ptr::null(), 0), vec![d]),
+    };
+    let (diagnostics, diagnostic_count) = store.diags(&diags);
+    let view = RantConfigTemplateView { description, params: params.0, param_count: params.1, diagnostics, diagnostic_count };
+    Box::into_raw(Box::new(RantConfigTemplate { view, store }))
+}
+
+/// # Safety
+/// `t` must be a live handle from rant_config_template.
+#[no_mangle]
+pub unsafe extern "C" fn rant_config_template_view(t: *const RantConfigTemplate) -> *const RantConfigTemplateView {
+    &(*t).view
+}
+
+/// # Safety
+/// `t` must be NULL or a live handle, and is invalid afterwards.
+#[no_mangle]
+pub unsafe extern "C" fn rant_config_template_free(t: *mut RantConfigTemplate) {
+    if !t.is_null() {
+        drop(Box::from_raw(t));
+    }
+}
+
+/// Makes name from a template in dest with `key=value` params. Writes nothing when any
+/// file would be overwritten.
+///
+/// # Safety
+/// `builtin` and `dir` must each be NULL or a NUL terminated UTF-8 string, `dest` and
+/// `name` such strings, and `params` an array of count of them.
+#[no_mangle]
+pub unsafe extern "C" fn rant_config_make(
+    builtin: *const c_char,
+    dir: *const c_char,
+    dest: *const c_char,
+    name: *const c_char,
+    params: *const *const c_char,
+    count: usize,
+) -> *mut RantConfigMade {
+    let raw: Vec<String> = (0..count).map(|i| arg_str(*params.add(i))).collect();
+    let mut store = Store::default();
+    let (files, next, diags) = match template::make(&origin(builtin, dir), &arg_path(dest), &arg_str(name), &raw) {
+        Ok(made) => {
+            let paths: Vec<String> = made.files.iter().map(|p| crate::eval::slash(p)).collect();
+            let next = made.next.as_deref().map(|n| store.str(n)).unwrap_or(std::ptr::null());
+            (store.strs(&paths), next, Vec::new())
+        }
+        Err(d) => ((std::ptr::null(), 0), std::ptr::null(), vec![d]),
+    };
+    let (diagnostics, diagnostic_count) = store.diags(&diags);
+    let view = RantConfigMadeView { files: files.0, file_count: files.1, next, diagnostics, diagnostic_count };
+    Box::into_raw(Box::new(RantConfigMade { view, store }))
+}
+
+/// # Safety
+/// `m` must be a live handle from rant_config_make.
+#[no_mangle]
+pub unsafe extern "C" fn rant_config_made_view(m: *const RantConfigMade) -> *const RantConfigMadeView {
+    &(*m).view
+}
+
+/// # Safety
+/// `m` must be NULL or a live handle, and is invalid afterwards.
+#[no_mangle]
+pub unsafe extern "C" fn rant_config_made_free(m: *mut RantConfigMade) {
+    if !m.is_null() {
+        drop(Box::from_raw(m));
     }
 }
