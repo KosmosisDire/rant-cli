@@ -718,3 +718,66 @@ pub unsafe extern "C" fn rant_config_build_free(build: *mut RantConfigBuild) {
         drop(Box::from_raw(build));
     }
 }
+
+/// The Python a folder runs with, by the interpreter rule node types follow.
+#[repr(C)]
+pub struct RantConfigPythonView {
+    /// The nearest venv up to the workspace root, NULL when there is none.
+    pub venv: *const c_char,
+    /// The venv's own python, NULL without a venv.
+    pub venv_python: *const c_char,
+    /// What a node there runs with: the venv's python, else the system's.
+    pub interpreter: *const *const c_char,
+    pub interpreter_count: usize,
+    /// One of the folder's own Python files imports rant.
+    pub imports_rant: bool,
+    /// The enclosing workspace's root, NULL outside one.
+    pub root: *const c_char,
+}
+
+pub struct RantConfigPython {
+    view: RantConfigPythonView,
+    #[allow(dead_code)]
+    store: Store,
+}
+
+/// # Safety
+/// `dir` must be NULL or a NUL terminated UTF-8 string.
+#[no_mangle]
+pub unsafe extern "C" fn rant_config_python(dir: *const c_char) -> *mut RantConfigPython {
+    let dir = arg_path(dir);
+    let root = workspace::open(&dir).ok().flatten().map(|c| c.root);
+    let top = root.clone().unwrap_or_else(|| dir.ancestors().last().unwrap_or(&dir).to_path_buf());
+    let venv = crate::model::nearest_venv(&dir, Some(&top));
+    let imports_rant = std::fs::read_dir(&dir).into_iter().flatten().flatten().any(|e| {
+        let p = e.path();
+        p.extension().is_some_and(|x| x == "py") && std::fs::read_to_string(&p).is_ok_and(|t| crate::scan::imports_rant(&t))
+    });
+    let mut store = Store::default();
+    let (interpreter, interpreter_count) = store.strs(&crate::model::python(None, &dir, &top));
+    let view = RantConfigPythonView {
+        venv: venv.as_deref().map(|v| store.path(v)).unwrap_or(std::ptr::null()),
+        venv_python: venv.as_deref().map(|v| store.path(&crate::model::venv_python(v))).unwrap_or(std::ptr::null()),
+        interpreter,
+        interpreter_count,
+        imports_rant,
+        root: root.as_deref().map(|r| store.path(r)).unwrap_or(std::ptr::null()),
+    };
+    Box::into_raw(Box::new(RantConfigPython { view, store }))
+}
+
+/// # Safety
+/// `p` must be a live handle from rant_config_python.
+#[no_mangle]
+pub unsafe extern "C" fn rant_config_python_view(p: *const RantConfigPython) -> *const RantConfigPythonView {
+    &(*p).view
+}
+
+/// # Safety
+/// `p` must be NULL or a live handle, and is invalid afterwards.
+#[no_mangle]
+pub unsafe extern "C" fn rant_config_python_free(p: *mut RantConfigPython) {
+    if !p.is_null() {
+        drop(Box::from_raw(p));
+    }
+}

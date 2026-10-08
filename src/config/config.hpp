@@ -157,6 +157,17 @@ struct Build {
 /* The build of the named packages and all they depend on, every package when none. */
 Build plan_build(const fs::path& start, const std::vector<std::string>& packages);
 
+/* The Python a folder runs with, by the interpreter rule node types follow. */
+struct PythonInfo {
+    std::optional<fs::path>  venv;           /* the nearest, up to the workspace root */
+    fs::path                 venv_python;
+    std::vector<std::string> interpreter;    /* the venv's python, else the system's */
+    bool                     imports_rant = false;    /* one of the folder's own files does */
+    std::optional<fs::path>  root;           /* the enclosing workspace's */
+};
+
+PythonInfo python_of(const fs::path& dir);
+
 /* Finds the enclosing workspace. With packages it also discovers every package and scans
  * it for node types, which reads the tree and is slower. */
 Opened open(const fs::path& start, bool packages = false);

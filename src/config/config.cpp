@@ -185,6 +185,19 @@ Build plan_build(const fs::path& start, const std::vector<std::string>& packages
     return out;
 }
 
+PythonInfo python_of(const fs::path& dir) {
+    std::unique_ptr<RantConfigPython, decltype(&rant_config_python_free)> h(rant_config_python(to_utf8(dir).c_str()),
+                                                                           &rant_config_python_free);
+    const RantConfigPythonView* v = rant_config_python_view(h.get());
+    PythonInfo out;
+    if (v->venv) out.venv = from_utf8(v->venv);
+    out.venv_python = from_utf8(str(v->venv_python));
+    out.interpreter = strs(v->interpreter, v->interpreter_count);
+    out.imports_rant = v->imports_rant;
+    if (v->root) out.root = from_utf8(v->root);
+    return out;
+}
+
 Opened open(const fs::path& start, bool packages) {
     return read(Handle(rant_config_open(to_utf8(start).c_str(), packages ? RANT_CONFIG_PACKAGES : 0), &rant_config_free));
 }
