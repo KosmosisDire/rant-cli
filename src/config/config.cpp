@@ -124,6 +124,27 @@ GroupInfo describe_group(const fs::path& start, const std::string& group) {
     return out;
 }
 
+static std::vector<std::string> command(const RantConfigCommand& c) { return strs(c.argv, c.argc); }
+
+Build plan_build(const fs::path& start, const std::vector<std::string>& packages) {
+    std::vector<const char*> raw;
+    for (auto& p : packages) raw.push_back(p.c_str());
+    std::unique_ptr<RantConfigBuild, decltype(&rant_config_build_free)> h(
+        rant_config_build(to_utf8(start).c_str(), raw.data(), raw.size()), &rant_config_build_free);
+    const RantConfigBuildView* v = rant_config_build_view(h.get());
+    Build out;
+    out.diagnostics = diagnostics(v->diagnostics, v->diagnostic_count);
+    for (size_t i = 0; i < v->step_count; i++) {
+        const RantConfigBuildStep& s = v->steps[i];
+        BuildStep step{ str(s.package), from_utf8(str(s.dir)), command(s.configure), {} };
+        for (size_t j = 0; j < s.command_count; j++) step.commands.push_back(command(s.commands[j]));
+        out.steps.push_back(std::move(step));
+    }
+    for (size_t i = 0; i < v->edge_count; i++)
+        out.edges.push_back({ str(v->edges[i].from), str(v->edges[i].to), str(v->edges[i].source) });
+    return out;
+}
+
 Opened open(const fs::path& start, bool packages) {
     return read(Handle(rant_config_open(to_utf8(start).c_str(), packages ? RANT_CONFIG_PACKAGES : 0), &rant_config_free));
 }

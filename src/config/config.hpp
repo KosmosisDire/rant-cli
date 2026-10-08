@@ -106,6 +106,31 @@ struct GroupInfo {
 
 GroupInfo describe_group(const fs::path& start, const std::string& group);
 
+/* One package's build. configure, when not empty, runs first once the user agrees. */
+struct BuildStep {
+    std::string                           package;
+    fs::path                              dir;
+    std::vector<std::string>              configure;
+    std::vector<std::vector<std::string>> commands;
+};
+
+/* `from` depends on `to`, found where `source` says. */
+struct Edge {
+    std::string from;
+    std::string to;
+    std::string source;
+};
+
+/* What a build runs, in order, and why that order. */
+struct Build {
+    std::vector<BuildStep>  steps;
+    std::vector<Edge>       edges;
+    std::vector<Diagnostic> diagnostics;
+};
+
+/* The build of the named packages and all they depend on, every package when none. */
+Build plan_build(const fs::path& start, const std::vector<std::string>& packages);
+
 /* Finds the enclosing workspace. With packages it also discovers every package and scans
  * it for node types, which reads the tree and is slower. */
 Opened open(const fs::path& start, bool packages = false);
