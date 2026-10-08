@@ -25,12 +25,14 @@ public:
      * as a warning, since mesh commands still work without it. */
     const config::Workspace* workspace();
 
-    /* The enclosing workspace, or a failure that says to run rant init. */
-    const config::Workspace& require_workspace();
+    /* The enclosing workspace, or a failure that says to run rant init. With packages it
+     * also holds every package and node type, and any config error is a failure. */
+    const config::Workspace& require_workspace(bool packages = false);
 
 private:
-    void open();
+    void open(bool packages);
     std::optional<config::Opened> opened_;
+    bool with_packages_ = false;
 };
 
 }

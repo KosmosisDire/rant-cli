@@ -8,6 +8,7 @@ add_library(rant_cli_core STATIC
   app/args.cpp
   app/context.cpp
   app/run.cpp
+  commands/build.cpp
   commands/commands.cpp
   commands/info.cpp
   commands/init.cpp
@@ -19,6 +20,7 @@ add_library(rant_cli_core STATIC
   mesh/values.cpp
   ui/output.cpp
   ui/prompt.cpp
+  ui/table.cpp
   ui/terminal.cpp
   util/interrupt.cpp
   util/match.cpp)

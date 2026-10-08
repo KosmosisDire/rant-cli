@@ -10,6 +10,7 @@ namespace commands {
 const std::vector<app::Command>& all();
 
 app::Command init();
+app::Command build();
 app::Command ls();
 app::Command info();
 app::Command sub();

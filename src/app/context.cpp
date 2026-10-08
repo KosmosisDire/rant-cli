@@ -4,12 +4,14 @@
 
 namespace app {
 
-void Context::open() {
-    if (!opened_) opened_ = config::open(cwd);
+void Context::open(bool packages) {
+    if (opened_ && (with_packages_ || !packages)) return;
+    opened_ = config::open(cwd, packages);
+    with_packages_ = packages;
 }
 
 const config::Workspace* Context::workspace() {
-    open();
+    open(false);
     if (!opened_->diagnostics.empty()) {
         for (auto& d : opened_->diagnostics) out.warn(d.str());
         opened_->diagnostics.clear();
@@ -17,8 +19,8 @@ const config::Workspace* Context::workspace() {
     return opened_->workspace ? &*opened_->workspace : nullptr;
 }
 
-const config::Workspace& Context::require_workspace() {
-    open();
+const config::Workspace& Context::require_workspace(bool packages) {
+    open(packages);
     if (!opened_->diagnostics.empty()) {
         for (auto& d : opened_->diagnostics) out.error(d.str());
         throw Failure("");
