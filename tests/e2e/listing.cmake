@@ -8,7 +8,7 @@ file(WRITE "${SCRATCH}/sensor.hcl" "group {\n  node \"one\" {\n    type = \"demo
 # Every kind word works singular, plural or short.
 foreach(word package packages pkg pkgs)
   rant(ls ${word})
-  expect_match("${OUT}" "^PACKAGES\n  demo +rant[.]hcl +no rant +demo\n$")
+  expect_match("${OUT}" "^PACKAGES\n  demo +rant[.]hcl +no Rant +demo\n$")
 endforeach()
 rant(ls types)
 expect_match("${OUT}" "NODE TYPES\n  demo/sensor +declared +")

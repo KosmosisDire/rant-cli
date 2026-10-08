@@ -78,7 +78,7 @@ int run(Context& ctx, const std::vector<std::string>& tokens) {
     size_t consumed = 0;
     Args global = parse_args(tokens, global_options(), true, &consumed);
     if (global.has("version")) {
-        ctx.out.line("rant " RANT_CLI_VERSION " (Rant " + std::string(rant::version()) + ")");
+        ctx.out.line("rant-cli " RANT_CLI_VERSION " (Rant " + std::string(rant::version()) + ")");
         return 0;
     }
     if (consumed == tokens.size()) {

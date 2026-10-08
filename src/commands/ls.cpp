@@ -180,7 +180,7 @@ static int list_workspace(app::Context& ctx, Kind kind, const std::string& patte
             std::string version = rant_version(p);
             out.push_back({ { "name", p.name }, { "kinds", p.kinds }, { "folder", config::to_utf8(p.dir) },
                             { "rant", version.empty() ? json(nullptr) : json(version) } });
-            t.row({ p.name, dim(joined(p.kinds, ", ")), version.empty() ? dim("no rant") : "rant " + version, dim(ctx.shown(p.dir)) });
+            t.row({ p.name, dim(joined(p.kinds, ", ")), version.empty() ? dim("no Rant") : "Rant " + version, dim(ctx.shown(p.dir)) });
         }
     } else if (kind == Kind::Type) {
         title = "NODE TYPES";

@@ -1,4 +1,4 @@
-# Installs the rant command line tool on Windows:
+# Installs rant-cli, the command line tool for Rant, on Windows:
 #   irm https://raw.githubusercontent.com/KosmosisDire/rant-cli/main/install.ps1 | iex
 # RANT_VERSION picks a release instead of the newest, RANT_HOME the folder instead of
 # ~\.rant, and RANT_YES=1 answers yes.
@@ -18,7 +18,7 @@
         throw $message
     }
 
-    if ($env:PROCESSOR_ARCHITECTURE -ne 'AMD64') { Fail "there is no rant build for Windows on $env:PROCESSOR_ARCHITECTURE" }
+    if ($env:PROCESSOR_ARCHITECTURE -ne 'AMD64') { Fail "there is no rant-cli build for Windows on $env:PROCESSOR_ARCHITECTURE" }
 
     $version = $env:RANT_VERSION
     if (-not $version) {
@@ -29,13 +29,13 @@
         }
     }
     $version = $version.TrimStart('v')
-    if ($version -notmatch '^[0-9.]+$') { Fail 'found no rant release' }
+    if ($version -notmatch '^[0-9.]+$') { Fail 'found no rant-cli release' }
     $url = "https://github.com/$repo/releases/download/v$version/rant-$version-win-x64.exe"
 
     $user_path = [Environment]::GetEnvironmentVariable('Path', 'User')
     $on_path = ($user_path -split ';') -contains $bin
 
-    Write-Host "This installs rant $version for win-x64:"
+    Write-Host "This installs rant-cli $version for win-x64:"
     Write-Host "  download $url"
     Write-Host "    to $exe"
     if (-not $on_path) { Write-Host "  add $bin to your user PATH" }
@@ -63,7 +63,7 @@
     }
     Move-Item -Force $part $exe
     & $exe --version | Out-Null
-    if ($LASTEXITCODE -ne 0) { Fail 'the downloaded rant does not run here' }
+    if ($LASTEXITCODE -ne 0) { Fail 'the downloaded rant-cli does not run here' }
 
     if (-not $on_path) {
         $new_path = if ($user_path) { "$bin;$user_path" } else { $bin }

@@ -1,5 +1,5 @@
 #!/bin/sh
-# Installs the rant command line tool on Linux and macOS:
+# Installs rant-cli, the command line tool for Rant, on Linux and macOS:
 #   curl -fsSL https://raw.githubusercontent.com/KosmosisDire/rant-cli/main/install.sh | sh
 # RANT_VERSION picks a release instead of the newest, RANT_HOME the folder instead of
 # ~/.rant, and -y or RANT_YES=1 answers yes.
@@ -26,7 +26,7 @@ command -v curl > /dev/null 2>&1 || fail "the install needs curl"
 case "$(uname -s)-$(uname -m)" in
     Linux-x86_64 | Linux-amd64) platform="linux-x64" ;;
     Darwin-arm64) platform="osx-arm64" ;;
-    *) fail "there is no rant build for $(uname -s) on $(uname -m)" ;;
+    *) fail "there is no rant-cli build for $(uname -s) on $(uname -m)" ;;
 esac
 
 # The newest release is where GitHub's latest link leads, which needs no API call.
@@ -38,7 +38,7 @@ if [ -z "$version" ]; then
 fi
 version="${version#v}"
 case "$version" in
-    "" | *[!0-9.]*) fail "found no rant release" ;;
+    "" | *[!0-9.]*) fail "found no rant-cli release" ;;
 esac
 url="https://github.com/$repo/releases/download/v$version/rant-$version-$platform"
 
@@ -51,7 +51,7 @@ command -v zsh > /dev/null 2>&1 && rcs="$rcs ${ZDOTDIR:-$HOME}/.zshrc"
 fish_conf=""
 command -v fish > /dev/null 2>&1 && fish_conf="${XDG_CONFIG_HOME:-$HOME/.config}/fish/conf.d/rant.fish"
 
-echo "This installs rant $version for $platform:"
+echo "This installs rant-cli $version for $platform:"
 echo "  download $url"
 echo "    to $bin/rant"
 for rc in $rcs; do echo "  add $bin to PATH in $rc"; done
@@ -76,9 +76,9 @@ mkdir -p "$bin"
 curl -fSL --progress-bar -o "$bin/rant.part" "$url" || fail "cannot download $url"
 chmod +x "$bin/rant.part"
 mv -f "$bin/rant.part" "$bin/rant"
-"$bin/rant" --version > /dev/null || fail "the downloaded rant does not run here"
+"$bin/rant" --version > /dev/null || fail "the downloaded rant-cli does not run here"
 
-line="export PATH=\"$bin:\$PATH\"    # rant"
+line="export PATH=\"$bin:\$PATH\"    # rant-cli"
 for rc in $rcs; do
     if ! grep -qsF "$line" "$rc"; then
         printf '\n%s\n' "$line" >> "$rc"
@@ -86,7 +86,7 @@ for rc in $rcs; do
 done
 if [ -n "$fish_conf" ]; then
     mkdir -p "$(dirname "$fish_conf")"
-    echo "fish_add_path -g \"$bin\"    # rant" > "$fish_conf"
+    echo "fish_add_path -g \"$bin\"    # rant-cli" > "$fish_conf"
 fi
 
 PATH="$bin:$PATH" "$bin/rant" setup || echo "warning: rant setup did not finish, run it again later" >&2
