@@ -62,7 +62,7 @@ function(rant)
     WORKING_DIRECTORY "${dir}"
     INPUT_FILE "${SCRATCH}/.empty-stdin"
     RESULT_VARIABLE code OUTPUT_VARIABLE out ERROR_VARIABLE err
-    TIMEOUT 60)
+    TIMEOUT 300)
   string(JOIN " " shown ${R_UNPARSED_ARGUMENTS})
   finish_run(code out err R_FAILS "${shown}")
 endfunction()

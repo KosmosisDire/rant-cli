@@ -1,0 +1,7 @@
+<!-- A stand in for the Rant C# binding: a reference to a project named Rant.csproj is what
+     marks a C# project as one that uses Rant, and this one builds offline. -->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net$(NETCoreAppMaximumVersion)</TargetFramework>
+  </PropertyGroup>
+</Project>
