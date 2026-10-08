@@ -4,8 +4,31 @@
 
 cmake_minimum_required(VERSION 3.21)
 
+# OTHER is a second workspace beside the scratch one, for a test that needs a node another
+# workspace started.
+set(OTHER "${SCRATCH}-other")
+
+# A run that failed may have left nodes running in its scratch workspaces. They are
+# stopped through the CLI first, since a running executable cannot be replaced.
+file(GLOB_RECURSE leftover_states "${SCRATCH}/.rant/state" "${SCRATCH}/*/.rant/state" "${OTHER}/.rant/state")
+foreach(state_file IN LISTS leftover_states)
+  get_filename_component(workspace "${state_file}" DIRECTORY)
+  get_filename_component(workspace "${workspace}" DIRECTORY)
+  file(READ "${state_file}" state_text)
+  string(JSON count ERROR_VARIABLE json_error LENGTH "${state_text}" instances)
+  if(json_error OR count EQUAL 0)
+    continue()
+  endif()
+  math(EXPR last "${count} - 1")
+  foreach(i RANGE ${last})
+    string(JSON name GET "${state_text}" instances ${i} name)
+    execute_process(COMMAND "${RANT}" stop node "${name}" -y WORKING_DIRECTORY "${workspace}"
+                    OUTPUT_QUIET ERROR_QUIET TIMEOUT 30)
+  endforeach()
+endforeach()
+
 # Every run starts from an empty scratch directory, the working directory of the commands.
-file(REMOVE_RECURSE "${SCRATCH}")
+file(REMOVE_RECURSE "${SCRATCH}" "${OTHER}")
 file(MAKE_DIRECTORY "${SCRATCH}")
 set(CWD "${SCRATCH}")
 file(WRITE "${SCRATCH}/.empty-stdin" "")
