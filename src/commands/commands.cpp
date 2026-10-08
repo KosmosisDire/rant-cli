@@ -9,6 +9,7 @@ const std::vector<app::Command>& all() {
         build(),
         start(),
         stop(),
+        restart(),
         ls(),
         info(),
         sub(),

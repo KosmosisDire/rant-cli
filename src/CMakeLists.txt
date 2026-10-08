@@ -22,6 +22,7 @@ add_library(rant_cli_core STATIC
   commands/new.cpp
   commands/plan_output.cpp
   commands/pub.cpp
+  commands/restart.cpp
   commands/set.cpp
   commands/setup.cpp
   commands/start.cpp

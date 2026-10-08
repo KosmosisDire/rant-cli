@@ -14,6 +14,7 @@ app::Command new_();
 app::Command build();
 app::Command start();
 app::Command stop();
+app::Command restart();
 app::Command ls();
 app::Command info();
 app::Command sub();
