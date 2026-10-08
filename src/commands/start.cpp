@@ -175,6 +175,13 @@ static int start_group(app::Context& ctx, const std::string& group, const std::v
     return 0;
 }
 
+/* The start command line a name alone was most likely meant as. */
+static std::string guess(app::Context& ctx, const std::string& name) {
+    if (config::describe_group(ctx.cwd, name).diagnostics.empty()) return "did you mean `rant start group " + name + "`?";
+    if (config::plan_node(ctx.cwd, name).diagnostics.empty()) return "did you mean `rant start node " + name + "`?";
+    return "";
+}
+
 static int run(app::Context& ctx) {
     auto& w = ctx.args.words;
     bool group = !w.empty() && w[0] == "group";
@@ -182,8 +189,10 @@ static int run(app::Context& ctx) {
         ctx.out.line(app::command_help(start()));
         return 0;
     }
-    if (w.empty() || (w[0] != "node" && !group))
-        throw app::UsageError("say what to start: `rant start node <node type>` or `rant start group <name>`");
+    if (w.empty() || (w[0] != "node" && !group)) {
+        std::string hint = w.empty() ? "" : guess(ctx, w[0]);
+        throw app::UsageError("say what to start: " + (hint.empty() ? std::string("`rant start node <node type>` or `rant start group <name>`") : hint));
+    }
     if (w.size() < 2) throw app::UsageError("start " + w[0] + " needs a name");
     if (group) return start_group(ctx, w[1], { w.begin() + 2, w.end() });
     if (w.size() != 2) throw app::UsageError("start node takes one node type, such as `rant start node talker`");

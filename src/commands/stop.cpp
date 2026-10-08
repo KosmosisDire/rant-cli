@@ -98,10 +98,19 @@ static int stop_group(app::Context& ctx, const std::string& group, const std::ve
     return 0;
 }
 
+/* The stop command line a name alone was most likely meant as. */
+static std::string guess(app::Context& ctx, const std::string& name) {
+    if (config::describe_group(ctx.cwd, name).diagnostics.empty()) return "did you mean `rant stop group " + name + "`?";
+    if (run::snapshot(ctx).instance(name)) return "did you mean `rant stop node " + name + "`?";
+    return "";
+}
+
 static int run(app::Context& ctx) {
     auto& w = ctx.args.words;
-    if (w.size() < 2 || (w[0] != "node" && w[0] != "group"))
-        throw app::UsageError("say what to stop: `rant stop node <name>` or `rant stop group <name>`");
+    if (w.size() < 2 || (w[0] != "node" && w[0] != "group")) {
+        std::string hint = w.size() == 1 && w[0] != "node" && w[0] != "group" ? guess(ctx, w[0]) : "";
+        throw app::UsageError("say what to stop: " + (hint.empty() ? std::string("`rant stop node <name>` or `rant stop group <name>`") : hint));
+    }
     if (w[0] == "group") return stop_group(ctx, w[1], { w.begin() + 2, w.end() });
     if (w.size() != 2) throw app::UsageError("stop node takes one name");
     return stop_node(ctx, w[1]);
