@@ -13,17 +13,31 @@ add_library(rant_cli_core STATIC
   commands/info.cpp
   commands/init.cpp
   commands/ls.cpp
+  commands/plan_output.cpp
+  commands/start.cpp
+  commands/stop.cpp
   commands/sub.cpp
   config/config.cpp
   mesh/access.cpp
   mesh/client.cpp
   mesh/values.cpp
+  process/command.cpp
+  process/quote.cpp
+  run/nodes.cpp
+  state/state.cpp
   ui/output.cpp
   ui/prompt.cpp
   ui/table.cpp
   ui/terminal.cpp
   util/interrupt.cpp
   util/match.cpp)
+
+# One process backend per OS behind process/supervisor.hpp.
+if(WIN32)
+  target_sources(rant_cli_core PRIVATE process/windows.cpp)
+else()
+  target_sources(rant_cli_core PRIVATE process/posix.cpp)
+endif()
 
 target_include_directories(rant_cli_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 target_compile_definitions(rant_cli_core PUBLIC RANT_CLI_VERSION="${PROJECT_VERSION}")

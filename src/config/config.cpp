@@ -7,6 +7,7 @@
 namespace config {
 
 std::string Diagnostic::str() const {
+    if (file.empty()) return message;
     std::string s = file;
     if (line) s += ":" + std::to_string(line) + ":" + std::to_string(column);
     return s + ": " + message;
@@ -66,6 +67,31 @@ static Opened read(Handle h) {
     }
     out.workspace = std::move(ws);
     return out;
+}
+
+static Plan read_plan(const RantConfigPlanView* v) {
+    Plan out;
+    out.diagnostics = diagnostics(v->diagnostics, v->diagnostic_count);
+    if (v->root) out.workspace = Workspace{ from_utf8(v->root), from_utf8(str(v->logs)), from_utf8(str(v->data)), {} };
+    for (size_t i = 0; i < v->instance_count; i++) {
+        const RantConfigInstance& in = v->instances[i];
+        Instance inst;
+        inst.name = str(in.name);
+        inst.type = str(in.type_ref);
+        inst.kind = static_cast<NodeKind>(in.kind);
+        inst.argv = strs(in.argv, in.argc);
+        for (size_t e = 0; e < in.env_count; e++) inst.env[str(in.env[e].name)] = str(in.env[e].value);
+        inst.cwd = from_utf8(str(in.cwd));
+        out.instances.push_back(std::move(inst));
+    }
+    return out;
+}
+
+using PlanHandle = std::unique_ptr<RantConfigPlan, decltype(&rant_config_plan_free)>;
+
+Plan plan_node(const fs::path& start, const std::string& node_type) {
+    PlanHandle h(rant_config_plan_node(to_utf8(start).c_str(), node_type.c_str()), &rant_config_plan_free);
+    return read_plan(rant_config_plan_view(h.get()));
 }
 
 Opened open(const fs::path& start, bool packages) {

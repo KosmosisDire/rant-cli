@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <map>
 #include <optional>
 #include <string>
 #include <vector>
@@ -53,6 +54,26 @@ struct Opened {
     std::optional<Workspace> workspace;
     std::vector<Diagnostic>  diagnostics;
 };
+
+/* One node of a resolved plan: its mesh name, its node type and exactly how it runs. */
+struct Instance {
+    std::string                        name;
+    std::string                        type;    /* package/name, or the path of a loose file */
+    NodeKind                           kind = NodeKind::Native;
+    std::vector<std::string>           argv;
+    std::map<std::string, std::string> env;
+    fs::path                           cwd;
+};
+
+/* A resolved plan in start order. instances is empty whenever diagnostics is not. */
+struct Plan {
+    std::optional<Workspace> workspace;    /* root, logs and data only */
+    std::vector<Instance>    instances;
+    std::vector<Diagnostic>  diagnostics;
+};
+
+/* The plan for one node of a node type, a reference in any form resolved from start. */
+Plan plan_node(const fs::path& start, const std::string& node_type);
 
 /* Finds the enclosing workspace. With packages it also discovers every package and scans
  * it for node types, which reads the tree and is slower. */

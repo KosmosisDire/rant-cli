@@ -11,6 +11,8 @@ const std::vector<app::Command>& all();
 
 app::Command init();
 app::Command build();
+app::Command start();
+app::Command stop();
 app::Command ls();
 app::Command info();
 app::Command sub();
