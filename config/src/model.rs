@@ -191,7 +191,9 @@ fn slash(p: &Path) -> String {
 }
 
 /// The interpreter for a Python node: the package's `python`, else the nearest virtualenv
-/// from the source directory up to the workspace root, else the system Python.
+/// from the source directory up to the workspace root, else the system Python. On Windows
+/// that is the `python` on PATH, where `pip install` put the packages, before `py -3`,
+/// which may pick another installed version.
 pub fn python(block: Option<&PackageBlock>, source_dir: &Path, root: &Path) -> Vec<String> {
     if let Some(p) = block.and_then(|b| b.python.as_ref()) {
         return vec![slash(p)];
@@ -209,8 +211,20 @@ pub fn python(block: Option<&PackageBlock>, source_dir: &Path, root: &Path) -> V
         }
     }
     if cfg!(windows) {
-        vec!["py".into(), "-3".into()]
+        match python_on_path() {
+            Some(p) => vec![slash(&p)],
+            None => vec!["py".into(), "-3".into()],
+        }
     } else {
         vec!["python3".into()]
     }
+}
+
+/// python.exe on PATH, passing over the WindowsApps stub that only opens the Store.
+fn python_on_path() -> Option<PathBuf> {
+    let path = std::env::var_os("PATH")?;
+    std::env::split_paths(&path)
+        .filter(|d| !d.to_string_lossy().contains("WindowsApps"))
+        .map(|d| d.join("python.exe"))
+        .find(|p| p.is_file())
 }
