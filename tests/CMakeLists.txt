@@ -10,5 +10,6 @@ foreach(_cfg ${CMAKE_CONFIGURATION_TYPES})
   set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_${_CFG} "${CMAKE_CURRENT_BINARY_DIR}/bin")
 endforeach()
 
+add_subdirectory(nodes)
 add_subdirectory(unit)
 add_subdirectory(e2e)
