@@ -12,7 +12,7 @@ const std::vector<OptionSpec>& global_options() {
     static const std::vector<OptionSpec> opts = {
         { "yes",     'y', "",  "answer yes to every question" },
         { "json",    0,   "",  "print JSON instead of text" },
-        { "domain",  0,   "N", "the Rant domain to use, 0 by default" },
+        { "domain",  0,   "N", "the Rant domain to use, else the workspace's, else RANT_DOMAIN, else 0" },
         { "help",    'h', "",  "show help, also after a command" },
         { "version", 0,   "",  "show the version" },
         { "update",  0,   "",  "update rant-cli to its newest release" },
@@ -106,7 +106,7 @@ int run(Context& ctx, const std::vector<std::string>& tokens) {
     }
     ctx.yes = ctx.args.has("yes");
     ctx.json = ctx.args.has("json");
-    if (auto d = ctx.args.get("domain")) ctx.domain = parse_domain(*d);
+    if (auto d = ctx.args.get("domain")) ctx.domain_option = parse_domain(*d);
     return cmd->run(ctx);
 }
 

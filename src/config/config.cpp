@@ -68,6 +68,7 @@ static Opened read(Handle h) {
     out.diagnostics = diagnostics(v->diagnostics, v->diagnostic_count);
     if (!v->root) return out;
     Workspace ws = paths_only(v->root, v->logs, v->data);
+    if (v->domain >= 0) ws.domain = static_cast<uint16_t>(v->domain);
     for (size_t i = 0; i < v->package_count; i++) {
         const RantConfigPackage& p = v->packages[i];
         Package pkg{ str(p.name), from_utf8(str(p.dir)), strs(p.kinds, p.kind_count), {} };

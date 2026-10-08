@@ -62,7 +62,7 @@ static int stop_node(app::Context& ctx, const std::string& name) {
     state::Instance* inst = st.instance(name);
     if (!inst) {
         s.save();
-        mesh::Client mesh(ctx.domain);
+        mesh::Client mesh(ctx.domain());
         mesh.settle();
         for (auto& p : mesh.peers())
             if (p.name == name)

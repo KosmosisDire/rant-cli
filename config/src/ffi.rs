@@ -79,6 +79,8 @@ pub struct RantConfigWorkspaceView {
     pub root: *const c_char,
     pub logs: *const c_char,
     pub data: *const c_char,
+    /// The workspace's domain, -1 when it sets none.
+    pub domain: i32,
     pub packages: *const RantConfigPackage,
     pub package_count: usize,
     /// Python nodes outside every package.
@@ -341,6 +343,7 @@ fn workspace_handle(loaded: &Loaded, extra: Vec<Diag>) -> *mut RantConfigWorkspa
         root,
         logs,
         data,
+        domain: loaded.config.as_ref().and_then(|c| c.placement.domain).map_or(-1, i32::from),
         packages,
         package_count,
         loose,

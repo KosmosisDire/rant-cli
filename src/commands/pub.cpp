@@ -30,7 +30,7 @@ static int run(app::Context& ctx) {
     }
 
     util::catch_interrupt();
-    mesh::Client mesh(ctx.domain);
+    mesh::Client mesh(ctx.domain());
     mesh.settle();
     mesh::require_entity(mesh, { rant::EntityKind::Topic }, topic);
 

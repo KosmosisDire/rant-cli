@@ -58,6 +58,7 @@ struct Workspace {
     fs::path               root;
     fs::path               logs;
     fs::path               data;        /* .rant/, the state file and caches */
+    std::optional<uint16_t> domain;     /* the domain its config sets */
     std::vector<Package>   packages;    /* filled when opened with packages */
     std::vector<NodeType>  loose;       /* Python nodes outside every package, likewise */
     std::vector<GroupFile> groups;      /* filled when opened with packages */

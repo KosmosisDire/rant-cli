@@ -15,6 +15,7 @@ mod model;
 mod package;
 mod param;
 mod paths;
+mod placement;
 mod plan;
 mod refs;
 mod scan;

@@ -85,7 +85,7 @@ static void restart_root(app::Context& ctx, run::Session& s, const state::Root& 
     /* a node the plan has that rant does not run may run on the mesh without rant */
     std::set<std::string> elsewhere;
     if (std::any_of(plan.instances.begin(), plan.instances.end(), [&](const config::Instance& p) { return !st.instance(p.name); })) {
-        mesh::Client mesh(ctx.domain);
+        mesh::Client mesh(ctx.domain());
         mesh.settle();
         auto managed = run::managed_peers(mesh, st);
         for (auto& peer : mesh.peers())

@@ -74,11 +74,11 @@ std::vector<std::string> Request::running_groups() {
 const mesh::Snapshot& Request::mesh() {
     if (!mesh_) {
         try {
-            mesh::Client client(ctx_.domain);
+            mesh::Client client(ctx_.domain());
             client.settle(mesh_budget);
         } catch (...) {
         }
-        mesh_ = mesh::Snapshot::load(ctx_.domain);
+        mesh_ = mesh::Snapshot::load(ctx_.domain());
     }
     return *mesh_;
 }
@@ -153,7 +153,7 @@ static const app::OptionSpec* find_option(const std::vector<app::OptionSpec>& sp
 static void set_domain(app::Context& ctx, const std::string& v) {
     char* end = nullptr;
     unsigned long d = std::strtoul(v.c_str(), &end, 10);
-    if (!v.empty() && !*end && d <= 65535) ctx.domain = (uint16_t)d;
+    if (!v.empty() && !*end && d <= 65535) ctx.domain_option = (uint16_t)d;
 }
 
 /* The words before the cursor read as the real parse reads them: options and their values

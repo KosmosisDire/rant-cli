@@ -75,3 +75,17 @@ expect_match("${ERR}" "Stop all 4 nodes[?] [[]y/N[]] y")
 expect_match("${OUT}" "stopped arm\nstopped planner\nstopped odom\nstopped lidar\n")
 rant(stop)
 expect_match("${OUT}" "nothing rant started is running")
+
+# Placement: prefixes join from the workspace in, and the node prefix is part of the name.
+file(WRITE "${SCRATCH}/rant.hcl" "workspace {\n  prefix = \"plant\"\n}\n")
+file(WRITE "${SCRATCH}/cell.group.hcl"
+     "node_prefix = \"left\"\nprefix      = \"left\"\nnode \"sensor\" {\n  name = \"lidar\"\n}\n")
+rant(start group cell --dry-run --json)
+expect_match("${OUT}" "\"name\": \"left/lidar\"")
+expect_match("${OUT}" "\"RANT_PREFIX\": \"plant/left\"")
+rant(start group cell)
+expect_match("${OUT}" "started left/lidar,")
+rant(ls nodes)
+expect_match("${OUT}" "cell:\n    left/lidar\n")
+rant(stop group cell)
+expect_match("${OUT}" "stopped left/lidar")

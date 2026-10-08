@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 
 use crate::diag::Diag;
 use crate::eval::{self, Scope};
+use crate::placement::{self, Placement};
 use crate::source::{no_labels, Fields, Source};
 
 pub const MANIFEST: &str = "rant.hcl";
@@ -12,6 +13,7 @@ pub struct WorkspaceConfig {
     pub root: PathBuf,
     pub logs: PathBuf,
     pub ignore: Vec<String>,
+    pub placement: Placement,
 }
 
 /// Walks up from `start` to the nearest `rant.hcl` holding a `workspace {}` block. A
@@ -45,7 +47,8 @@ fn parse(src: &Source, dir: &Path) -> Result<Option<WorkspaceConfig>, Diag> {
         package_dir: has_package.then_some(dir),
         workspace: dir,
     };
-    let fields = Fields::of(src, block, &["logs", "ignore"], &[])?;
+    let keys = [&["logs", "ignore"][..], &placement::KEYS[..]].concat();
+    let fields = Fields::of(src, block, &keys, &[])?;
     let logs = match fields.attr("logs") {
         Some(a) => dir.join(eval::string(src, a, &scope)?),
         None => dir.join("logs"),
@@ -54,7 +57,8 @@ fn parse(src: &Source, dir: &Path) -> Result<Option<WorkspaceConfig>, Diag> {
         Some(a) => eval::string_list(src, a, &scope)?,
         None => Vec::new(),
     };
-    Ok(Some(WorkspaceConfig { root: dir.to_path_buf(), logs, ignore }))
+    let placement = Placement::read(src, &fields.attrs, &scope)?;
+    Ok(Some(WorkspaceConfig { root: dir.to_path_buf(), logs, ignore, placement }))
 }
 
 /// A `rant.hcl` holds `workspace {}`, `package {}` or both, once each.

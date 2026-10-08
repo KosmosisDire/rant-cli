@@ -18,11 +18,15 @@ public:
     Args       args;
     bool       yes = false;     /* -y: answer every question yes */
     bool       json = false;    /* --json: print JSON on stdout */
-    uint16_t   domain = 0;      /* --domain */
+    std::optional<uint16_t> domain_option;    /* --domain */
     std::filesystem::path cwd = std::filesystem::current_path();
 
     /* A path for messages: relative to the working directory, "." for it. */
     std::string shown(const std::filesystem::path& p) const;
+
+    /* The domain mesh commands use: --domain, else the workspace's, else RANT_DOMAIN, else 0.
+     * Nodes rant starts take the same order from their config. */
+    uint16_t domain();
 
     /* The enclosing workspace, or nullptr when there is none. A broken config is reported
      * as a warning, since mesh commands still work without it. */

@@ -12,6 +12,7 @@ use crate::group::{self, GroupFile};
 use crate::manifest::{Manifest, ManifestKind};
 use crate::package::PackageBlock;
 use crate::paths;
+use crate::placement::Placement;
 use crate::scan::{self, Cache, NodeKind};
 use crate::workspace::{WorkspaceConfig, MANIFEST};
 
@@ -88,6 +89,12 @@ impl Model {
     /// Every node type, in packages and outside them.
     pub fn node_types(&self) -> impl Iterator<Item = &NodeType> {
         self.packages.iter().flat_map(|p| p.nodes.iter()).chain(self.loose.iter())
+    }
+
+    /// Where a node lands before any group says more: the shell, the workspace, its package.
+    pub fn placement_of(&self, node: &NodeType) -> Placement {
+        let package = self.package(&node.package).and_then(|p| p.block.as_ref()).map(|b| b.placement.clone()).unwrap_or_default();
+        Placement::from_env().inner(&self.config.placement).inner(&package)
     }
 
     pub fn package(&self, name: &str) -> Option<&Package> {

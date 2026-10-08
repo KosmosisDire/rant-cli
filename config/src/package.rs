@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use crate::argv;
 use crate::diag::Diag;
 use crate::eval::{self, Scope, StringOrList};
+use crate::placement::{self, Placement};
 use crate::source::{no_labels, one_label, Fields, Source};
 use crate::workspace::{check_kinds, MANIFEST};
 
@@ -18,6 +19,7 @@ pub struct PackageBlock {
     pub ignore: Vec<String>,
     pub python: Option<PathBuf>,
     pub nodes: Vec<DeclaredNode>,
+    pub placement: Placement,
 }
 
 #[derive(Debug, Clone)]
@@ -46,9 +48,10 @@ pub fn read(dir: &Path, workspace: &Path, is_root: bool) -> Result<Option<Packag
     };
     no_labels(&src, block)?;
     let scope = Scope { params: None, file_dir: dir, package_dir: Some(dir), workspace };
-    let fields = Fields::of(&src, block, &["name", "build", "depend", "ignore", "python"], &["node"])?;
+    let keys = [&["name", "build", "depend", "ignore", "python"][..], &placement::KEYS[..]].concat();
+    let fields = Fields::of(&src, block, &keys, &["node"])?;
 
-    let mut out = PackageBlock { file: path.clone(), ..Default::default() };
+    let mut out = PackageBlock { file: path.clone(), placement: Placement::read(&src, &fields.attrs, &scope)?, ..Default::default() };
     if let Some(a) = fields.attr("name") {
         out.name = Some(eval::string(&src, a, &scope)?);
     }

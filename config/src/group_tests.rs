@@ -217,3 +217,26 @@ fn a_block_a_group_file_does_not_know_is_an_error() {
     let groups = Groups::new(&m);
     assert!(groups.load(groups.find("two", None).unwrap()).is_err());
 }
+
+#[test]
+fn placement_follows_workspace_package_groups_and_node() {
+    let t = workspace_with(&[
+        ("rant.hcl", "workspace {\n  domain = 5\n  prefix = \"plant\"\n}\n"),
+        ("arm/rant.hcl", "package {\n  name   = \"arm\"\n  prefix = \"arm\"\n  node \"joint\" {\n    run = \"joint\"\n  }\n}\n"),
+        ("side.group.hcl", "  param \"side\" {}\n  prefix      = param.side\n  node_prefix = param.side\n  node \"arm/joint\" {\n    domain = 9\n  }\n  node \"lidar\" {}\n"),
+        ("cell.group.hcl", "  node_prefix = \"cell\"\n  include \"side\" {\n    side   = \"left\"\n    domain = 7\n  }\n"),
+        ("bad.group.hcl", "  param \"domain\" {}\n"),
+        ("long.group.hcl", "  node \"lidar\" {\n    node_prefix = \"a_very_long_cell_name\"\n    name        = \"and_a_long_node\"\n  }\n"),
+    ]);
+    let m = model(&t);
+    let (p, _) = plan(&m, "cell", &[]).unwrap();
+    assert_eq!(names(&p), ["cell/left/joint", "cell/left/lidar"]);
+    assert_eq!(p.instances[0].env["RANT_PREFIX"], "plant/arm/left");
+    assert_eq!(p.instances[0].env["RANT_DOMAIN"], "9", "the node is innermost");
+    assert_eq!(p.instances[1].env["RANT_PREFIX"], "plant/left");
+    assert_eq!(p.instances[1].env["RANT_DOMAIN"], "7", "the include is inside the workspace");
+    assert!(plan(&m, "bad", &[]).unwrap_err().message.contains("a param cannot take it"));
+    let err = plan(&m, "long", &[]).unwrap_err();
+    assert!(err.message.contains("longer than Rant's 32 bytes"), "{err}");
+    assert_eq!(err.line, 1);
+}

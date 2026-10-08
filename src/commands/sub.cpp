@@ -141,7 +141,7 @@ static int run(app::Context& ctx) {
     bool live_view = format == Format::Yaml && !ctx.args.has("lines") && ui::enable_vt(stdout);
 
     util::catch_interrupt();
-    mesh::Client mesh(ctx.domain);
+    mesh::Client mesh(ctx.domain());
     mesh.settle();
     if (!mesh.node().reflection().find(rant::EntityKind::Topic, topic))
         ctx.out.note("no publisher of `" + topic + "` yet, waiting for one");

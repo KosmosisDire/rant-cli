@@ -292,7 +292,7 @@ static int run(app::Context& ctx) {
     if (!kind || !on_mesh(*kind) || *kind == Kind::Node) workspace_answers(ctx, kind, name, st, answers);
     /* the answers' schemas live in the client's node, so it outlives their printing */
     std::optional<mesh::Client> mesh;
-    if (!kind || on_mesh(*kind)) mesh_answers(mesh.emplace(ctx.domain), kind, name, st, answers);
+    if (!kind || on_mesh(*kind)) mesh_answers(mesh.emplace(ctx.domain()), kind, name, st, answers);
     if (answers.empty())
         throw app::Failure(kind ? "no " + std::string(kind_word(*kind)) + " named `" + name + "`, see `rant ls`"
                                 : "nothing named `" + name + "`, see `rant ls`");

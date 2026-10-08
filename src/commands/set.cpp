@@ -19,7 +19,7 @@ static int run(app::Context& ctx) {
     mesh::Assignments values = mesh::parse_words({ w.begin() + 1, w.end() });
     format_of(ctx);
 
-    mesh::Client mesh(ctx.domain);
+    mesh::Client mesh(ctx.domain());
     mesh.settle();
     rant::Entity e = mesh::require_entity(mesh, { rant::EntityKind::Variable }, name);
     if (!e.writable) throw app::Failure("`" + name + "` is read only");

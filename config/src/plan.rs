@@ -46,6 +46,8 @@ pub fn runnable(node: &NodeType) -> Result<(), String> {
 pub fn single(model: &Model, reference: &str, from_dir: &Path) -> Result<Plan, Diag> {
     let node = refs::resolve(model, reference, from_dir).map_err(Diag::plain)?;
     runnable(&node).map_err(Diag::plain)?;
-    let instance = Instance { name: node.name.clone(), argv: node.run.clone(), env: BTreeMap::new(), cwd: node.cwd.clone(), node };
+    let mut env = BTreeMap::new();
+    let name = model.placement_of(&node).apply(&node.name, &mut env).map_err(Diag::plain)?;
+    let instance = Instance { name, argv: node.run.clone(), env, cwd: node.cwd.clone(), node };
     Ok(Plan { instances: vec![instance] })
 }

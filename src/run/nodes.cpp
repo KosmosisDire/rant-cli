@@ -36,8 +36,9 @@ static std::string job_name(const config::fs::path& root, const std::string& nam
 }
 
 state::Instance spawn(const config::Workspace& ws, const config::Instance& inst, const std::string& name) {
-    config::fs::create_directories(ws.logs);
+    /* a prefixed name like left/lidar logs to a folder of its prefix */
     auto log = ws.logs / config::from_utf8(name + ".log");
+    config::fs::create_directories(log.parent_path());
     std::error_code ec;
     if (config::fs::exists(log, ec)) {
         auto previous = log;
@@ -47,8 +48,9 @@ state::Instance spawn(const config::Workspace& ws, const config::Instance& inst,
 
     process::Command c{ inst.argv, inst.cwd, inst.env };
     /* Launcher variables: the node's mesh name, read by the Rant library, and unbuffered
-     * Python so its log keeps up. */
+     * Python so its log keeps up. The name holds its node prefix already. */
     c.env["RANT_NODE_NAME"] = name;
+    c.env["RANT_NODE_NAME_PREFIX"] = "";
     c.env["PYTHONUNBUFFERED"] = "1";
 
     state::Instance rec;

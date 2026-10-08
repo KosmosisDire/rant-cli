@@ -75,7 +75,7 @@ static int run(app::Context& ctx) {
     }
 
     std::vector<std::string> argv = { config::to_utf8(*exe) };
-    if (ctx.args.has("domain")) argv.insert(argv.end(), { "--domain", std::to_string(ctx.domain) });
+    if (uint16_t d = ctx.domain()) argv.insert(argv.end(), { "--domain", std::to_string(d) });
     /* a job name of its own each time, since several explorers may run at once */
     std::string job = "Local\\rant-explorer-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
     process::start_detached({ argv, ctx.cwd, {} }, util::rant_home() / "explorer.log", job);

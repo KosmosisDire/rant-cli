@@ -64,7 +64,7 @@ int start_node(app::Context& ctx, const std::string& ref) {
     const config::Instance& inst = plan.instances.front();
 
     std::set<std::string> taken;
-    mesh::Client mesh(ctx.domain);
+    mesh::Client mesh(ctx.domain());
     mesh.settle();
     for (auto& p : mesh.peers()) taken.insert(p.name);
 
@@ -110,7 +110,7 @@ int start_group(app::Context& ctx, const std::string& group, const std::vector<s
     }
     state::Root root{ "group", plan.group, plan.params };
 
-    mesh::Client mesh(ctx.domain);
+    mesh::Client mesh(ctx.domain());
     mesh.settle();
     run::Session s(*plan.workspace);
     auto managed = run::managed_peers(mesh, s.state());

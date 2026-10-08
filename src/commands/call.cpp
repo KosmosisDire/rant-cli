@@ -123,7 +123,7 @@ static int run(app::Context& ctx) {
 
     format_of(ctx);
     util::catch_interrupt();
-    mesh::Client mesh(ctx.domain);
+    mesh::Client mesh(ctx.domain());
     mesh.settle();
     rant::Entity e = mesh::require_entity(mesh, { rant::EntityKind::Function, rant::EntityKind::Task }, name);
     if (e.kind == rant::EntityKind::Task) return call_task(ctx, mesh, name, values, timeout);

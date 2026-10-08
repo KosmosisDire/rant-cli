@@ -18,6 +18,7 @@ use crate::paths;
 use crate::plan::{Instance, Plan};
 use crate::refs;
 use crate::param::{self, Param};
+use crate::placement::{self, Placement};
 use crate::source::{one_label, Fields, Loc, Source};
 
 /// What makes a file a group: `nav.group.hcl` is the group `nav`.
@@ -67,6 +68,8 @@ struct Include {
     group: String,
     expose: Expose,
     bindings: Vec<Attribute>,
+    /// domain, prefix and node_prefix for everything the included group runs
+    placement: Vec<Attribute>,
     at: Loc,
 }
 
@@ -93,13 +96,17 @@ impl GroupDef {
 fn parse(file: GroupFile, root: &Path) -> Result<GroupDef, Diag> {
     let src = Source::read(&file.path)?;
     // the whole file is the group, no block around it
-    let fields = Fields::of_body(&src, &src.body, "a group file", &["description"], &["param", "include", "node"])?;
+    let keys = [&["description"][..], &placement::KEYS[..]].concat();
+    let fields = Fields::of_body(&src, &src.body, "a group file", &keys, &["param", "include", "node"])?;
     let dir = src.dir().to_path_buf();
     let empty = BTreeMap::new();
     let scope = Scope { params: Some(&empty), file_dir: &dir, package_dir: None, workspace: root };
     let description = fields.attr("description").map(|a| eval::string(&src, a, &scope)).transpose()?;
 
     let params = param::parse_all(&src, &fields, &scope)?;
+    if let Some(p) = params.iter().find(|p| placement::KEYS.contains(&p.name.as_str())) {
+        return Err(p.at.diag(format!("`{}` places what an include runs, a param cannot take it", p.name)));
+    }
 
     let mut items = Vec::new();
     for s in src.body.iter() {
@@ -108,7 +115,7 @@ fn parse(file: GroupFile, root: &Path) -> Result<GroupDef, Diag> {
             "include" => items.push(Item::Include(parse_include(&src, b, &scope)?)),
             "node" => {
                 one_label(&src, b)?;
-                Fields::of(&src, b, &["name", "args", "env"], &[])?;
+                Fields::of(&src, b, &[&["name", "args", "env"][..], &placement::KEYS[..]].concat(), &[])?;
                 items.push(Item::Node(b.clone()));
             }
             _ => {}
@@ -119,10 +126,11 @@ fn parse(file: GroupFile, root: &Path) -> Result<GroupDef, Diag> {
 
 fn parse_include(src: &Source, b: &Block, scope: &Scope) -> Result<Include, Diag> {
     let group = one_label(src, b)?.to_string();
-    let mut inc = Include { group, expose: Expose::None, bindings: Vec::new(), at: Loc::of(src, b) };
+    let mut inc = Include { group, expose: Expose::None, bindings: Vec::new(), placement: Vec::new(), at: Loc::of(src, b) };
     for s in b.body.iter() {
         match s {
-            Structure::Block(inner) => return Err(src.diag_at(inner, "an include holds only param values and `expose`")),
+            Structure::Block(inner) => return Err(src.diag_at(inner, "an include holds only param values, `expose` and placement")),
+            Structure::Attribute(a) if placement::KEYS.contains(&a.key.as_str()) => inc.placement.push(a.clone()),
             Structure::Attribute(a) if a.key.as_str() == "expose" => {
                 inc.expose = match eval::value(src, a, scope)? {
                     Value::Bool(true) => Expose::All,
@@ -253,7 +261,7 @@ impl<'m> Groups<'m> {
         let help = format!(", see `rant start group {} --help`", def.file.name);
         let values = param::bind(&iface, given, &|m| Diag::plain(format!("{m}{help}")), "")?;
         let mut found = Vec::new();
-        self.expand(def, &iface, &values, &mut found)?;
+        self.expand(def, &iface, &values, &Placement::default(), &mut found)?;
 
         let mut plan = Plan::default();
         let mut origins: Vec<Loc> = Vec::new();
@@ -276,10 +284,21 @@ impl<'m> Groups<'m> {
         Ok((plan, values))
     }
 
-    fn expand(&self, def: &GroupDef, iface: &[Param], values: &BTreeMap<String, Value>, out: &mut Vec<(Instance, Loc)>) -> Result<(), Diag> {
+    /// The instances of a group, depth first. chain is the placement of the groups around
+    /// it, and this group's own goes inside it.
+    fn expand(
+        &self,
+        def: &GroupDef,
+        iface: &[Param],
+        values: &BTreeMap<String, Value>,
+        chain: &Placement,
+        out: &mut Vec<(Instance, Loc)>,
+    ) -> Result<(), Diag> {
         let dir = def.src.dir().to_path_buf();
         let package_dir = def.file.package.as_deref().and_then(|p| self.model.package(p)).map(|p| p.dir.clone());
         let scope = Scope { params: Some(values), file_dir: &dir, package_dir: package_dir.as_deref(), workspace: &self.model.config.root };
+        let top = Fields::of_body(&def.src, &def.src.body, "a group file", &[&["description"][..], &placement::KEYS[..]].concat(), &["param", "include", "node"])?;
+        let chain = chain.inner(&Placement::read(&def.src, &top.attrs, &scope)?);
         let mut include_idx = 0;
         for item in &def.items {
             match item {
@@ -301,17 +320,19 @@ impl<'m> Groups<'m> {
                         &|m| inc.at.diag(format!("including `{}`: {m}", inc.group)),
                         ", bind it here or expose it",
                     )?;
-                    self.expand(&child, &child_iface, &child_values, out)?;
+                    let placed: Vec<&Attribute> = inc.placement.iter().collect();
+                    let child_chain = chain.inner(&Placement::read(&def.src, &placed, &scope)?);
+                    self.expand(&child, &child_iface, &child_values, &child_chain, out)?;
                 }
-                Item::Node(b) => out.push((self.node(def, b, &scope)?, Loc::of(&def.src, b))),
+                Item::Node(b) => out.push((self.node(def, b, &scope, &chain)?, Loc::of(&def.src, b))),
             }
         }
         Ok(())
     }
 
-    fn node(&self, def: &GroupDef, b: &Block, scope: &Scope) -> Result<Instance, Diag> {
+    fn node(&self, def: &GroupDef, b: &Block, scope: &Scope, chain: &Placement) -> Result<Instance, Diag> {
         let src = &def.src;
-        let fields = Fields::of(src, b, &["name", "args", "env"], &[])?;
+        let fields = Fields::of(src, b, &[&["name", "args", "env"][..], &placement::KEYS[..]].concat(), &[])?;
         // the label says what runs, `name` what the running node is called, its own name by default
         let reference = one_label(src, b)?;
         let node = refs::resolve(self.model, reference, scope.file_dir).map_err(|e| src.diag_at(b, e))?;
@@ -345,6 +366,9 @@ impl<'m> Groups<'m> {
                 v => return Err(src.diag_at(&a.value, format!("`env` must be an object, found {}", eval::type_name(&v)))),
             }
         }
+        // the shell, workspace and package, then the groups, then the node itself
+        let placed = self.model.placement_of(&node).inner(chain).inner(&Placement::read(src, &fields.attrs, scope)?);
+        let name = placed.apply(&name, &mut env).map_err(|e| src.diag_at(b, e))?;
         Ok(Instance { name, cwd: node.cwd.clone(), argv, env, node })
     }
 }

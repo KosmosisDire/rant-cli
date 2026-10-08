@@ -110,7 +110,7 @@ static std::vector<const config::NodeType*> not_running(app::Context& ctx, const
 static int list_mesh(app::Context& ctx, std::optional<Kind> kind, const std::string& pattern) {
     bool show_nodes = !kind || *kind == Kind::Node, show_entities = !kind || *kind != Kind::Node;
     bool all = show_nodes && ctx.args.has("all");
-    mesh::Client mesh(ctx.domain);
+    mesh::Client mesh(ctx.domain());
     mesh.settle();
     Listing nodes;
     if (show_nodes) nodes = list_nodes(ctx, mesh, pattern);

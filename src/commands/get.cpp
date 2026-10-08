@@ -10,7 +10,7 @@ static int run(app::Context& ctx) {
     if (ctx.args.words.size() != 1) throw app::UsageError("get takes one variable");
     const std::string& name = ctx.args.words[0];
     format_of(ctx);
-    mesh::Client mesh(ctx.domain);
+    mesh::Client mesh(ctx.domain());
     mesh.settle();
     mesh::require_entity(mesh, { rant::EntityKind::Variable }, name);
     auto value = mesh::read_variable(mesh, name);
