@@ -18,7 +18,10 @@ bool confirm(std::string_view question, bool assume_yes) {
     std::fprintf(stderr, "%.*s [y/N] ", (int)question.size(), question.data());
     std::fflush(stderr);
     std::string answer;
-    if (!std::getline(std::cin, answer)) return false;
+    if (!std::getline(std::cin, answer)) {
+        std::fputc('\n', stderr);    /* no answer came, so the next line starts clean */
+        return false;
+    }
     return answer == "y" || answer == "Y" || answer == "yes";
 }
 
