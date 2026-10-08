@@ -1,0 +1,23 @@
+[package]
+name = "rant-config"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+name = "rant_config"
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+hcl-edit = "0.9"
+hcl-rs = "0.19"
+
+[build-dependencies]
+cbindgen = { version = "0.29", default-features = false }
+
+# A panic must never unwind into the C++ caller.
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"

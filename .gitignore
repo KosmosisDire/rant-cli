@@ -1,0 +1,17 @@
+# CMake build trees and the built exes
+/build/
+/bin/
+
+# Cargo output from a plain cargo build or test in config/
+/config/target/
+
+# Local notes for agents
+CLAUDE.md
+AGENTS.md
+
+# Editor and OS files
+.vs/
+.vscode/
+*.user
+Thumbs.db
+.DS_Store
