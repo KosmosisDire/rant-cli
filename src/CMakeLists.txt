@@ -9,17 +9,23 @@ add_library(rant_cli_core STATIC
   app/context.cpp
   app/run.cpp
   commands/build.cpp
+  commands/call.cpp
   commands/commands.cpp
+  commands/get.cpp
   commands/info.cpp
   commands/init.cpp
   commands/ls.cpp
   commands/plan_output.cpp
+  commands/pub.cpp
+  commands/set.cpp
   commands/start.cpp
   commands/stop.cpp
   commands/sub.cpp
   config/config.cpp
   mesh/access.cpp
   mesh/client.cpp
+  mesh/encode.cpp
+  mesh/text.cpp
   mesh/values.cpp
   process/command.cpp
   process/quote.cpp

@@ -11,6 +11,10 @@ const std::vector<app::Command>& all() {
         ls(),
         info(),
         sub(),
+        pub(),
+        get(),
+        set(),
+        call(),
     };
     return list;
 }

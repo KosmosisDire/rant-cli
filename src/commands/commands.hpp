@@ -16,5 +16,9 @@ app::Command stop();
 app::Command ls();
 app::Command info();
 app::Command sub();
+app::Command pub();
+app::Command get();
+app::Command set();
+app::Command call();
 
 }
