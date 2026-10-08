@@ -76,6 +76,17 @@ pub fn check_kinds(src: &Source, blocks: &[&hcl_edit::structure::Block]) -> Resu
     Ok(())
 }
 
+/// The workspace's own data directory, `.rant/` at the root, made on first use with a
+/// .gitignore so it is never committed.
+pub fn data_dir(root: &Path) -> PathBuf {
+    let dir = root.join(".rant");
+    if !dir.is_dir() {
+        let _ = std::fs::create_dir_all(&dir);
+        let _ = std::fs::write(dir.join(".gitignore"), "*\n");
+    }
+    dir
+}
+
 const TEMPLATE: &str = "workspace {\n  # logs   = \"logs\"\n  # ignore = [\"experiments/**\"]\n}\n";
 
 /// Writes a fresh `rant.hcl` into `dir`. Refused when one is already there.
