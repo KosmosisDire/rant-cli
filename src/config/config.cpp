@@ -58,13 +58,15 @@ static Opened read(Handle h) {
     Opened out;
     out.diagnostics = diagnostics(v->diagnostics, v->diagnostic_count);
     if (!v->root) return out;
-    Workspace ws{ from_utf8(v->root), from_utf8(str(v->logs)), from_utf8(str(v->data)), {} };
+    Workspace ws{ from_utf8(v->root), from_utf8(str(v->logs)), from_utf8(str(v->data)), {}, {} };
     for (size_t i = 0; i < v->package_count; i++) {
         const RantConfigPackage& p = v->packages[i];
         Package pkg{ str(p.name), from_utf8(str(p.dir)), {} };
         for (size_t j = 0; j < p.node_count; j++) pkg.nodes.push_back(node_type(p.nodes[j]));
         ws.packages.push_back(std::move(pkg));
     }
+    for (size_t i = 0; i < v->group_count; i++)
+        ws.groups.push_back({ str(v->groups[i].name), from_utf8(str(v->groups[i].file)) });
     out.workspace = std::move(ws);
     return out;
 }
@@ -72,7 +74,9 @@ static Opened read(Handle h) {
 static Plan read_plan(const RantConfigPlanView* v) {
     Plan out;
     out.diagnostics = diagnostics(v->diagnostics, v->diagnostic_count);
-    if (v->root) out.workspace = Workspace{ from_utf8(v->root), from_utf8(str(v->logs)), from_utf8(str(v->data)), {} };
+    if (v->root) out.workspace = Workspace{ from_utf8(v->root), from_utf8(str(v->logs)), from_utf8(str(v->data)), {}, {} };
+    out.group = str(v->group);
+    for (size_t i = 0; i < v->param_count; i++) out.params[str(v->params[i].name)] = str(v->params[i].value);
     for (size_t i = 0; i < v->instance_count; i++) {
         const RantConfigInstance& in = v->instances[i];
         Instance inst;
@@ -92,6 +96,32 @@ using PlanHandle = std::unique_ptr<RantConfigPlan, decltype(&rant_config_plan_fr
 Plan plan_node(const fs::path& start, const std::string& node_type) {
     PlanHandle h(rant_config_plan_node(to_utf8(start).c_str(), node_type.c_str()), &rant_config_plan_free);
     return read_plan(rant_config_plan_view(h.get()));
+}
+
+Plan plan_group(const fs::path& start, const std::string& group, const std::vector<std::string>& params) {
+    std::vector<const char*> raw;
+    for (auto& p : params) raw.push_back(p.c_str());
+    PlanHandle h(rant_config_plan_group(to_utf8(start).c_str(), group.c_str(), raw.data(), raw.size()),
+                 &rant_config_plan_free);
+    return read_plan(rant_config_plan_view(h.get()));
+}
+
+GroupInfo describe_group(const fs::path& start, const std::string& group) {
+    std::unique_ptr<RantConfigGroup, decltype(&rant_config_group_free)> h(
+        rant_config_group(to_utf8(start).c_str(), group.c_str()), &rant_config_group_free);
+    const RantConfigGroupView* v = rant_config_group_view(h.get());
+    GroupInfo out;
+    out.diagnostics = diagnostics(v->diagnostics, v->diagnostic_count);
+    out.name = str(v->name);
+    if (v->file) out.file = from_utf8(v->file);
+    out.description = str(v->description);
+    for (size_t i = 0; i < v->param_count; i++) {
+        const RantConfigParam& p = v->params[i];
+        Param param{ str(p.name), str(p.type_name), std::nullopt, strs(p.options, p.option_count), str(p.description) };
+        if (p.default_value) param.default_value = p.default_value;
+        out.params.push_back(std::move(param));
+    }
+    return out;
 }
 
 Opened open(const fs::path& start, bool packages) {

@@ -42,11 +42,17 @@ struct Package {
     std::vector<NodeType> nodes;
 };
 
+struct GroupFile {
+    std::string name;    /* package/stem, or stem outside a package */
+    fs::path    file;
+};
+
 struct Workspace {
-    fs::path             root;
-    fs::path             logs;
-    fs::path             data;        /* .rant/, the state file and caches */
-    std::vector<Package> packages;    /* filled when opened with packages */
+    fs::path               root;
+    fs::path               logs;
+    fs::path               data;        /* .rant/, the state file and caches */
+    std::vector<Package>   packages;    /* filled when opened with packages */
+    std::vector<GroupFile> groups;      /* filled when opened with packages */
 };
 
 /* A workspace when one encloses the directory, and any errors met reading it. */
@@ -65,15 +71,40 @@ struct Instance {
     fs::path                           cwd;
 };
 
-/* A resolved plan in start order. instances is empty whenever diagnostics is not. */
+/* A resolved plan in start order. instances is empty whenever diagnostics is not. A group
+ * plan names its group and every param it resolved, defaults included. */
 struct Plan {
-    std::optional<Workspace> workspace;    /* root, logs and data only */
-    std::vector<Instance>    instances;
-    std::vector<Diagnostic>  diagnostics;
+    std::optional<Workspace>           workspace;    /* root, logs and data only */
+    std::string                        group;        /* empty for a single node */
+    std::map<std::string, std::string> params;
+    std::vector<Instance>              instances;
+    std::vector<Diagnostic>            diagnostics;
 };
 
 /* The plan for one node of a node type, a reference in any form resolved from start. */
 Plan plan_node(const fs::path& start, const std::string& node_type);
+
+/* The plan for a group by reference from start, with "key=value" params. */
+Plan plan_group(const fs::path& start, const std::string& group, const std::vector<std::string>& params);
+
+struct Param {
+    std::string                name;
+    std::string                type;
+    std::optional<std::string> default_value;    /* none: the param is required */
+    std::vector<std::string>   options;
+    std::string                description;
+};
+
+/* A group with every param it takes, own and exposed, for help. */
+struct GroupInfo {
+    std::string             name;
+    fs::path                file;
+    std::string             description;
+    std::vector<Param>      params;
+    std::vector<Diagnostic> diagnostics;
+};
+
+GroupInfo describe_group(const fs::path& start, const std::string& group);
 
 /* Finds the enclosing workspace. With packages it also discovers every package and scans
  * it for node types, which reads the tree and is slower. */

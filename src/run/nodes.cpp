@@ -1,5 +1,6 @@
 #include "run/nodes.hpp"
 
+#include <algorithm>
 #include <cctype>
 #include <cstdio>
 
@@ -63,6 +64,32 @@ state::Instance spawn(const config::Workspace& ws, const config::Instance& inst,
 
 process::Stopped halt(const state::Instance& inst) {
     return process::stop(inst.tracking, grace);
+}
+
+bool same_spec(const state::Instance& running, const config::Instance& planned) {
+    return running.type == planned.type && running.argv == planned.argv && running.env == planned.env &&
+           running.cwd == config::to_utf8(planned.cwd);
+}
+
+std::vector<Released> release_root(Session& s, const std::string& key) {
+    state::State& st = s.state();
+    st.roots.erase(std::remove_if(st.roots.begin(), st.roots.end(), [&](const state::Root& r) { return r.key() == key; }),
+                   st.roots.end());
+    std::vector<Released> out;
+    for (size_t i = st.instances.size(); i-- > 0;) {
+        state::Instance& inst = st.instances[i];
+        auto it = std::find(inst.roots.begin(), inst.roots.end(), key);
+        if (it == inst.roots.end()) continue;
+        inst.roots.erase(it);
+        if (!inst.roots.empty()) {
+            out.push_back({ inst.name, inst.roots, process::Stopped::AlreadyGone });
+            continue;
+        }
+        Released r{ inst.name, {}, halt(inst) };
+        st.instances.erase(st.instances.begin() + (long)i);
+        out.push_back(r);
+    }
+    return out;
 }
 
 std::map<uint32_t, std::string> managed_peers(mesh::Client& mesh, const state::State& st) {

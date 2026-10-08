@@ -28,7 +28,9 @@ static Listing list_nodes(app::Context& ctx, mesh::Client& mesh, const std::stri
     Listing out;
     for (auto& r : st.roots) {
         if (r.kind != "group") continue;
-        Listing::Group g{ r.key().substr(6), {} };
+        /* the params show only when the group runs more than once */
+        size_t runs = std::count_if(st.roots.begin(), st.roots.end(), [&](const state::Root& o) { return o.kind == "group" && o.name == r.name; });
+        Listing::Group g{ runs > 1 ? r.key().substr(6) : r.name, {} };
         for (auto& i : st.instances)
             if (std::count(i.roots.begin(), i.roots.end(), r.key()) && util::name_matches(pattern, i.name))
                 g.nodes.push_back(i.name);

@@ -42,6 +42,20 @@ state::Instance spawn(const config::Workspace& ws, const config::Instance& inst,
 /* Stops an instance and everything it started: gracefully, then by force after grace. */
 process::Stopped halt(const state::Instance& inst);
 
+/* A running instance is the plan's node: same type, argv, env and working directory. */
+bool same_spec(const state::Instance& running, const config::Instance& planned);
+
+/* What releasing a root did to one of its nodes. */
+struct Released {
+    std::string              name;
+    std::vector<std::string> kept_for;    /* the roots still needing it, empty when stopped */
+    process::Stopped         how = process::Stopped::AlreadyGone;
+};
+
+/* Drops a root. Each of its nodes no other root needs stops, last started first, and a
+ * node another root still needs keeps running. */
+std::vector<Released> release_root(Session& s, const std::string& key);
+
 /* The live mesh peers that are instances rant started, by peer id, each with the instance
  * name. A peer belongs to an instance when the process id it reports is in the instance's
  * process group or job, so a node behind a wrapper still matches. */
