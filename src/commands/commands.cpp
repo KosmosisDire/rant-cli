@@ -16,6 +16,7 @@ const std::vector<app::Command>& all() {
         set(),
         call(),
         setup(),
+        lib(),
     };
     return list;
 }

@@ -49,12 +49,12 @@ macro(finish_run code out err fails shown)
   set(ERR "${${err}}" PARENT_SCOPE)
 endmacro()
 
-# rant(<args...> [FAILS] [IN <dir>]) runs the CLI on the test's own domain with an empty,
-# non terminal stdin. Nodes it starts inherit TEST_NODE_DOMAIN, so the test node joins the
-# same domain. Sets OUT and ERR. The test fails unless the exit code is 0, or nonzero when
-# FAILS is given.
+# rant(<args...> [FAILS | MAY_FAIL] [IN <dir>]) runs the CLI on the test's own domain with an
+# empty, non terminal stdin. Nodes it starts inherit TEST_NODE_DOMAIN, so the test node joins
+# the same domain. Sets OUT, ERR and CODE. The test fails unless the exit code is 0, or
+# nonzero when FAILS is given. MAY_FAIL takes any exit code.
 function(rant)
-  cmake_parse_arguments(PARSE_ARGV 0 R "FAILS" "IN" "")
+  cmake_parse_arguments(PARSE_ARGV 0 R "FAILS;MAY_FAIL" "IN" "")
   set(dir "${CWD}")
   if(R_IN)
     set(dir "${R_IN}")
@@ -66,6 +66,13 @@ function(rant)
     RESULT_VARIABLE code OUTPUT_VARIABLE out ERROR_VARIABLE err
     TIMEOUT 300)
   string(JOIN " " shown ${R_UNPARSED_ARGUMENTS})
+  if(R_MAY_FAIL)
+    set(R_FAILS OFF)
+    if(NOT code EQUAL 0)
+      set(R_FAILS ON)
+    endif()
+  endif()
+  set(CODE "${code}" PARENT_SCOPE)
   finish_run(code out err R_FAILS "${shown}")
 endfunction()
 

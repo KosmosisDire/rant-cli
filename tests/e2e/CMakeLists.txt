@@ -24,6 +24,7 @@ e2e_test(groups)
 e2e_test(build)
 e2e_test(csharp)
 e2e_test(complete)
+e2e_test(library)
 
-# The C# test needs the .NET SDK and says SKIPPED where there is none.
-set_tests_properties(e2e.csharp PROPERTIES SKIP_REGULAR_EXPRESSION "SKIPPED:")
+# The C# test needs the .NET SDK and the library test GitHub. Each says SKIPPED without.
+set_tests_properties(e2e.csharp e2e.library PROPERTIES SKIP_REGULAR_EXPRESSION "SKIPPED:")

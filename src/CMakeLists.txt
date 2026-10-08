@@ -15,6 +15,7 @@ add_library(rant_cli_core STATIC
   commands/get.cpp
   commands/info.cpp
   commands/init.cpp
+  commands/lib.cpp
   commands/ls.cpp
   commands/plan_output.cpp
   commands/pub.cpp
@@ -26,6 +27,7 @@ add_library(rant_cli_core STATIC
   complete/complete.cpp
   complete/shells.cpp
   config/config.cpp
+  config/lib.cpp
   mesh/access.cpp
   mesh/client.cpp
   mesh/encode.cpp

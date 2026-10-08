@@ -6,8 +6,7 @@ namespace util {
 
 namespace fs = std::filesystem;
 
-/* An environment variable as a path, read wide on Windows so any user name survives. */
-static fs::path env_path(const char* name) {
+fs::path env_path(const char* name) {
 #ifdef _WIN32
     std::wstring wide(name, name + std::char_traits<char>::length(name));
     const wchar_t* v = _wgetenv(wide.c_str());

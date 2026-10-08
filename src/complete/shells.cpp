@@ -192,8 +192,8 @@ static std::string install_powershell(const Shell& shell, const fs::path& hook) 
 
 std::string install(const Shell& shell) {
     if (shell.name == "fish") {
-        const char* xdg = std::getenv("XDG_CONFIG_HOME");
-        fs::path config = xdg && *xdg ? fs::u8path(xdg) : home() / ".config";
+        fs::path config = util::env_path("XDG_CONFIG_HOME");
+        if (config.empty()) config = home() / ".config";
         fs::path file = config / "fish" / "completions" / "rant.fish";
         write_file(file, std::string(shell.hook));
         return "loads from " + file.u8string();
@@ -209,8 +209,8 @@ std::string install(const Shell& shell) {
     if (shell.name == "bash") {
         rc = home() / ".bashrc";
     } else {
-        const char* zdot = std::getenv("ZDOTDIR");
-        rc = (zdot && *zdot ? fs::u8path(zdot) : home()) / ".zshrc";
+        fs::path zdot = util::env_path("ZDOTDIR");
+        rc = (zdot.empty() ? home() : zdot) / ".zshrc";
     }
     add_line(rc, "[ -f " + sh_quoted(hook) + " ] && . " + sh_quoted(hook));
     return "loads from " + rc.u8string();

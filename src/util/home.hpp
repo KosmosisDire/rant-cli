@@ -4,6 +4,9 @@
 
 namespace util {
 
+/* An environment variable as a path, empty when unset. Read wide on Windows. */
+std::filesystem::path env_path(const char* name);
+
 /* The user's home: HOME, else USERPROFILE on Windows. Empty when neither is set. */
 std::filesystem::path home_dir();
 
