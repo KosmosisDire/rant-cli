@@ -175,6 +175,16 @@ fn the_same_node_twice_merges_and_a_different_one_is_an_error() {
 }
 
 #[test]
+fn a_node_without_a_type_runs_the_node_type_its_label_names() {
+    let t = workspace_with(&[("bare.hcl", "group {\n  node \"lidar\" {}\n  node \"odom\" {\n    args = \"--slow\"\n  }\n}\n")]);
+    let m = model(&t);
+    let (p, _) = plan(&m, "bare", &[]).unwrap();
+    assert_eq!(names(&p), ["lidar", "odom"]);
+    assert_eq!(p.instances[0].node.package, "drivers");
+    assert_eq!(p.instances[1].node.package, "planner");
+}
+
+#[test]
 fn semantic_errors_point_at_their_place() {
     let cases: &[(&str, &str, &str, u32)] = &[
         ("undeclared.hcl", "group {\n  node \"x\" {\n    type = \"drivers/lidar\"\n    args = [param.nope]\n  }\n}\n", "undeclared param `nope`", 4),
@@ -189,7 +199,7 @@ fn semantic_errors_point_at_their_place() {
             3,
         ),
         ("cycle_a.hcl", "group {\n  include \"cycle_b\" {}\n}\n", "include cycle", 0),
-        ("nodetype.hcl", "group {\n  node \"x\" {}\n}\n", "needs `type`", 2),
+        ("nodetype.hcl", "group {\n  node \"x\" {}\n}\n", "no node type named `x`", 2),
         ("default.hcl", "group {\n  param \"n\" {\n    type    = int\n    default = \"ten\"\n  }\n}\n", "default: param `n` is int", 4),
     ];
     let t = workspace_with(&[("cycle_b.hcl", "group {\n  include \"cycle_a\" {}\n}\n")]);

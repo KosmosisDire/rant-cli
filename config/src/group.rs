@@ -9,6 +9,7 @@ use std::rc::Rc;
 
 use hcl::Value;
 use hcl_edit::structure::{Attribute, Block, Structure};
+use hcl_edit::Span;
 
 use crate::argv;
 use crate::diag::Diag;
@@ -109,10 +110,7 @@ fn parse(file: GroupFile, root: &Path) -> Result<GroupDef, Diag> {
             "include" => items.push(Item::Include(parse_include(&src, b, &scope)?)),
             "node" => {
                 one_label(&src, b)?;
-                let nf = Fields::of(&src, b, &["type", "name", "args", "env"], &[])?;
-                if nf.attr("type").is_none() {
-                    return Err(src.diag_at(b, "a node needs `type`, the node type it runs"));
-                }
+                Fields::of(&src, b, &["type", "name", "args", "env"], &[])?;
                 items.push(Item::Node(b.clone()));
             }
             _ => {}
@@ -316,10 +314,18 @@ impl<'m> Groups<'m> {
     fn node(&self, def: &GroupDef, b: &Block, scope: &Scope) -> Result<Instance, Diag> {
         let src = &def.src;
         let fields = Fields::of(src, b, &["type", "name", "args", "env"], &[])?;
-        let ty_attr = fields.attr("type").expect("checked at parse");
-        let reference = eval::string(src, ty_attr, scope)?;
-        let node = refs::resolve(self.model, &reference, scope.file_dir).map_err(|e| src.diag_at(&ty_attr.value, e))?;
-        crate::plan::runnable(&node).map_err(|e| src.diag_at(&ty_attr.value, e))?;
+        // without `type` the node runs the node type its label names
+        let ty_attr = fields.attr("type");
+        let reference = match ty_attr {
+            Some(a) => eval::string(src, a, scope)?,
+            None => one_label(src, b)?.to_string(),
+        };
+        let at: &dyn Span = match ty_attr {
+            Some(a) => &a.value,
+            None => b,
+        };
+        let node = refs::resolve(self.model, &reference, scope.file_dir).map_err(|e| src.diag_at(at, e))?;
+        crate::plan::runnable(&node).map_err(|e| src.diag_at(at, e))?;
         let name = match fields.attr("name") {
             Some(a) => eval::string(src, a, scope)?,
             None => one_label(src, b)?.to_string(),
