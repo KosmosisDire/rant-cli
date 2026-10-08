@@ -3,7 +3,9 @@
 //! the same `param` blocks groups use. The built in ones are compiled in.
 
 use std::collections::BTreeMap;
+use std::fmt;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use hcl::Value;
 
@@ -145,17 +147,46 @@ fn capital(w: &str) -> String {
     c.next().map(|f| f.to_uppercase().chain(c).collect()).unwrap_or_default()
 }
 
+const CASES: [&str; 4] = ["snake", "kebab", "pascal", "camel"];
+
+/// A name in one of CASES.
+fn case(s: &str, which: &str) -> Option<String> {
+    let w = words(s);
+    Some(match which {
+        "snake" => w.join("_"),
+        "kebab" => w.join("-"),
+        "pascal" => w.iter().map(|w| capital(w)).collect(),
+        "camel" => w.iter().enumerate().map(|(i, w)| if i == 0 { w.clone() } else { capital(w) }).collect(),
+        _ => return None,
+    })
+}
+
+/// The name given to `rant new`. It renders as given, and `name.snake` and the other cases
+/// work in file names too, where the `|` of a filter cannot go on Windows.
+#[derive(Debug)]
+struct Name(String);
+
+impl minijinja::value::Object for Name {
+    fn repr(self: &Arc<Self>) -> minijinja::value::ObjectRepr {
+        minijinja::value::ObjectRepr::Plain
+    }
+
+    fn get_value(self: &Arc<Self>, key: &minijinja::Value) -> Option<minijinja::Value> {
+        case(&self.0, key.as_str()?).map(minijinja::Value::from)
+    }
+
+    fn render(self: &Arc<Self>, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
 fn environment() -> minijinja::Environment<'static> {
     let mut env = minijinja::Environment::new();
     env.set_undefined_behavior(minijinja::UndefinedBehavior::Strict);
     env.set_keep_trailing_newline(true);
-    env.add_filter("snake", |s: String| words(&s).join("_"));
-    env.add_filter("kebab", |s: String| words(&s).join("-"));
-    env.add_filter("pascal", |s: String| words(&s).iter().map(|w| capital(w)).collect::<String>());
-    env.add_filter("camel", |s: String| {
-        let w = words(&s);
-        w.iter().enumerate().map(|(i, w)| if i == 0 { w.clone() } else { capital(w) }).collect::<String>()
-    });
+    for which in CASES {
+        env.add_filter(which, move |v: minijinja::Value| case(&v.to_string(), which).unwrap_or_default());
+    }
     env
 }
 
@@ -194,10 +225,10 @@ pub fn make(origin: &Origin, dest: &Path, name: &str, raw: &[String]) -> Result<
         let p = t.params.iter().find(|p| p.name == k).ok_or_else(|| Diag::plain(format!("the template has no param `{k}`")))?;
         given.insert(k.to_string(), param::parse_value(p, v).map_err(Diag::plain)?);
     }
-    let bound = param::bind(&t.params, given, &|m| Diag::plain(m), "")?;
-    let mut ctx: BTreeMap<String, Value> = bound;
-    ctx.insert("name".into(), Value::from(name));
-    let values = minijinja::Value::from_serialize(&ctx);
+    let bound: BTreeMap<String, Value> = param::bind(&t.params, given, &|m| Diag::plain(m), "")?;
+    let mut ctx: BTreeMap<String, minijinja::Value> = bound.iter().map(|(k, v)| (k.clone(), minijinja::Value::from_serialize(v))).collect();
+    ctx.insert("name".into(), minijinja::Value::from_object(Name(name.to_string())));
+    let values = minijinja::Value::from(ctx);
     let env = environment();
 
     let files = rendered(&t, &env, &values, 0)?;
@@ -230,8 +261,9 @@ mod tests {
         assert_eq!(words("LidarDriver2"), ["lidar", "driver2"]);
         assert_eq!(words("lidar_driver"), ["lidar", "driver"]);
         let env = environment();
-        let v = minijinja::Value::from_serialize(&BTreeMap::from([("name", "lidar-driver")]));
-        assert_eq!(env.render_str("{{ name | pascal }} {{ name | snake }} {{ name | camel }}", &v).unwrap(), "LidarDriver lidar_driver lidarDriver");
+        let v = minijinja::Value::from(BTreeMap::from([("name", minijinja::Value::from_object(Name("lidar-driver".into())))]));
+        let text = "{{ name }} {{ name | pascal }} {{ name.snake }} {{ name.camel }} {{ 'Big Box' | kebab }}";
+        assert_eq!(env.render_str(text, &v).unwrap(), "lidar-driver LidarDriver lidar_driver lidarDriver big-box");
     }
 
     #[test]
@@ -257,7 +289,7 @@ mod tests {
     fn a_folder_template_takes_params() {
         let t = crate::testdir::TestDir::new();
         t.write("tpl/template.hcl", "template {\n  param \"port\" {\n    type = int\n  }\n  next = \"port {{ port }}\"\n}\n");
-        t.write("tpl/{{name}}.txt", "{{ name | snake }} on {{ port }}\n");
+        t.write("tpl/{{name}}.txt", "{{ name.snake }} on {{ port }}\n");
         let origin = Origin::Dir(t.path("tpl"));
         assert!(make(&origin, &t.path("out"), "Web App", &[]).unwrap_err().message.contains("required param `port`"));
         let made = make(&origin, &t.path("out"), "Web App", &["port=8080".into()]).unwrap();
