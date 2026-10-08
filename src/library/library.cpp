@@ -9,6 +9,7 @@
 #include "app/failure.hpp"
 #include "config/config.hpp"
 #include "process/command.hpp"
+#include "ui/prompt.hpp"
 #include "util/home.hpp"
 
 namespace library {
@@ -98,9 +99,14 @@ config::Release release(const std::string& version) {
     return r;
 }
 
+/* A use the release would change. An unpinned pyproject dependency takes what its venv has. */
+static bool changes(const config::LibUse& u, const config::Release& r) {
+    return u.version != r.version && !(u.how == "pyproject" && !u.version);
+}
+
 /* Brings one use to the release. Returns what it did, empty when there was nothing to do. */
 static std::string update(const app::Context& ctx, const config::LibUse& u, const config::Release& r) {
-    if (u.version == r.version) {
+    if (!changes(u, r)) {
         if (u.how == "PackageReference") install_nupkg(ctx, r);    /* the feed may still lack it */
         return "";
     }
@@ -109,7 +115,6 @@ static std::string update(const app::Context& ctx, const config::LibUse& u, cons
         install_python(ctx, u, r);
         return from + " in " + ctx.shown(u.file);
     }
-    if (u.how == "pyproject" && !u.version) return "";    /* an unpinned dependency takes what the venv has */
     require(config::lib_set(u.file, r.version));
     if (u.kind == config::LibKind::CSharp) install_nupkg(ctx, r);
     return from + " in " + ctx.shown(u.file);
@@ -139,18 +144,37 @@ bool install(const app::Context& ctx, const fs::path& dir, bool recursive, const
                                      : "no CMakeLists.txt, C# project or Python file in " + ctx.shown(dir));
 
     ctx.out.line(ctx.out.paint(ui::Style::Bold, "Rant " + r.version));
-    bool ok = true, cmake = false;
     auto report = [&](const fs::path& d, config::LibKind k, const std::string& what) {
         ctx.out.line("  " + ctx.shown(d) + " " + config::lib_kind_name(k) + ": " + what);
     };
+
+    /* every package under a folder is a lot to change unasked, so the list comes first */
+    if (recursive) {
+        size_t n = 0;
+        for (auto& u : uses)
+            if (changes(u, r)) {
+                report(u.dir, u.kind, (u.version ? *u.version : "none") + " -> " + r.version + " in " + ctx.shown(u.file));
+                n++;
+            }
+        if (n == 0) {
+            ctx.out.line("  " + ctx.out.paint(ui::Style::Dim, "everything here is at " + r.version));
+        } else if (!ui::confirm("Update " + std::to_string(n) + (n == 1 ? " package?" : " packages?"), ctx.yes)) {
+            ctx.out.note("nothing was changed");
+            return false;
+        }
+    }
+
+    bool ok = true, cmake = false;
+    size_t done = 0;
     for (auto& u : uses) {
         try {
             std::string did = update(ctx, u, r);
             if (did.empty()) {
-                if (u.version) report(u.dir, u.kind, ctx.out.paint(ui::Style::Dim, "already " + *u.version));
+                if (u.version && !recursive) report(u.dir, u.kind, ctx.out.paint(ui::Style::Dim, "already " + *u.version));
                 continue;
             }
-            report(u.dir, u.kind, did);
+            if (!recursive) report(u.dir, u.kind, did);    /* the list before the question said it already */
+            done++;
             cmake |= u.kind == config::LibKind::CMake;
         } catch (const app::Failure& e) {
             ctx.out.warn(ctx.shown(u.dir) + " " + config::lib_kind_name(u.kind) + ": " + e.what());
@@ -170,6 +194,7 @@ bool install(const app::Context& ctx, const fs::path& dir, bool recursive, const
             ok = false;
         }
     }
+    if (recursive && done) ctx.out.line("updated " + std::to_string(done) + (done == 1 ? " package" : " packages"));
     if (cmake) ctx.out.note("CMake fetches it on the next configure, which `rant build` runs");
     return ok;
 }
