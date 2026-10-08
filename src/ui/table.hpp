@@ -21,4 +21,9 @@ private:
 
 size_t visible_width(const std::string& s);
 
+/* Cells laid out down then across in as many columns as fit width, the parts of each cell
+ * lined up within its column, as ls does. One column when width is 0. */
+std::vector<std::string> columns(const std::vector<std::vector<std::string>>& cells, size_t width,
+                                 const std::string& indent = "  ");
+
 }

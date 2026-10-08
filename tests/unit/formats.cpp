@@ -1,6 +1,7 @@
 #include "check.hpp"
 #include "ui/csv.hpp"
 #include "ui/live.hpp"
+#include "ui/table.hpp"
 #include "ui/yaml.hpp"
 
 using json = nlohmann::ordered_json;
@@ -65,4 +66,18 @@ TEST(csv_bare_value) {
 TEST(clip_counts_visible_characters_only) {
     CHECK_EQ(ui::clip("\x1b[1mabcdef\x1b[0m", 3), std::string("\x1b[1mabc\x1b[0m\x1b[0m"));
     CHECK_EQ(ui::clip("ab", 5), std::string("ab"));
+}
+
+using Lines = std::vector<std::string>;
+
+TEST(columns_fill_down_then_across_as_wide_as_fits) {
+    std::vector<std::vector<std::string>> cells = { { "a" }, { "b" }, { "c" }, { "d" }, { "e" } };
+    CHECK_EQ(ui::columns(cells, 20, ""), (Lines{ "a    c    e", "b    d" }));
+    CHECK_EQ(ui::columns(cells, 0, "").size(), size_t(5));
+    CHECK_EQ(ui::columns(cells, 1, "").size(), size_t(5));
+}
+
+TEST(columns_line_up_the_parts_of_each_cell) {
+    std::vector<std::vector<std::string>> cells = { { "odom", "topic" }, { "rate", "var" }, { "camera/left", "topic" } };
+    CHECK_EQ(ui::columns(cells, 40, "  "), (Lines{ "  odom  topic    camera/left  topic", "  rate  var" }));
 }
