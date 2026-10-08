@@ -154,9 +154,16 @@ static Handle std_copy(DWORD which, DWORD null_access) {
     return open_null(null_access);
 }
 
-int run(const Command& c) {
+int run(const Command& c, const fs::path& out_file) {
     Handle in = std_copy(STD_INPUT_HANDLE, GENERIC_READ);
-    Handle out = std_copy(STD_OUTPUT_HANDLE, GENERIC_WRITE);
+    Handle out;
+    if (out_file.empty()) {
+        out = std_copy(STD_OUTPUT_HANDLE, GENERIC_WRITE);
+    } else {
+        SECURITY_ATTRIBUTES sa = inheritable();
+        out = Handle(CreateFileW(out_file.wstring().c_str(), GENERIC_WRITE, FILE_SHARE_READ, &sa, CREATE_ALWAYS, 0, nullptr));
+        if (out.get() == INVALID_HANDLE_VALUE) throw app::Failure("cannot write " + out_file.u8string() + ": " + last_error_text());
+    }
     Handle err = std_copy(STD_ERROR_HANDLE, GENERIC_WRITE);
     PROCESS_INFORMATION pi = create(c, 0, in.get(), out.get(), err.get(), {});
     CloseHandle(pi.hThread);

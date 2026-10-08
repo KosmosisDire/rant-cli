@@ -100,6 +100,8 @@ static pid_t fork_exec(const Command& c, bool detached, int out_fd) {
             dup2(nul, 0);
             dup2(out_fd, 1);
             dup2(out_fd, 2);
+        } else if (out_fd >= 0) {
+            dup2(out_fd, 1);
         }
         int report = fcntl(pipefd[1], F_DUPFD_CLOEXEC, 3);
         close_other_fds(report);
@@ -132,8 +134,20 @@ static pid_t fork_exec(const Command& c, bool detached, int out_fd) {
     return pid;
 }
 
-int run(const Command& c) {
-    pid_t pid = fork_exec(c, false, -1);
+int run(const Command& c, const fs::path& out_file) {
+    int out = -1;
+    if (!out_file.empty()) {
+        out = open(out_file.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
+        if (out < 0) throw app::Failure("cannot write " + out_file.string() + ": " + std::strerror(errno));
+    }
+    pid_t pid;
+    try {
+        pid = fork_exec(c, false, out);
+    } catch (...) {
+        if (out >= 0) close(out);
+        throw;
+    }
+    if (out >= 0) close(out);
     int status = 0;
     while (waitpid(pid, &status, 0) < 0 && errno == EINTR) {}
     if (WIFEXITED(status)) return WEXITSTATUS(status);
