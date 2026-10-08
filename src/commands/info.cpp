@@ -4,7 +4,7 @@
 #include "commands/commands.hpp"
 #include "commands/kinds.hpp"
 #include "complete/complete.hpp"
-#include "config/lib.hpp"
+#include "library/uses.hpp"
 #include "mesh/access.hpp"
 #include "mesh/schema_text.hpp"
 #include "process/command.hpp"
@@ -172,7 +172,7 @@ static Answer package_answer(app::Context& ctx, const config::Package& p) {
     j["folder"] = ctx.shown(p.dir);
     j["kind"] = p.kinds;
     json rant = json::array();
-    for (auto& u : config::lib_uses(p.dir, false))
+    for (auto& u : library::in_folder(p.dir))
         rant.push_back((u.version ? *u.version : "none") + " through " + u.how + " in " + ctx.shown(u.file));
     j["rant"] = rant;
     config::Build b = config::plan_build(ctx.cwd, { p.name });

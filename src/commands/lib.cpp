@@ -3,8 +3,8 @@
 #include "app/failure.hpp"
 #include "commands/commands.hpp"
 #include "complete/complete.hpp"
-#include "config/lib.hpp"
 #include "library/library.hpp"
+#include "library/uses.hpp"
 #include "ui/table.hpp"
 
 namespace commands {
@@ -23,12 +23,12 @@ static int show(app::Context& ctx) {
     if (w.size() > 1) throw app::UsageError("lib takes at most one folder");
     bool one = w.size() == 1;
     fs::path dir = one ? folder(ctx, w[0]) : ctx.cwd;
-    std::vector<config::LibUse> uses = config::lib_uses(dir, !one);
+    std::vector<library::Use> uses = one ? library::in_folder(dir) : library::under(dir);
     if (ctx.json) {
         json out = json::array();
         for (auto& u : uses)
             out.push_back({ { "folder", config::to_utf8(u.dir) },
-                            { "kind", config::lib_kind_name(u.kind) },
+                            { "kind", library::kind_name(u.kind) },
                             { "how", u.how },
                             { "version", u.version ? json(*u.version) : json(nullptr) },
                             { "file", config::to_utf8(u.file) } });
@@ -44,7 +44,7 @@ static int show(app::Context& ctx) {
     for (auto& u : uses) {
         std::string where = u.how + " " + ctx.shown(u.file);
         if (u.how == "venv" && !u.venv_exists) where = "no venv yet";
-        t.row({ ctx.shown(u.dir), config::lib_kind_name(u.kind), u.version ? *u.version : ctx.out.paint(ui::Style::Dim, "none"),
+        t.row({ ctx.shown(u.dir), library::kind_name(u.kind), u.version ? *u.version : ctx.out.paint(ui::Style::Dim, "none"),
                 ctx.out.paint(ui::Style::Dim, where) });
     }
     for (auto& l : t.lines("")) ctx.out.line(l);

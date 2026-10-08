@@ -54,7 +54,7 @@ pub fn ignored(set: &GlobSet, base: &Path, p: &Path, is_dir: bool) -> bool {
 }
 
 /// A CMake build tree, whose fetched sources mention Rant but are never packages.
-pub fn build_tree(dir: &Path) -> bool {
+fn build_tree(dir: &Path) -> bool {
     dir.join("CMakeCache.txt").is_file()
 }
 

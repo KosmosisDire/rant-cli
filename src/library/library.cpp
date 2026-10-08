@@ -8,7 +8,7 @@
 
 #include "app/failure.hpp"
 #include "config/config.hpp"
-#include "config/lib.hpp"
+#include "library/uses.hpp"
 #include "process/command.hpp"
 #include "ui/prompt.hpp"
 #include "util/home.hpp"
@@ -36,12 +36,8 @@ static const net::Asset* wheel(const net::Release& r) {
     return nullptr;
 }
 
-static void require(const config::Outcome& o) {
-    if (!o.error.empty()) throw app::Failure(o.error);
-}
-
 /* Makes the venv when it is missing, then pip installs the release's wheel into it. */
-static void install_python(const app::Context& ctx, const config::LibUse& u, const net::Release& r) {
+static void install_python(const app::Context& ctx, const Use& u, const net::Release& r) {
     const net::Asset* w = wheel(r);
     if (!w) throw app::Failure("Rant " + r.version + " has no Python wheel for this platform");
     if (!u.venv_exists) {
@@ -97,12 +93,12 @@ static void install_nupkg(const app::Context& ctx, const net::Release& r) {
 net::Release release(const std::string& version) { return net::release(rant_repo, version); }
 
 /* A use the release would change. An unpinned pyproject dependency takes what its venv has. */
-static bool changes(const config::LibUse& u, const net::Release& r) {
+static bool changes(const Use& u, const net::Release& r) {
     return u.version != r.version && !(u.how == "pyproject" && !u.version);
 }
 
 /* Brings one use to the release. Returns what it did, empty when there was nothing to do. */
-static std::string update(const app::Context& ctx, const config::LibUse& u, const net::Release& r) {
+static std::string update(const app::Context& ctx, const Use& u, const net::Release& r) {
     if (!changes(u, r)) {
         if (u.how == "PackageReference") install_nupkg(ctx, r);    /* the feed may still lack it */
         return "";
@@ -112,37 +108,37 @@ static std::string update(const app::Context& ctx, const config::LibUse& u, cons
         install_python(ctx, u, r);
         return from + " in " + ctx.shown(u.file);
     }
-    require(config::lib_set(u.file, r.version));
-    if (u.kind == config::LibKind::CSharp) install_nupkg(ctx, r);
+    set_version(u.file, r.version);
+    if (u.kind == Kind::CSharp) install_nupkg(ctx, r);
     return from + " in " + ctx.shown(u.file);
 }
 
 /* The build files in a folder that could take Rant but do not name it yet. */
-static std::vector<std::pair<config::LibKind, fs::path>> missing(const fs::path& dir, const std::vector<config::LibUse>& uses) {
+static std::vector<std::pair<Kind, fs::path>> missing(const fs::path& dir, const std::vector<Use>& uses) {
     auto used = [&](const fs::path& f) {
         for (auto& u : uses)
             if (u.file == f) return true;
         return false;
     };
-    std::vector<std::pair<config::LibKind, fs::path>> out;
+    std::vector<std::pair<Kind, fs::path>> out;
     fs::path cmake = dir / "CMakeLists.txt";
-    if (fs::is_regular_file(cmake) && !used(cmake)) out.push_back({ config::LibKind::CMake, cmake });
+    if (fs::is_regular_file(cmake) && !used(cmake)) out.push_back({ Kind::CMake, cmake });
     std::error_code ec;
     for (auto& e : fs::directory_iterator(dir, ec))
-        if (e.path().extension() == ".csproj" && !used(e.path())) out.push_back({ config::LibKind::CSharp, e.path() });
+        if (e.path().extension() == ".csproj" && !used(e.path())) out.push_back({ Kind::CSharp, e.path() });
     return out;
 }
 
 bool install(const app::Context& ctx, const fs::path& dir, bool recursive, const net::Release& r) {
-    std::vector<config::LibUse> uses = config::lib_uses(dir, recursive);
+    std::vector<Use> uses = recursive ? under(dir) : in_folder(dir);
     auto adds = recursive ? decltype(missing(dir, uses)){} : missing(dir, uses);
     if (uses.empty() && adds.empty())
         throw app::Failure(recursive ? "nothing under here uses Rant yet, add it to a folder with `rant lib install <folder>`"
                                      : "no CMakeLists.txt, C# project or Python file in " + ctx.shown(dir));
 
     ctx.out.line(ctx.out.paint(ui::Style::Bold, "Rant " + r.version));
-    auto report = [&](const fs::path& d, config::LibKind k, const std::string& what) {
-        ctx.out.line("  " + ctx.shown(d) + " " + config::lib_kind_name(k) + ": " + what);
+    auto report = [&](const fs::path& d, Kind k, const std::string& what) {
+        ctx.out.line("  " + ctx.shown(d) + " " + kind_name(k) + ": " + what);
     };
 
     /* every package under a folder is a lot to change unasked, so the list comes first */
@@ -172,22 +168,21 @@ bool install(const app::Context& ctx, const fs::path& dir, bool recursive, const
             }
             if (!recursive) report(u.dir, u.kind, did);    /* the list before the question said it already */
             done++;
-            cmake |= u.kind == config::LibKind::CMake;
+            cmake |= u.kind == Kind::CMake;
         } catch (const app::Failure& e) {
-            ctx.out.warn(ctx.shown(u.dir) + " " + config::lib_kind_name(u.kind) + ": " + e.what());
+            ctx.out.warn(ctx.shown(u.dir) + " " + kind_name(u.kind) + ": " + e.what());
             ok = false;
         }
     }
     for (auto& [kind, file] : adds) {
         try {
-            config::Outcome o = config::lib_add(kind, file, r.version);
-            require(o);
-            if (kind == config::LibKind::CSharp) install_nupkg(ctx, r);
+            std::string hint = add(kind, file, r.version);
+            if (kind == Kind::CSharp) install_nupkg(ctx, r);
             report(dir, kind, "added to " + ctx.shown(file));
-            if (!o.note.empty()) ctx.out.note("    link it to your target: " + o.note);
-            cmake |= kind == config::LibKind::CMake;
+            if (!hint.empty()) ctx.out.note("    link it to your target: " + hint);
+            cmake |= kind == Kind::CMake;
         } catch (const app::Failure& e) {
-            ctx.out.warn(ctx.shown(dir) + " " + config::lib_kind_name(kind) + ": " + e.what());
+            ctx.out.warn(ctx.shown(dir) + " " + kind_name(kind) + ": " + e.what());
             ok = false;
         }
     }

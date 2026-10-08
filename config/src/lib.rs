@@ -10,7 +10,6 @@ mod eval;
 pub mod ffi;
 pub mod ffi_lib;
 mod group;
-mod lib_use;
 mod manifest;
 mod model;
 mod package;

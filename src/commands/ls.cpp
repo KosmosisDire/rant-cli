@@ -5,7 +5,7 @@
 #include "commands/commands.hpp"
 #include "commands/kinds.hpp"
 #include "complete/complete.hpp"
-#include "config/lib.hpp"
+#include "library/uses.hpp"
 #include "mesh/client.hpp"
 #include "mesh/values.hpp"
 #include "process/command.hpp"
@@ -148,7 +148,7 @@ static int list_mesh(app::Context& ctx, std::optional<Kind> kind, const std::str
 /* The Rant version a package uses, the installed one for Python. */
 static std::string rant_version(const config::Package& p) {
     std::string out;
-    for (auto& u : config::lib_uses(p.dir, false))
+    for (auto& u : library::in_folder(p.dir))
         if (u.version && (out.empty() || u.how != "pyproject")) out = *u.version;
     return out;
 }
