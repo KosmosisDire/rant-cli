@@ -116,6 +116,17 @@ Plan plan_group(const fs::path& start, const std::string& group, const std::vect
     return read_plan(rant_config_plan_view(h.get()));
 }
 
+static std::vector<Param> params_of(const RantConfigParam* ps, size_t n) {
+    std::vector<Param> out;
+    for (size_t i = 0; i < n; i++) {
+        const RantConfigParam& p = ps[i];
+        Param param{ str(p.name), str(p.type_name), std::nullopt, strs(p.options, p.option_count), str(p.description) };
+        if (p.default_value) param.default_value = p.default_value;
+        out.push_back(std::move(param));
+    }
+    return out;
+}
+
 GroupInfo describe_group(const fs::path& start, const std::string& group) {
     std::unique_ptr<RantConfigGroup, decltype(&rant_config_group_free)> h(
         rant_config_group(to_utf8(start).c_str(), group.c_str()), &rant_config_group_free);
@@ -125,12 +136,31 @@ GroupInfo describe_group(const fs::path& start, const std::string& group) {
     out.name = str(v->name);
     if (v->file) out.file = from_utf8(v->file);
     out.description = str(v->description);
-    for (size_t i = 0; i < v->param_count; i++) {
-        const RantConfigParam& p = v->params[i];
-        Param param{ str(p.name), str(p.type_name), std::nullopt, strs(p.options, p.option_count), str(p.description) };
-        if (p.default_value) param.default_value = p.default_value;
-        out.params.push_back(std::move(param));
-    }
+    out.params = params_of(v->params, v->param_count);
+    return out;
+}
+
+static const char* builtin_of(const TemplateOrigin& o) { return o.builtin.empty() ? nullptr : o.builtin.c_str(); }
+
+TemplateInfo describe_template(const TemplateOrigin& origin) {
+    std::string dir = to_utf8(origin.dir);
+    std::unique_ptr<RantConfigTemplate, decltype(&rant_config_template_free)> h(
+        rant_config_template(builtin_of(origin), dir.c_str()), &rant_config_template_free);
+    const RantConfigTemplateView* v = rant_config_template_view(h.get());
+    return { str(v->description), params_of(v->params, v->param_count), diagnostics(v->diagnostics, v->diagnostic_count) };
+}
+
+Made make(const TemplateOrigin& origin, const fs::path& dest, const std::string& name, const std::vector<std::string>& params) {
+    std::vector<const char*> raw;
+    for (auto& p : params) raw.push_back(p.c_str());
+    std::string dir = to_utf8(origin.dir), to = to_utf8(dest);
+    std::unique_ptr<RantConfigMade, decltype(&rant_config_made_free)> h(
+        rant_config_make(builtin_of(origin), dir.c_str(), to.c_str(), name.c_str(), raw.data(), raw.size()), &rant_config_made_free);
+    const RantConfigMadeView* v = rant_config_made_view(h.get());
+    Made out;
+    for (auto& f : strs(v->files, v->file_count)) out.files.push_back(from_utf8(f));
+    out.next = str(v->next);
+    out.diagnostics = diagnostics(v->diagnostics, v->diagnostic_count);
     return out;
 }
 

@@ -107,6 +107,30 @@ struct GroupInfo {
 
 GroupInfo describe_group(const fs::path& start, const std::string& group);
 
+/* A template for rant new: compiled in by name, else the folder dir. */
+struct TemplateOrigin {
+    std::string builtin;
+    fs::path    dir;
+};
+
+struct TemplateInfo {
+    std::string             description;
+    std::vector<Param>      params;
+    std::vector<Diagnostic> diagnostics;
+};
+
+TemplateInfo describe_template(const TemplateOrigin& origin);
+
+/* What a template made. Nothing is written when diagnostics is not empty. */
+struct Made {
+    std::vector<fs::path>   files;
+    std::string             next;    /* the next steps it suggests, maybe empty */
+    std::vector<Diagnostic> diagnostics;
+};
+
+/* Makes name from a template in dest with "key=value" params, never overwriting a file. */
+Made make(const TemplateOrigin& origin, const fs::path& dest, const std::string& name, const std::vector<std::string>& params);
+
 /* One package's build. configure, when not empty, runs first once the user agrees. */
 struct BuildStep {
     std::string                           package;

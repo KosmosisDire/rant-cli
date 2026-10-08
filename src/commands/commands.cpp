@@ -5,6 +5,7 @@ namespace commands {
 const std::vector<app::Command>& all() {
     static const std::vector<app::Command> list = {
         init(),
+        new_(),
         build(),
         start(),
         stop(),
