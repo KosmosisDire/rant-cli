@@ -449,7 +449,7 @@ pub fn in_folder(dir: &Path, root: Option<&Path>, explicit: bool) -> Vec<Use> {
 }
 
 /// Every use under start by folder, gitignored paths, build trees and venvs left out. A
-/// venv shared by several folders is listed once, for the first of them.
+/// venv is listed once, under the folder that holds it, however many folders use it.
 pub fn under(start: &Path, root: Option<&Path>) -> Vec<Use> {
     let top = start.to_path_buf();
     let walker = ignore::WalkBuilder::new(start)
@@ -468,11 +468,14 @@ pub fn under(start: &Path, root: Option<&Path>) -> Vec<Use> {
         if !e.file_type().is_some_and(|t| t.is_dir()) {
             continue;
         }
-        for u in in_folder(e.path(), root, false) {
-            let seen = u.how == How::Venv && !u.file.as_os_str().is_empty() && out.iter().any(|o| o.how == How::Venv && o.file == u.file);
-            if !seen {
-                out.push(u);
+        for mut u in in_folder(e.path(), root, false) {
+            if u.how == How::Venv && !u.file.as_os_str().is_empty() {
+                if out.iter().any(|o| o.how == How::Venv && o.file == u.file) {
+                    continue;
+                }
+                u.dir = u.file.parent().map(Path::to_path_buf).unwrap_or(u.dir);
             }
+            out.push(u);
         }
     }
     out.sort_by(|a, b| a.dir.cmp(&b.dir));
@@ -612,5 +615,20 @@ mod tests {
         let uses = under(t.root(), None);
         let found: Vec<(How, Option<&str>)> = uses.iter().map(|u| (u.how, u.version.as_deref())).collect();
         assert_eq!(found, [(How::Cpm, Some("0.0.16")), (How::Venv, Some("0.0.17"))]);
+        assert_eq!(uses[1].dir, t.path("py"), "under the folder holding the venv");
+    }
+
+    #[test]
+    fn a_shared_venv_is_listed_once_where_it_is() {
+        let t = crate::testdir::TestDir::new();
+        t.write(".venv/pyvenv.cfg", "home = x
+");
+        t.write("io/ft/ft.py", "import rant
+");
+        t.write("services/pick/main.py", "from rant import Node
+");
+        let uses = under(t.root(), Some(t.root()));
+        assert_eq!(uses.len(), 1, "{uses:?}");
+        assert!(crate::paths::same(&uses[0].dir, t.root()));
     }
 }
