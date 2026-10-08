@@ -35,10 +35,12 @@ static std::vector<std::string> split(const std::string& s, char sep) {
     return out;
 }
 
+#ifdef _WIN32
 static std::string lower(std::string s) {
     for (auto& c : s) c = (char)std::tolower((unsigned char)c);
     return s;
 }
+#endif
 
 /* A file the OS will run: on Windows any file, since the extension decides, and on POSIX
  * one with an execute bit. */
