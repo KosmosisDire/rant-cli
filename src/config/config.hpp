@@ -13,6 +13,9 @@ namespace config {
 
 namespace fs = std::filesystem;
 
+fs::path from_utf8(const std::string& s);
+std::string to_utf8(const fs::path& p);
+
 struct Diagnostic {
     std::string file;
     uint32_t    line = 0;     /* 1 based, 0 = the whole file */
@@ -34,6 +37,9 @@ struct NodeType {
     fs::path                 cwd;       /* the package root, or a loose file's folder */
 
     std::string ref() const { return package.empty() ? name : package + "/" + name; }
+
+    /* What a plan and the state call it: package/name, or its file outside every package. */
+    std::string planned() const { return package.empty() && path ? to_utf8(*path) : ref(); }
 };
 
 struct Package {
@@ -164,7 +170,5 @@ PythonInfo python_of(const fs::path& dir);
 Opened open(const fs::path& start, bool packages = false);
 Opened init(const fs::path& dir);
 
-fs::path from_utf8(const std::string& s);
-std::string to_utf8(const fs::path& p);
 
 }

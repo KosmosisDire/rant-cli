@@ -43,7 +43,7 @@ static Answer node_answer(mesh::Client& mesh, const NodeView& v) {
     json& j = a.fields;
     j["node"] = v.instance ? v.instance->name : v.peer->name;
     if (v.instance) {
-        j["type"] = v.instance->type;
+        j["from"] = v.instance->type;
         j["run"] = v.instance->argv;
         j["log"] = v.instance->log;
         j["roots"] = v.instance->roots;
@@ -160,12 +160,7 @@ static std::vector<const config::NodeType*> all_types(const config::Workspace& w
     return out;
 }
 
-static std::string type_of(const config::NodeType& n) {
-    /* a type outside every package is known by its file, as a plan names it */
-    return n.package.empty() && n.path ? config::to_utf8(*n.path) : n.ref();
-}
-
-static Answer package_answer(app::Context& ctx, const config::Package& p) {
+static Answer package_answer(app::Context& ctx, const state::State& st, const config::Package& p) {
     Answer a;
     json& j = a.fields;
     j["package"] = p.name;
@@ -179,23 +174,28 @@ static Answer package_answer(app::Context& ctx, const config::Package& p) {
     json depends = json::array(), build = json::array();
     for (auto& e : b.edges)
         if (e.from == p.name) depends.push_back(e.to + " (" + e.source + ")");
-    for (auto& st : b.steps) {
-        if (st.package != p.name) continue;
-        if (!st.configure.empty()) build.push_back(process::shown(st.configure) + " (asks first)");
-        for (auto& c : st.commands) build.push_back(process::shown(c));
+    for (auto& step : b.steps) {
+        if (step.package != p.name) continue;
+        if (!step.configure.empty()) build.push_back(process::shown(step.configure) + " (asks first)");
+        for (auto& c : step.commands) build.push_back(process::shown(c));
     }
     j["depends"] = depends;
     j["build"] = build;
-    json types = json::array();
-    for (auto& n : p.nodes) types.push_back(n.ref());
-    j["types"] = types;
+    json nodes = json::array(), running = json::array();
+    for (auto& n : p.nodes) {
+        nodes.push_back(n.ref());
+        for (auto& i : st.instances)
+            if (i.type == n.planned()) running.push_back(i.name);
+    }
+    j["nodes"] = nodes;
+    j["running"] = running;
     return a;
 }
 
 static Answer type_answer(app::Context& ctx, const config::Workspace& ws, const state::State& st, const config::NodeType& n) {
     Answer a;
     json& j = a.fields;
-    j["type"] = n.ref();
+    j["node"] = n.ref();
     j["kind"] = config::kind_name(n.kind);
     if (n.path) j["file"] = ctx.shown(*n.path);
     j["run"] = process::shown(n.run);
@@ -203,11 +203,11 @@ static Answer type_answer(app::Context& ctx, const config::Workspace& ws, const 
     json groups = json::array(), running = json::array();
     for (auto& g : ws.groups) {
         config::Plan plan = config::plan_group(ctx.cwd, g.name, {});
-        if (std::any_of(plan.instances.begin(), plan.instances.end(), [&](const config::Instance& i) { return i.type == type_of(n); }))
+        if (std::any_of(plan.instances.begin(), plan.instances.end(), [&](const config::Instance& i) { return i.type == n.planned(); }))
             groups.push_back(g.name);
     }
     for (auto& i : st.instances)
-        if (i.type == type_of(n)) running.push_back(i.name);
+        if (i.type == n.planned()) running.push_back(i.name);
     j["groups"] = groups;
     j["running"] = running;
     return a;
@@ -256,11 +256,11 @@ static void workspace_answers(app::Context& ctx, std::optional<Kind> kind, const
         std::error_code ec;
         fs::path folder = fs::weakly_canonical(ctx.cwd / config::from_utf8(name), ec);
         for (auto& p : full.packages)
-            if (p.name == name || (!ec && fs::equivalent(p.dir, folder, ec))) out.push_back({ Kind::Package, package_answer(ctx, p) });
+            if (p.name == name || (!ec && fs::equivalent(p.dir, folder, ec))) out.push_back({ Kind::Package, package_answer(ctx, st, p) });
     }
-    if (want(Kind::Type))
+    if (want(Kind::Node))
         for (auto* n : all_types(full))
-            if (n->ref() == name || n->name == name) out.push_back({ Kind::Type, type_answer(ctx, full, st, *n) });
+            if (n->ref() == name || n->name == name) out.push_back({ Kind::Node, type_answer(ctx, full, st, *n) });
     if (want(Kind::Group)) {
         config::GroupInfo g = config::describe_group(ctx.cwd, name);
         if (g.diagnostics.empty()) out.push_back({ Kind::Group, group_answer(ctx, st, g) });
@@ -288,7 +288,8 @@ static int run(app::Context& ctx) {
 
     state::State st = run::snapshot(ctx);
     std::vector<std::pair<Kind, Answer>> answers;
-    if (!kind || !on_mesh(*kind)) workspace_answers(ctx, kind, name, st, answers);
+    /* a node is a running one or one that could start, so it looks in both places */
+    if (!kind || !on_mesh(*kind) || *kind == Kind::Node) workspace_answers(ctx, kind, name, st, answers);
     /* the answers' schemas live in the client's node, so it outlives their printing */
     std::optional<mesh::Client> mesh;
     if (!kind || on_mesh(*kind)) mesh_answers(mesh.emplace(ctx.domain), kind, name, st, answers);
@@ -327,7 +328,7 @@ static std::vector<std::string> names(complete::Request& r, std::optional<Kind> 
     auto add = [&](std::vector<std::string> v) { out.insert(out.end(), v.begin(), v.end()); };
     auto want = [&](Kind k) { return !kind || *kind == k; };
     if (want(Kind::Package)) add(r.packages());
-    if (want(Kind::Type)) add(r.node_types());
+    if (want(Kind::Node)) add(r.node_types());
     if (want(Kind::Group)) add(r.groups());
     if (want(Kind::Node)) {
         add(r.mesh_nodes());
@@ -354,7 +355,7 @@ static complete::Candidates complete_words(complete::Request& r) {
 }
 
 app::Command info() {
-    app::Command c{ "info", "[kind] <name>", "explain a node, entity, package, node type or group", app::Section::Mesh, {}, run };
+    app::Command c{ "info", "[kind] <name>", "explain a node, running or not, an entity, a package or a group", app::Section::Mesh, {}, run };
     c.complete = complete_words;
     return c;
 }

@@ -39,7 +39,7 @@ expect_match("${ERR}" "no node named `brief` is running")
 
 # Mistakes are named.
 rant(start node nope FAILS)
-expect_match("${ERR}" "no node type named `nope`")
+expect_match("${ERR}" "no node named `nope`")
 rant(start chatty FAILS)
 expect_match("${ERR}" "rant start node")
 

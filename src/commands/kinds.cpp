@@ -18,7 +18,6 @@ static const std::vector<Words>& table() {
         { Kind::Function, "fn", "fns", { "function", "functions" } },
         { Kind::Task, "task", "tasks", {} },
         { Kind::Package, "package", "packages", { "pkg", "pkgs" } },
-        { Kind::Type, "type", "types", {} },
         { Kind::Group, "group", "groups", {} },
     };
     return t;
@@ -45,7 +44,7 @@ std::vector<std::string> kind_words(bool plural) {
     return out;
 }
 
-bool on_mesh(Kind k) { return k != Kind::Package && k != Kind::Type && k != Kind::Group; }
+bool on_mesh(Kind k) { return k != Kind::Package && k != Kind::Group; }
 
 bool entity_matches(Kind k, std::string_view entity_kind) {
     return k == Kind::Entity || (on_mesh(k) && k != Kind::Node && entity_kind == kind_word(k));

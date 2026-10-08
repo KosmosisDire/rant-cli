@@ -24,7 +24,7 @@ fn is_path(r: &str) -> bool {
 pub fn resolve(model: &Model, reference: &str, from_dir: &Path) -> Result<NodeType, String> {
     let reference = reference.trim(); // a space at either end never means anything
     if reference.is_empty() {
-        return Err("empty node type".into());
+        return Err("empty node name".into());
     }
     if is_path(reference) {
         if let Some((dir, name)) = reference.rsplit_once(':') {
@@ -43,14 +43,14 @@ pub fn resolve(model: &Model, reference: &str, from_dir: &Path) -> Result<NodeTy
             .iter()
             .find(|n| n.name == name)
             .cloned()
-            .ok_or_else(|| format!("package `{pkg}` has no node type `{name}`{}", known(&p.nodes)));
+            .ok_or_else(|| format!("package `{pkg}` has no node `{name}`{}", known(&p.nodes)));
     }
     let matches: Vec<&NodeType> = model.node_types().filter(|n| n.name == reference).collect();
     match matches.as_slice() {
         [one] => Ok((*one).clone()),
-        [] => Err(format!("no node type named `{reference}`, see `rant build --dry-run` for the node types")),
+        [] => Err(format!("no node named `{reference}`, see `rant ls nodes --all`")),
         many => Err(format!(
-            "`{reference}` is a node type in several packages, name one: {}",
+            "`{reference}` is a node in several packages, name one: {}",
             many.iter().map(|n| shown(n)).collect::<Vec<_>>().join(", ")
         )),
     }
@@ -78,7 +78,7 @@ fn in_package_dir(model: &Model, dir: &Path, name: &str, reference: &str) -> Res
         .iter()
         .find(|n| n.name == name)
         .cloned()
-        .ok_or_else(|| format!("package `{}` has no node type `{name}`{}", p.name, known(&p.nodes)))
+        .ok_or_else(|| format!("package `{}` has no node `{name}`{}", p.name, known(&p.nodes)))
 }
 
 /// An executable or Python file by path: a found node type when the scan knows it, else a

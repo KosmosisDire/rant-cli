@@ -89,13 +89,33 @@ static void section(app::Context& ctx, const char* title, const std::vector<std:
     if (lines.empty()) ctx.out.line(ctx.out.paint(ui::Style::Faint, "  (none)"));
 }
 
-/* The running nodes and entities, the default. kind narrows to nodes or one entity kind. */
+/* The nodes a workspace could start that are not running, outside a workspace none. */
+static std::vector<const config::NodeType*> not_running(app::Context& ctx, const std::string& pattern) {
+    std::vector<const config::NodeType*> out;
+    if (!ctx.workspace()) return out;
+    const config::Workspace& ws = ctx.require_workspace(true);
+    state::State st = run::snapshot(ctx);
+    auto add = [&](const config::NodeType& n) {
+        bool runs = std::any_of(st.instances.begin(), st.instances.end(), [&](const state::Instance& i) { return i.type == n.planned(); });
+        if (!runs && util::name_matches(pattern, n.ref())) out.push_back(&n);
+    };
+    for (auto& p : ws.packages)
+        for (auto& n : p.nodes) add(n);
+    for (auto& n : ws.loose) add(n);
+    return out;
+}
+
+/* The running nodes and entities, the default. kind narrows to nodes or one entity kind, and
+ * with all the nodes that could start follow. */
 static int list_mesh(app::Context& ctx, std::optional<Kind> kind, const std::string& pattern) {
     bool show_nodes = !kind || *kind == Kind::Node, show_entities = !kind || *kind != Kind::Node;
+    bool all = show_nodes && ctx.args.has("all");
     mesh::Client mesh(ctx.domain);
     mesh.settle();
     Listing nodes;
     if (show_nodes) nodes = list_nodes(ctx, mesh, pattern);
+    std::vector<const config::NodeType*> idle;
+    if (all) idle = not_running(ctx, pattern);
     std::vector<rant::Entity> entities;
     if (show_entities)
         for (auto& e : mesh.entities())
@@ -113,6 +133,12 @@ static int list_mesh(app::Context& ctx, std::optional<Kind> kind, const std::str
             out["groups"] = json::array();
             for (auto& g : nodes.groups) out["groups"].push_back({ { "group", g.header }, { "nodes", rows(g.nodes) } });
             out["nodes"] = rows(nodes.loose);
+        }
+        if (all) {
+            out["not_running"] = json::array();
+            for (auto* n : idle)
+                out["not_running"].push_back({ { "name", n->ref() }, { "kind", config::kind_name(n->kind) },
+                                               { "path", n->path ? json(config::to_utf8(*n->path)) : json(nullptr) } });
         }
         if (show_entities) {
             out["entities"] = json::array();
@@ -135,6 +161,13 @@ static int list_mesh(app::Context& ctx, std::optional<Kind> kind, const std::str
         }
         for (auto& l : ui::columns(cells(nodes.loose), width(), "  ")) lines.push_back(l);
         section(ctx, "NODES", lines);
+    }
+    if (all) {
+        ui::Table t;
+        auto dim = [&](const std::string& x) { return ctx.out.paint(ui::Style::Dim, x); };
+        for (auto* n : idle) t.row({ n->ref(), dim(config::kind_name(n->kind)), dim(n->path ? ctx.shown(*n->path) : process::shown(n->run)) });
+        ctx.out.line();
+        section(ctx, "NOT RUNNING", t.lines());
     }
     if (show_nodes && show_entities) ctx.out.line();
     if (show_entities) {
@@ -166,7 +199,7 @@ static std::string params_short(const config::GroupInfo& g) {
     return joined(v);
 }
 
-/* Packages, node types or groups: what the workspace offers, running or not. */
+/* Packages or groups: what the workspace offers, running or not. */
 static int list_workspace(app::Context& ctx, Kind kind, const std::string& pattern) {
     const config::Workspace& ws = ctx.require_workspace(true);
     json out = json::array();
@@ -181,18 +214,6 @@ static int list_workspace(app::Context& ctx, Kind kind, const std::string& patte
             out.push_back({ { "name", p.name }, { "kinds", p.kinds }, { "folder", config::to_utf8(p.dir) },
                             { "rant", version.empty() ? json(nullptr) : json(version) } });
             t.row({ p.name, dim(joined(p.kinds, ", ")), version.empty() ? dim("no Rant") : "Rant " + version, dim(ctx.shown(p.dir)) });
-        }
-    } else if (kind == Kind::Type) {
-        title = "NODE TYPES";
-        std::vector<const config::NodeType*> types;
-        for (auto& p : ws.packages)
-            for (auto& n : p.nodes) types.push_back(&n);
-        for (auto& n : ws.loose) types.push_back(&n);
-        for (auto* n : types) {
-            if (!util::name_matches(pattern, n->ref())) continue;
-            out.push_back({ { "name", n->ref() }, { "kind", config::kind_name(n->kind) },
-                            { "path", n->path ? json(config::to_utf8(*n->path)) : json(nullptr) }, { "run", n->run } });
-            t.row({ n->ref(), dim(config::kind_name(n->kind)), dim(n->path ? ctx.shown(*n->path) : process::shown(n->run)) });
         }
     } else {
         title = "GROUPS";
@@ -227,8 +248,8 @@ static complete::Candidates complete_words(complete::Request& r) {
 
 app::Command ls() {
     app::Command c{ "ls", "[kind] [pattern]",
-                    "list the running nodes and entities, or packages, types or groups",
-                    app::Section::Mesh, {}, run };
+                    "list the running nodes and entities, or packages or groups",
+                    app::Section::Mesh, { { "all", 'a', "", "with the nodes, also those that could start" } }, run };
     c.complete = complete_words;
     return c;
 }

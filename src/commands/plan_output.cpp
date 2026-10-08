@@ -36,7 +36,7 @@ void print_plan(app::Context& ctx, const config::Plan& plan) {
         json nodes = json::array();
         for (auto& i : plan.instances)
             nodes.push_back({ { "name", i.name },
-                              { "type", i.type },
+                              { "node", i.type },
                               { "argv", i.argv },
                               { "env", i.env },
                               { "cwd", config::to_utf8(i.cwd) } });

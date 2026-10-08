@@ -86,7 +86,7 @@ static void dry_run(app::Context& ctx, const config::Workspace& ws, const config
         ctx.out.line();
     };
     section("PACKAGES", packages);
-    section("NODE TYPES", nodes);
+    section("NODES", nodes);
     section("DEPENDENCIES", edges);
 
     ctx.out.line(ctx.out.paint(ui::Style::Bold, "BUILD ORDER"));

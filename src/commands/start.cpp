@@ -180,11 +180,11 @@ static int run(app::Context& ctx) {
     }
     if (w.empty() || (w[0] != "node" && !group)) {
         std::string hint = w.empty() ? "" : guess(ctx, w[0]);
-        throw app::UsageError("say what to start: " + (hint.empty() ? std::string("`rant start node <node type>` or `rant start group <name>`") : hint));
+        throw app::UsageError("say what to start: " + (hint.empty() ? std::string("`rant start node <node>` or `rant start group <name>`") : hint));
     }
     if (w.size() < 2) throw app::UsageError("start " + w[0] + " needs a name");
     if (group) return start_group(ctx, w[1], { w.begin() + 2, w.end() });
-    if (w.size() != 2) throw app::UsageError("start node takes one node type, such as `rant start node talker`");
+    if (w.size() != 2) throw app::UsageError("start node takes one node, such as `rant start node talker`");
     return start_node(ctx, w[1]);
 }
 
@@ -198,7 +198,7 @@ static complete::Candidates complete_words(complete::Request& r) {
 }
 
 app::Command start() {
-    app::Command c{ "start", "node <node type> | group <name> [key=value...]",
+    app::Command c{ "start", "node <node> | group <name> [key=value...]",
                     "start nodes, detached, logging to the logs folder", app::Section::Workspace,
                     { { "dry-run", 0, "", "show what would run without starting it" } }, run };
     c.own_help = true;
