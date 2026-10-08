@@ -85,10 +85,11 @@ impl Cache {
     }
 }
 
-/// Directories no scan enters: version control, Rant's own data, virtualenvs and npm trees.
+/// Directories no scan enters: version control, Rant's own data, virtualenvs, npm trees and
+/// the sources CMake fetches into a build tree, which belong to other projects.
 pub fn skipped_dir(dir: &Path) -> bool {
     let name = dir.file_name().map(|n| n.to_string_lossy()).unwrap_or_default();
-    name == ".git" || name == ".rant" || name == "node_modules" || dir.join("pyvenv.cfg").is_file()
+    name == ".git" || name == ".rant" || name == "node_modules" || name == "_deps" || dir.join("pyvenv.cfg").is_file()
 }
 
 /// Scans `dir`, including build directories, but not the nested packages in `nested` nor
