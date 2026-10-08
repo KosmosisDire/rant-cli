@@ -30,9 +30,13 @@ Release release(const std::string& repo, const std::string& tag = "");
 /* A release from the API's JSON answer. Throws app::Failure when it cannot be read. */
 Release parse_release(const std::string& body);
 
-/* Downloads url to dest, which is whole or untouched afterwards. A running program on
- * Windows cannot be replaced but can be renamed, so the old file steps aside first.
- * Throws app::Failure. */
-void download(const std::string& url, const fs::path& dest);
+/* Downloads url to dest, which is whole or untouched afterwards, and with program marks it
+ * runnable. A running program on Windows cannot be replaced but can be renamed, so the old
+ * file steps aside first. Throws app::Failure. */
+void download(const std::string& url, const fs::path& dest, bool program = false);
+
+/* The end of a release asset's name for the platform this runs on: "win-x64.exe",
+ * "linux-x64", "osx-arm64". */
+std::string platform();
 
 }

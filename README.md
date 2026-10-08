@@ -12,7 +12,8 @@ irm https://raw.githubusercontent.com/KosmosisDire/rant-cli/main/install.ps1 | i
 ```
 
 Each lists what it will do and asks first: the `rant` command goes to `~/.rant/bin`, that
-folder onto PATH, then `rant setup` adds tab completion.
+folder onto PATH, then `rant setup` adds tab completion. Later, `rant --update` moves to the
+newest release.
 
 ## Use
 

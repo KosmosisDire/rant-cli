@@ -22,23 +22,6 @@ static const char* exe_name = "rant-explorer.exe";
 static const char* exe_name = "rant-explorer";
 #endif
 
-/* The end of a release asset's name for the platform this CLI runs on. */
-static std::string platform() {
-#if defined(_WIN32) && defined(_M_ARM64)
-    return "win-arm64.exe";
-#elif defined(_WIN32)
-    return "win-x64.exe";
-#elif defined(__APPLE__) && defined(__aarch64__)
-    return "osx-arm64";
-#elif defined(__APPLE__)
-    return "osx-x64";
-#elif defined(__aarch64__)
-    return "linux-arm64";
-#else
-    return "linux-x64";
-#endif
-}
-
 static fs::path installed() { return util::rant_home() / "bin" / exe_name; }
 static fs::path version_file() { return util::rant_home() / "bin" / "rant-explorer.version"; }
 
@@ -62,13 +45,11 @@ static std::optional<fs::path> locate(const app::Context& ctx) {
 
 /* Downloads the release's explorer for this platform into ~/.rant/bin. */
 static void install(const app::Context& ctx, const net::Release& r) {
-    std::string asset = "rant-explorer-" + r.version + "-" + platform();
+    std::string asset = "rant-explorer-" + r.version + "-" + net::platform();
     const net::Asset* a = r.asset(asset);
     if (!a) throw app::Failure("the explorer " + r.version + " has no build for this platform, there is no " + asset);
     ctx.out.note("downloading " + asset);
-    net::download(a->url, installed());
-    std::error_code ec;
-    fs::permissions(installed(), fs::perms::owner_exec | fs::perms::group_exec | fs::perms::others_exec, fs::perm_options::add, ec);
+    net::download(a->url, installed(), true);
     std::ofstream(version_file()) << r.version << "\n";
     ctx.out.note("installed the explorer " + r.version + " as " + config::to_utf8(installed()));
 }

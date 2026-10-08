@@ -64,6 +64,22 @@ static std::string curl_failure(const std::string& url, int code) {
     }
 }
 
+std::string platform() {
+#if defined(_WIN32) && defined(_M_ARM64)
+    return "win-arm64.exe";
+#elif defined(_WIN32)
+    return "win-x64.exe";
+#elif defined(__APPLE__) && defined(__aarch64__)
+    return "osx-arm64";
+#elif defined(__APPLE__)
+    return "osx-x64";
+#elif defined(__aarch64__)
+    return "linux-arm64";
+#else
+    return "linux-x64";
+#endif
+}
+
 Release parse_release(const std::string& body) {
     json j = json::parse(body, nullptr, false);
     if (!j.is_object() || !j.value("tag_name", json()).is_string()) throw app::Failure("GitHub answered a release that cannot be read");
@@ -98,7 +114,7 @@ Release release(const std::string& repo, const std::string& tag) {
     throw app::Failure("GitHub answered " + http + " for " + url);
 }
 
-void download(const std::string& url, const fs::path& dest) {
+void download(const std::string& url, const fs::path& dest, bool program) {
     need_curl();
     std::error_code ec;
     fs::create_directories(dest.parent_path(), ec);
@@ -109,6 +125,7 @@ void download(const std::string& url, const fs::path& dest) {
         fs::remove(part, ec);
         throw app::Failure(curl_failure(url, code));
     }
+    if (program) fs::permissions(part, fs::perms::owner_exec | fs::perms::group_exec | fs::perms::others_exec, fs::perm_options::add, ec);
     fs::rename(part, dest, ec);
     if (!ec) return;
     fs::path old = dest;
