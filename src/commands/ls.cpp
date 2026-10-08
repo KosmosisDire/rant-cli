@@ -3,10 +3,15 @@
 
 #include "app/failure.hpp"
 #include "commands/commands.hpp"
+#include "commands/kinds.hpp"
 #include "complete/complete.hpp"
+#include "config/lib.hpp"
 #include "mesh/client.hpp"
 #include "mesh/values.hpp"
+#include "process/command.hpp"
 #include "run/nodes.hpp"
+#include "ui/table.hpp"
+#include "ui/terminal.hpp"
 #include "util/match.hpp"
 
 namespace commands {
@@ -60,9 +65,9 @@ static Listing list_nodes(app::Context& ctx, mesh::Client& mesh, const std::stri
 
 /* The explorer's colors: a node's dot green on the mesh and amber while joining, and each
  * entity kind in the color the explorer's mesh view draws it. */
-static std::string node_line(app::Context& ctx, const Row& r, const std::string& indent) {
-    if (!ctx.out.color()) return indent + r.name;
-    return indent + ctx.out.paint(r.on_mesh ? ui::Style::Green : ui::Style::Amber, "\xe2\x97\x8f") + " " + r.name;
+static std::string node_cell(app::Context& ctx, const Row& r) {
+    if (!ctx.out.color()) return r.name;
+    return ctx.out.paint(r.on_mesh ? ui::Style::Green : ui::Style::Amber, "\xe2\x97\x8f") + " " + r.name;
 }
 
 static ui::Style kind_style(rant::EntityKind k) {
@@ -75,18 +80,18 @@ static ui::Style kind_style(rant::EntityKind k) {
     return ui::Style::Dim;
 }
 
-static int run(app::Context& ctx) {
-    auto& w = ctx.args.words;
-    bool show_nodes = true, show_entities = true;
-    size_t at = 0;
-    if (!w.empty() && (w[0] == "nodes" || w[0] == "entities")) {
-        show_nodes = w[0] == "nodes";
-        show_entities = !show_nodes;
-        at = 1;
-    }
-    if (w.size() > at + 1) throw app::UsageError("ls takes one pattern at most");
-    std::string pattern = at < w.size() ? w[at] : "";
+/* The width long lists spread across, 0 for one item a line when stdout is no terminal. */
+static size_t width() { return ui::is_terminal(stdout) ? (size_t)ui::terminal_size().cols : 0; }
 
+static void section(app::Context& ctx, const char* title, const std::vector<std::string>& lines) {
+    ctx.out.line(ctx.out.paint(ui::Style::Bold, title));
+    for (auto& l : lines) ctx.out.line(l);
+    if (lines.empty()) ctx.out.line(ctx.out.paint(ui::Style::Faint, "  (none)"));
+}
+
+/* The running nodes and entities, the default. kind narrows to nodes or one entity kind. */
+static int list_mesh(app::Context& ctx, std::optional<Kind> kind, const std::string& pattern) {
+    bool show_nodes = !kind || *kind == Kind::Node, show_entities = !kind || *kind != Kind::Node;
     mesh::Client mesh(ctx.domain);
     mesh.settle();
     Listing nodes;
@@ -94,7 +99,8 @@ static int run(app::Context& ctx) {
     std::vector<rant::Entity> entities;
     if (show_entities)
         for (auto& e : mesh.entities())
-            if (util::name_matches(pattern, e.name)) entities.push_back(e);
+            if (util::name_matches(pattern, e.name) && entity_matches(kind.value_or(Kind::Entity), mesh::kind_name(e.kind)))
+                entities.push_back(e);
 
     if (ctx.json) {
         json out = json::object();
@@ -116,38 +122,112 @@ static int run(app::Context& ctx) {
         return 0;
     }
 
-    auto none = ctx.out.paint(ui::Style::Faint, "  (none)");
     if (show_nodes) {
-        ctx.out.line(ctx.out.paint(ui::Style::Bold, "NODES"));
+        std::vector<std::string> lines;
+        auto cells = [&](const std::vector<Row>& rows) {
+            std::vector<std::vector<std::string>> out;
+            for (auto& r : rows) out.push_back({ node_cell(ctx, r) });
+            return out;
+        };
         for (auto& g : nodes.groups) {
-            ctx.out.line("  " + ctx.out.paint(ui::Style::Faint, g.header + ":"));
-            for (auto& r : g.nodes) ctx.out.line(node_line(ctx, r, "    "));
+            lines.push_back("  " + ctx.out.paint(ui::Style::Faint, g.header + ":"));
+            for (auto& l : ui::columns(cells(g.nodes), width(), "    ")) lines.push_back(l);
         }
-        for (auto& r : nodes.loose) ctx.out.line(node_line(ctx, r, "  "));
-        if (nodes.groups.empty() && nodes.loose.empty()) ctx.out.line(none);
+        for (auto& l : ui::columns(cells(nodes.loose), width(), "  ")) lines.push_back(l);
+        section(ctx, "NODES", lines);
     }
     if (show_nodes && show_entities) ctx.out.line();
     if (show_entities) {
-        ctx.out.line(ctx.out.paint(ui::Style::Bold, "ENTITIES"));
-        size_t width = 0;
-        for (auto& e : entities) width = std::max(width, e.name.size());
-        for (auto& e : entities) {
-            std::string name = e.name;
-            name.resize(width + 3, ' ');
-            ctx.out.line("  " + name + ctx.out.paint(kind_style(e.kind), mesh::kind_name(e.kind)));
-        }
-        if (entities.empty()) ctx.out.line(none);
+        std::vector<std::vector<std::string>> cells;
+        for (auto& e : entities) cells.push_back({ e.name, ctx.out.paint(kind_style(e.kind), mesh::kind_name(e.kind)) });
+        section(ctx, "ENTITIES", ui::columns(cells, width(), "  "));
     }
     return 0;
 }
 
+/* The Rant version a package uses, the installed one for Python. */
+static std::string rant_version(const config::Package& p) {
+    std::string out;
+    for (auto& u : config::lib_uses(p.dir, false))
+        if (u.version && (out.empty() || u.how != "pyproject")) out = *u.version;
+    return out;
+}
+
+static std::string joined(const std::vector<std::string>& v, const char* sep = " ") {
+    std::string s;
+    for (auto& x : v) s += (s.empty() ? "" : sep) + x;
+    return s;
+}
+
+/* A group's params in short: `speed=1`, or `target=?` for a required one. */
+static std::string params_short(const config::GroupInfo& g) {
+    std::vector<std::string> v;
+    for (auto& p : g.params) v.push_back(p.name + "=" + (p.default_value ? *p.default_value : "?"));
+    return joined(v);
+}
+
+/* Packages, node types or groups: what the workspace offers, running or not. */
+static int list_workspace(app::Context& ctx, Kind kind, const std::string& pattern) {
+    const config::Workspace& ws = ctx.require_workspace(true);
+    json out = json::array();
+    ui::Table t;
+    auto dim = [&](const std::string& s) { return ctx.out.paint(ui::Style::Dim, s); };
+    const char* title = "";
+    if (kind == Kind::Package) {
+        title = "PACKAGES";
+        for (auto& p : ws.packages) {
+            if (!util::name_matches(pattern, p.name)) continue;
+            std::string version = rant_version(p);
+            out.push_back({ { "name", p.name }, { "kinds", p.kinds }, { "folder", config::to_utf8(p.dir) },
+                            { "rant", version.empty() ? json(nullptr) : json(version) } });
+            t.row({ p.name, dim(joined(p.kinds, ", ")), version.empty() ? dim("no rant") : "rant " + version, dim(ctx.shown(p.dir)) });
+        }
+    } else if (kind == Kind::Type) {
+        title = "NODE TYPES";
+        std::vector<const config::NodeType*> types;
+        for (auto& p : ws.packages)
+            for (auto& n : p.nodes) types.push_back(&n);
+        for (auto& n : ws.loose) types.push_back(&n);
+        for (auto* n : types) {
+            if (!util::name_matches(pattern, n->ref())) continue;
+            out.push_back({ { "name", n->ref() }, { "kind", config::kind_name(n->kind) },
+                            { "path", n->path ? json(config::to_utf8(*n->path)) : json(nullptr) }, { "run", n->run } });
+            t.row({ n->ref(), dim(config::kind_name(n->kind)), dim(n->path ? ctx.shown(*n->path) : process::shown(n->run)) });
+        }
+    } else {
+        title = "GROUPS";
+        for (auto& g : ws.groups) {
+            if (!util::name_matches(pattern, g.name)) continue;
+            config::GroupInfo info = config::describe_group(ctx.cwd, g.name);
+            out.push_back({ { "name", g.name }, { "file", config::to_utf8(g.file) }, { "description", info.description },
+                            { "params", params_short(info) } });
+            t.row({ g.name, dim(params_short(info)), info.description });
+        }
+    }
+    if (ctx.json) ctx.out.line(out.dump(2));
+    else section(ctx, title, t.lines());
+    return 0;
+}
+
+static int run(app::Context& ctx) {
+    auto& w = ctx.args.words;
+    std::optional<Kind> kind;
+    size_t at = 0;
+    if (!w.empty() && (kind = kind_named(w[0]))) at = 1;
+    if (w.size() > at + 1) throw app::UsageError("ls takes a kind and one pattern at most, such as `rant ls types cam`");
+    std::string pattern = at < w.size() ? w[at] : "";
+    if (kind && !on_mesh(*kind)) return list_workspace(ctx, *kind, pattern);
+    return list_mesh(ctx, kind, pattern);
+}
+
 static complete::Candidates complete_words(complete::Request& r) {
-    if (r.words.empty()) return { { "nodes", "entities" } };
+    if (r.words.empty()) return { kind_words(true) };
     return {};
 }
 
 app::Command ls() {
-    app::Command c{ "ls", "[nodes|entities] [pattern]", "list the running nodes and what they talk through",
+    app::Command c{ "ls", "[kind] [pattern]",
+                    "list the running nodes and entities, or packages, types or groups",
                     app::Section::Mesh, {}, run };
     c.complete = complete_words;
     return c;

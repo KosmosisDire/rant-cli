@@ -16,6 +16,7 @@ add_library(rant_cli_core STATIC
   commands/get.cpp
   commands/info.cpp
   commands/init.cpp
+  commands/kinds.cpp
   commands/lib.cpp
   commands/ls.cpp
   commands/new.cpp
