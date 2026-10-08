@@ -10,6 +10,7 @@ use regex::Regex;
 pub enum ManifestKind {
     CMake,
     Python,
+    CSharp,
 }
 
 #[derive(Debug, Clone)]
@@ -18,6 +19,8 @@ pub struct Manifest {
     pub path: PathBuf,
     pub name: Option<String>,
     pub uses_rant: bool,
+    /// It builds a program, not a library: a C# project with OutputType Exe.
+    pub program: bool,
     /// Names this manifest depends on, each with the line that says so.
     pub depends: Vec<Mention>,
     /// Directories this manifest pulls in by path, each with the line that says so.
@@ -41,6 +44,15 @@ pub fn in_dir(dir: &Path) -> Vec<Manifest> {
     if let Some(m) = pyproject(&dir.join("pyproject.toml")) {
         out.push(m);
     }
+    let mut projects: Vec<PathBuf> = std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|e| e.eq_ignore_ascii_case("csproj")))
+        .collect();
+    projects.sort();
+    out.extend(projects.iter().filter_map(|p| csproj(p)));
     out
 }
 
@@ -77,7 +89,7 @@ fn cmake(path: &Path) -> Option<Manifest> {
         .filter(|c| !c[1].contains('$'))
         .map(|c| (dir.join(&c[1]), format!("add_subdirectory({})", &c[1])))
         .collect();
-    Some(Manifest { kind: ManifestKind::CMake, path: path.to_path_buf(), name, uses_rant: uses, depends, subdirs })
+    Some(Manifest { kind: ManifestKind::CMake, path: path.to_path_buf(), name, uses_rant: uses, program: false, depends, subdirs })
 }
 
 /// PEP 503: case and runs of `-`, `_` and `.` do not matter in a distribution name.
@@ -138,7 +150,43 @@ fn pyproject(path: &Path) -> Option<Manifest> {
         .filter_map(|r| requirement_name(r).map(|n| Mention { name: n, source: format!("dependency {}", r.trim()) }))
         .collect();
     let uses_rant = depends.iter().any(|m| m.name == RANT_PYTHON_PACKAGE);
-    Some(Manifest { kind: ManifestKind::Python, path: path.to_path_buf(), name, uses_rant, depends, subdirs: Vec::new() })
+    Some(Manifest { kind: ManifestKind::Python, path: path.to_path_buf(), name, uses_rant, program: false, depends, subdirs: Vec::new() })
+}
+
+/// The .NET package the Rant C# binding ships as, and its project file.
+pub const RANT_DOTNET_PACKAGE: &str = "Rant";
+
+/// A C# project uses Rant through the Rant package or a reference to Rant.csproj. Its
+/// other project references point at the packages it depends on.
+fn csproj(path: &Path) -> Option<Manifest> {
+    let text = std::fs::read_to_string(path).ok()?;
+    static PACKAGE: OnceLock<Regex> = OnceLock::new();
+    static PROJECT: OnceLock<Regex> = OnceLock::new();
+    static ASSEMBLY: OnceLock<Regex> = OnceLock::new();
+    static EXE: OnceLock<Regex> = OnceLock::new();
+    let package = re(&PACKAGE, r#"(?i)<PackageReference\s+Include\s*=\s*"([^"]+)""#);
+    let project = re(&PROJECT, r#"(?i)<ProjectReference\s+Include\s*=\s*"([^"]+)""#);
+    let dir = path.parent().unwrap_or(Path::new("."));
+
+    let mut uses_rant = package.captures_iter(&text).any(|c| c[1].eq_ignore_ascii_case(RANT_DOTNET_PACKAGE));
+    let mut subdirs = Vec::new();
+    for c in project.captures_iter(&text) {
+        let reference = c[1].replace('\\', "/");
+        let file = reference.rsplit('/').next().unwrap_or("");
+        if file.eq_ignore_ascii_case(&format!("{RANT_DOTNET_PACKAGE}.csproj")) {
+            uses_rant = true;
+            continue;
+        }
+        let target = dir.join(&reference);
+        let target_dir = target.parent().map(Path::to_path_buf).unwrap_or(target);
+        subdirs.push((target_dir, format!("ProjectReference {reference}")));
+    }
+    let name = re(&ASSEMBLY, r"(?i)<AssemblyName>\s*([^<\s]+)\s*</AssemblyName>")
+        .captures(&text)
+        .map(|c| c[1].to_string())
+        .or_else(|| path.file_stem().map(|s| s.to_string_lossy().into_owned()));
+    let program = re(&EXE, r"(?i)<OutputType>\s*(Exe|WinExe)\s*</OutputType>").is_match(&text);
+    Some(Manifest { kind: ManifestKind::CSharp, path: path.to_path_buf(), name, uses_rant, program, depends: Vec::new(), subdirs })
 }
 
 #[cfg(test)]
@@ -173,6 +221,25 @@ mod tests {
         assert!(m.uses_rant);
         assert_eq!(m.name.as_deref(), Some("detector"));
         assert!(m.depends.iter().any(|d| d.name == "numpy"));
+    }
+
+    #[test]
+    fn csharp_projects() {
+        let t = TestDir::new();
+        t.write(
+            "hmi/hmi.csproj",
+            "<Project><PropertyGroup><OutputType>Exe</OutputType><AssemblyName>hmi_node</AssemblyName></PropertyGroup>\n<ItemGroup><PackageReference Include=\"Rant\" Version=\"0.0.17\" /><ProjectReference Include=\"..\\shared\\Shared.csproj\" /></ItemGroup></Project>\n",
+        );
+        t.write("lib/lib.csproj", "<Project><ItemGroup><ProjectReference Include=\"../rant/bindings/csharp/Rant.csproj\" /></ItemGroup></Project>\n");
+        t.write("other/other.csproj", "<Project><ItemGroup><PackageReference Include=\"Rantastic\" /></ItemGroup></Project>\n");
+        let hmi = &in_dir(&t.path("hmi"))[0];
+        assert!(hmi.uses_rant && hmi.program);
+        assert_eq!(hmi.name.as_deref(), Some("hmi_node"));
+        assert!(hmi.subdirs[0].0.ends_with("shared"));
+        let lib = &in_dir(&t.path("lib"))[0];
+        assert!(lib.uses_rant && !lib.program);
+        assert_eq!(lib.name.as_deref(), Some("lib"));
+        assert!(!in_dir(&t.path("other"))[0].uses_rant);
     }
 
     #[test]

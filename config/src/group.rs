@@ -466,6 +466,7 @@ impl<'m> Groups<'m> {
         let ty_attr = fields.attr("type").expect("checked at parse");
         let reference = eval::string(src, ty_attr, scope)?;
         let node = refs::resolve(self.model, &reference, scope.file_dir).map_err(|e| src.diag_at(&ty_attr.value, e))?;
+        crate::plan::runnable(&node).map_err(|e| src.diag_at(&ty_attr.value, e))?;
         let name = match fields.attr("name") {
             Some(a) => eval::string(src, a, scope)?,
             None => one_label(src, b)?.to_string(),

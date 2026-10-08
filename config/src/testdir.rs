@@ -29,13 +29,6 @@ impl TestDir {
         p
     }
 
-    pub fn write_bytes(&self, rel: &str, bytes: &[u8]) -> PathBuf {
-        let p = self.path(rel);
-        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
-        std::fs::write(&p, bytes).unwrap();
-        p
-    }
-
     pub fn mkdir(&self, rel: &str) {
         std::fs::create_dir_all(self.path(rel)).unwrap();
     }

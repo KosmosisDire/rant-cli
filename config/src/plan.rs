@@ -34,9 +34,18 @@ pub struct Plan {
     pub instances: Vec<Instance>,
 }
 
+/// A node type that has nothing to run yet, a C# program never built, cannot start.
+pub fn runnable(node: &NodeType) -> Result<(), String> {
+    if node.run.is_empty() {
+        return Err(format!("`{}/{}` is not built yet, run `rant build {}` first", node.package, node.name, node.package));
+    }
+    Ok(())
+}
+
 /// One node of a node type, named after the type, run as the type says.
 pub fn single(model: &Model, reference: &str, from_dir: &Path) -> Result<Plan, Diag> {
     let node = refs::resolve(model, reference, from_dir).map_err(Diag::plain)?;
+    runnable(&node).map_err(Diag::plain)?;
     let instance = Instance { name: node.name.clone(), argv: node.run.clone(), env: BTreeMap::new(), cwd: node.cwd.clone(), node };
     Ok(Plan { instances: vec![instance] })
 }

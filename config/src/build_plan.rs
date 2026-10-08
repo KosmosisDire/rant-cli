@@ -44,6 +44,9 @@ fn step(pkg: &Package) -> Step {
         s.commands = build;
         return s;
     }
+    for m in pkg.manifests.iter().filter(|m| m.kind == ManifestKind::CSharp) {
+        s.commands.push(vec!["dotnet".into(), "build".into(), slash(&m.path)]);
+    }
     if pkg.manifests.iter().any(|m| m.kind == ManifestKind::CMake) {
         let tree = pkg.dir.join("build");
         if !tree.join("CMakeCache.txt").is_file() {
@@ -63,7 +66,7 @@ fn shown(p: &Path, root: &Path) -> String {
 pub fn edges(model: &Model) -> Result<Vec<Edge>, Diag> {
     let root = &model.config.root;
     let mut out: Vec<Edge> = Vec::new();
-    let mut add = |out: &mut Vec<Edge>, from: &Package, to: &str, source: String| {
+    let add = |out: &mut Vec<Edge>, from: &Package, to: &str, source: String| {
         if from.name != to && !out.iter().any(|e| e.from == from.name && e.to == to) {
             out.push(Edge { from: from.name.clone(), to: to.to_string(), source });
         }
@@ -81,7 +84,7 @@ pub fn edges(model: &Model) -> Result<Vec<Edge>, Diag> {
             let file = shown(&m.path, root);
             for mention in &m.depends {
                 let target = match m.kind {
-                    ManifestKind::CMake => model.package(&mention.name),
+                    ManifestKind::CMake | ManifestKind::CSharp => model.package(&mention.name),
                     ManifestKind::Python => model.packages.iter().find(|p| python_name(&p.name) == mention.name),
                 };
                 if let Some(t) = target {

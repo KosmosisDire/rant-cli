@@ -90,6 +90,28 @@ fn references_in_every_form() {
 }
 
 #[test]
+fn a_csharp_program_runs_its_newest_build() {
+    let t = TestDir::new();
+    t.write("rant.hcl", "workspace {}\n");
+    t.write(
+        "hmi/hmi.csproj",
+        "<Project><PropertyGroup><OutputType>Exe</OutputType><AssemblyName>panel</AssemblyName></PropertyGroup><ItemGroup><PackageReference Include=\"Rant\" /></ItemGroup></Project>\n",
+    );
+    let m = load(&t);
+    let n = &m.package("panel").unwrap().nodes[0];
+    assert_eq!((n.name.as_str(), n.kind), ("panel", NodeKind::CSharp));
+    assert!(n.run.is_empty(), "nothing to run before a build");
+    assert!(refs::resolve(&m, "panel", t.root()).is_ok());
+    assert!(crate::plan::single(&m, "panel", t.root()).unwrap_err().message.contains("not built yet"));
+
+    t.write("hmi/bin/Debug/net8.0/panel.dll", "");
+    let built = load(&t);
+    let n = &built.package("panel").unwrap().nodes[0];
+    assert_eq!(n.run[0], "dotnet");
+    assert!(n.run[1].ends_with("bin/Debug/net8.0/panel.dll"));
+}
+
+#[test]
 fn the_scan_cache_is_written_and_reused() {
     let t = mixed();
     load(&t);

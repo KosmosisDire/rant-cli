@@ -67,13 +67,6 @@ pub fn string(src: &Source, attr: &Attribute, scope: &Scope) -> Result<String, D
     }
 }
 
-pub fn boolean(src: &Source, attr: &Attribute, scope: &Scope) -> Result<bool, Diag> {
-    match value(src, attr, scope)? {
-        Value::Bool(b) => Ok(b),
-        v => Err(src.diag_at(&attr.value, format!("`{}` must be true or false, found {}", attr.key.as_str(), type_name(&v)))),
-    }
-}
-
 pub fn string_list(src: &Source, attr: &Attribute, scope: &Scope) -> Result<Vec<String>, Diag> {
     let key = attr.key.as_str();
     match value(src, attr, scope)? {

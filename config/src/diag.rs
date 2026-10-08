@@ -37,5 +37,3 @@ impl fmt::Display for Diag {
         }
     }
 }
-
-pub type Diags = Vec<Diag>;

@@ -9,7 +9,7 @@ use globset::GlobSet;
 use crate::diag::Diag;
 use crate::discover::{self, Candidate};
 use crate::group::{self, GroupFile};
-use crate::manifest::Manifest;
+use crate::manifest::{Manifest, ManifestKind};
 use crate::package::PackageBlock;
 use crate::paths;
 use crate::scan::{self, Cache, NodeKind};
@@ -138,6 +138,17 @@ fn node_types(pkg: &Package, mut found: Vec<scan::Found>, root: &Path) -> Vec<No
             NodeType { package: pkg.name.clone(), name, kind: f.kind, path: Some(f.path), run, cwd: pkg.dir.clone(), shadowed: Vec::new() },
         );
     }
+    for m in pkg.manifests.iter().filter(|m| m.kind == ManifestKind::CSharp && m.program && m.uses_rant) {
+        let Some(name) = m.name.clone() else { continue };
+        let (path, run) = match dotnet_program(&pkg.dir, &name) {
+            Some((path, run)) => (path, run),
+            None => (m.path.clone(), Vec::new()),
+        };
+        by_name.insert(
+            name.clone(),
+            NodeType { package: pkg.name.clone(), name, kind: NodeKind::CSharp, path: Some(path), run, cwd: pkg.dir.clone(), shadowed: Vec::new() },
+        );
+    }
     for d in pkg.block.iter().flat_map(|b| b.nodes.iter()) {
         by_name.insert(
             d.name.clone(),
@@ -153,6 +164,26 @@ fn node_types(pkg: &Package, mut found: Vec<scan::Found>, root: &Path) -> Vec<No
         );
     }
     by_name.into_values().collect()
+}
+
+/// The newest build of a C# program under the package's bin/: its apphost when there is one,
+/// else its dll through `dotnet`. None until it has been built.
+fn dotnet_program(dir: &Path, name: &str) -> Option<(PathBuf, Vec<String>)> {
+    let dll_name = format!("{name}.dll");
+    let newest = ignore::WalkBuilder::new(dir.join("bin"))
+        .standard_filters(false)
+        .build()
+        .flatten()
+        .filter(|e| e.file_name().to_string_lossy().eq_ignore_ascii_case(&dll_name))
+        .filter_map(|e| Some((e.metadata().ok()?.modified().ok()?, e.into_path())))
+        .max_by_key(|(t, _)| *t)?;
+    let dll = newest.1;
+    let apphost = dll.with_file_name(if cfg!(windows) { format!("{name}.exe") } else { name.to_string() });
+    if apphost.is_file() {
+        Some((apphost.clone(), vec![slash(&apphost)]))
+    } else {
+        Some((dll.clone(), vec!["dotnet".into(), slash(&dll)]))
+    }
 }
 
 fn slash(p: &Path) -> String {
