@@ -25,15 +25,17 @@ macro(finish_run code out err fails shown)
 endmacro()
 
 # rant(<args...> [FAILS] [IN <dir>]) runs the CLI on the test's own domain with an empty,
-# non terminal stdin. Sets OUT and ERR. The test fails unless the exit code is 0, or
-# nonzero when FAILS is given.
+# non terminal stdin. Nodes it starts inherit TEST_NODE_DOMAIN, so the test node joins the
+# same domain. Sets OUT and ERR. The test fails unless the exit code is 0, or nonzero when
+# FAILS is given.
 function(rant)
   cmake_parse_arguments(PARSE_ARGV 0 R "FAILS" "IN" "")
   set(dir "${CWD}")
   if(R_IN)
     set(dir "${R_IN}")
   endif()
-  execute_process(COMMAND "${RANT}" --domain ${DOMAIN} ${R_UNPARSED_ARGUMENTS}
+  execute_process(COMMAND "${CMAKE_COMMAND}" -E env "TEST_NODE_DOMAIN=${DOMAIN}"
+                          "${RANT}" --domain ${DOMAIN} ${R_UNPARSED_ARGUMENTS}
     WORKING_DIRECTORY "${dir}"
     INPUT_FILE "${SCRATCH}/.empty-stdin"
     RESULT_VARIABLE code OUTPUT_VARIABLE out ERROR_VARIABLE err
@@ -73,4 +75,19 @@ endfunction()
 # Copies tests/e2e/fixtures/<name> into the scratch directory.
 function(use_fixture name)
   file(COPY "${FIXTURES}/${name}/" DESTINATION "${SCRATCH}")
+endfunction()
+
+# install_test_node(<dir> [name]) copies the test node into the scratch directory as
+# <dir>/<name>, test_node by default, with .exe on Windows.
+function(install_test_node dir)
+  set(name test_node)
+  if(ARGC GREATER 1)
+    set(name "${ARGV1}")
+  endif()
+  get_filename_component(ext "${TEST_NODE}" LAST_EXT)
+  if(NOT ext STREQUAL ".exe")
+    set(ext "")
+  endif()
+  file(MAKE_DIRECTORY "${SCRATCH}/${dir}")
+  file(COPY_FILE "${TEST_NODE}" "${SCRATCH}/${dir}/${name}${ext}")
 endfunction()

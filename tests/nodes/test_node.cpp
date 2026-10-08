@@ -5,7 +5,9 @@
  *
  * --pub sends Reading { seq, value } at 20 Hz. --var owns an f64 starting at 1.5. --fn
  * doubles an f64. --task counts to its u32 request, one step each 100 ms, cancellable.
- * Ctrl-C, Ctrl-Break and SIGTERM print "stopped" and exit 0, unless --ignore-stop. */
+ * Ctrl-C, Ctrl-Break and SIGTERM print "stopped" and exit 0, unless --ignore-stop.
+ * Without --domain the domain comes from TEST_NODE_DOMAIN, which a node started by rant
+ * inherits from the test that ran rant. */
 
 #include <atomic>
 #include <chrono>
@@ -46,7 +48,8 @@ static void on_signal(int) {
 
 int main(int argc, char** argv) {
     std::string name = "test_node", pub, var, fn, task;
-    uint16_t domain = 0;
+    const char* env_domain = std::getenv("TEST_NODE_DOMAIN");
+    uint16_t domain = env_domain ? (uint16_t)std::atoi(env_domain) : 0;
     double life = 0;
     for (int i = 1; i < argc; i++) {
         std::string a = argv[i];

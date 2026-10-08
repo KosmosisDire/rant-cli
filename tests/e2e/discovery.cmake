@@ -2,12 +2,7 @@ include("${CMAKE_CURRENT_LIST_DIR}/lib.cmake")
 
 # A CMake package with a built node, a Python package and a declared node.
 use_fixture(mixed)
-get_filename_component(ext "${TEST_NODE}" LAST_EXT)
-if(NOT ext STREQUAL ".exe")
-  set(ext "")
-endif()
-file(MAKE_DIRECTORY "${SCRATCH}/cpp/build")
-file(COPY_FILE "${TEST_NODE}" "${SCRATCH}/cpp/build/talker${ext}")
+install_test_node(cpp/build talker)
 
 rant(build --dry-run)
 expect_match("${OUT}" "PACKAGES\n  detector +py\n  lidar_driver +cpp\n  tools +tools\n\n")

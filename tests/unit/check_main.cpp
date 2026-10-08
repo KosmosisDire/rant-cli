@@ -1,8 +1,10 @@
 #include <cstring>
 
 #include "check.hpp"
+#include "process/supervisor.hpp"
 
 int main(int argc, char** argv) {
+    if (auto code = process::helper_main(argc, argv)) return *code;
     int run = 0;
     for (auto& c : check::cases()) {
         bool wanted = argc < 2;
