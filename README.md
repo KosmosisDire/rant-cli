@@ -7,11 +7,14 @@ them in order, starts and stops nodes and groups of nodes, and reads and writes 
 
 ```
 rant init                      # make this folder a workspace
+rant new package cam --lang cpp  # a package with one node, Rant added (or python, csharp)
 rant build                     # build every package, dependencies first
 rant start group nav speed=2   # start a group of nodes, rant start group nav --help lists its params
 rant ls                        # the running nodes and what they talk through
 rant sub odom                  # print a topic
 rant stop group nav
+rant lib install               # move every package here to the newest Rant
+rant setup                     # tab completion for your shells
 ```
 
 `rant --help` lists every command.

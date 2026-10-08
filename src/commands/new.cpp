@@ -92,6 +92,10 @@ static void ask_missing(const config::TemplateInfo& t, std::vector<std::string>&
 
 static int run(app::Context& ctx) {
     auto& w = ctx.args.words;
+    if (ctx.args.has("help") && w.size() < 2) {    /* a template's own help needs its name */
+        ctx.out.line(app::command_help(new_()));
+        return 0;
+    }
     if (w.empty() || (w[0] != "package" && w[0] != "node" && w[0] != "group"))
         throw app::UsageError("say what to make: `rant new package <name>`, `rant new node <name>` or `rant new group <name>`");
     const std::string& kind = w[0];
