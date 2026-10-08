@@ -4,6 +4,7 @@
 
 #include "app/failure.hpp"
 #include "process/command.hpp"
+#include "ui/table.hpp"
 
 namespace commands {
 
@@ -13,6 +14,21 @@ void require_plan(app::Context& ctx, const config::Plan& plan) {
     if (plan.diagnostics.empty()) return;
     for (auto& d : plan.diagnostics) ctx.out.error(d.str());
     throw app::Failure("");
+}
+
+void print_params(app::Context& ctx, const std::vector<config::Param>& params) {
+    if (params.empty()) return;
+    ui::Table t;
+    for (auto& p : params) {
+        std::string about = p.default_value ? "default " + *p.default_value : "required";
+        if (!p.options.empty()) {
+            about += ", one of";
+            for (size_t i = 0; i < p.options.size(); i++) about += (i ? ", " : " ") + p.options[i];
+        }
+        t.row({ p.name + "=<" + p.type + ">", about, p.description });
+    }
+    ctx.out.line("\nParams:");
+    for (auto& l : t.lines()) ctx.out.line(l);
 }
 
 void print_plan(app::Context& ctx, const config::Plan& plan) {

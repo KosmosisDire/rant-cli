@@ -5,11 +5,10 @@
 
 #include "app/failure.hpp"
 #include "commands/commands.hpp"
-#include "complete/complete.hpp"
 #include "commands/plan_output.hpp"
+#include "complete/complete.hpp"
 #include "run/nodes.hpp"
 #include "ui/prompt.hpp"
-#include "ui/table.hpp"
 
 namespace commands {
 
@@ -91,18 +90,7 @@ static void group_help(app::Context& ctx, const std::string& group) {
     }
     ctx.out.line("Usage: rant start group " + g.name + (g.params.empty() ? "" : " [key=value...]"));
     if (!g.description.empty()) ctx.out.line("\n" + g.description);
-    if (g.params.empty()) return;
-    ui::Table t;
-    for (auto& p : g.params) {
-        std::string about = p.default_value ? "default " + *p.default_value : "required";
-        if (!p.options.empty()) {
-            about += ", one of";
-            for (size_t i = 0; i < p.options.size(); i++) about += (i ? ", " : " ") + p.options[i];
-        }
-        t.row({ p.name + "=<" + p.type + ">", about, p.description });
-    }
-    ctx.out.line("\nParams:");
-    for (auto& l : t.lines()) ctx.out.line(l);
+    print_params(ctx, g.params);
 }
 
 /* A group root: its nodes start in plan order. A node already running for another root
