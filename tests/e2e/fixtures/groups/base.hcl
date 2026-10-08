@@ -7,13 +7,13 @@ group {
     description = "How far the lidar looks"
   }
 
-  node "lidar" {
-    type = "demo/sensor"
+  node "demo/sensor" {
+    name = "lidar"
     args = "--pub scan --var range_${param.range}"
   }
 
-  node "odom" {
-    type = "demo/sensor"
+  node "demo/sensor" {
+    name = "odom"
     args = "--pub odom"
   }
 }

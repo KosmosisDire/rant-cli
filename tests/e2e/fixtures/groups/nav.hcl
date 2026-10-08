@@ -10,8 +10,8 @@ group {
     expose = true
   }
 
-  node "planner" {
-    type = "demo/sensor"
+  node "demo/sensor" {
+    name = "planner"
     args = ["--pub", "plan", "--fn", "speed_${param.speed}"]
   }
 }

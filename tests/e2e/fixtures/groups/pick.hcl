@@ -1,8 +1,8 @@
 group {
   include "base" {}
 
-  node "arm" {
-    type = "demo/sensor"
+  node "demo/sensor" {
+    name = "arm"
     args = "--task move"
   }
 }

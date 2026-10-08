@@ -7,8 +7,8 @@ group {
   #   description = "How fast to go"
   # }
 
-  # node "lidar" {
-  #   type = "lidar_driver/lidar_node"
+  # node "lidar_driver/lidar_node" {
+  #   name = "lidar"
   #   args = "--speed ${param.speed}"
   # }
 }

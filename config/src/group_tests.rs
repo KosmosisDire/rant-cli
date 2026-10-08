@@ -36,8 +36,7 @@ group {
     type    = int
     default = 30
   }
-  node "camera" {
-    type = "drivers/camera"
+  node "drivers/camera" {
     name = "camera_${param.side}"
     args = "--fps ${param.fps} --label '${param.side} side'"
     env  = { SIDE = param.side }
@@ -47,7 +46,7 @@ group {
     );
     t.write(
         "base.hcl",
-        "group {\n  param \"lidar_args\" {\n    default = \"--range 30\"\n  }\n  node \"lidar\" {\n    type = \"drivers/lidar\"\n    args = param.lidar_args\n  }\n  node \"odom\" {\n    type = \"planner/odom\"\n  }\n}\n",
+        "group {\n  param \"lidar_args\" {\n    default = \"--range 30\"\n  }\n  node \"drivers/lidar\" {\n    args = param.lidar_args\n  }\n  node \"planner/odom\" {}\n}\n",
     );
     t.write(
         "nav.hcl",
@@ -67,14 +66,13 @@ group {
     side = "right"
     fps  = 60
   }
-  node "planner" {
-    type = "planner/planner"
+  node "planner/planner" {
     args = ["--speed", param.speed]
   }
 }
 "#,
     );
-    t.write("pick.hcl", "group {\n  include \"base\" {}\n  node \"arm\" {\n    type = \"drivers/motors\"\n  }\n}\n");
+    t.write("pick.hcl", "group {\n  include \"base\" {}\n  node \"drivers/motors\" {\n    name = \"arm\"\n  }\n}\n");
     for (path, text) in extra {
         t.write(path, text);
     }
@@ -163,19 +161,19 @@ fn a_bare_reference_looks_in_its_own_package_first() {
 fn the_same_node_twice_merges_and_a_different_one_is_an_error() {
     let t = workspace_with(&[
         ("both.hcl", "group {\n  include \"nav\" {}\n  include \"pick\" {}\n}\n"),
-        ("clash.hcl", "group {\n  include \"base\" {}\n  node \"odom\" {\n    type = \"planner/odom\"\n    args = \"--other\"\n  }\n}\n"),
+        ("clash.hcl", "group {\n  include \"base\" {}\n  node \"planner/odom\" {\n    args = \"--other\"\n  }\n}\n"),
     ]);
     let m = model(&t);
     let (p, _) = plan(&m, "both", &[]).unwrap();
     assert_eq!(names(&p), ["lidar", "odom", "camera_left", "camera_right", "planner", "arm"]);
     let err = plan(&m, "clash", &[]).unwrap_err();
     assert!(err.message.contains("node `odom` is also defined at"), "{err}");
-    assert!(err.message.contains("base.hcl:9:3"), "{err}");
+    assert!(err.message.contains("base.hcl:8:3"), "{err}");
     assert_eq!((err.line, err.column), (3, 3));
 }
 
 #[test]
-fn a_node_without_a_type_runs_the_node_type_its_label_names() {
+fn a_node_label_names_what_runs() {
     let t = workspace_with(&[("bare.hcl", "group {\n  node \"lidar\" {}\n  node \"odom\" {\n    args = \"--slow\"\n  }\n}\n")]);
     let m = model(&t);
     let (p, _) = plan(&m, "bare", &[]).unwrap();
@@ -187,11 +185,11 @@ fn a_node_without_a_type_runs_the_node_type_its_label_names() {
 #[test]
 fn semantic_errors_point_at_their_place() {
     let cases: &[(&str, &str, &str, u32)] = &[
-        ("undeclared.hcl", "group {\n  node \"x\" {\n    type = \"drivers/lidar\"\n    args = [param.nope]\n  }\n}\n", "undeclared param `nope`", 4),
+        ("undeclared.hcl", "group {\n  node \"drivers/lidar\" {\n    args = [param.nope]\n  }\n}\n", "undeclared param `nope`", 3),
         ("unbound.hcl", "group {\n  include \"drivers/cameras\" {}\n}\n", "required param `side` is not set, bind it here or expose it", 2),
         ("unknown.hcl", "group {\n  include \"base\" {\n    colour = \"red\"\n  }\n}\n", "group `base` has no param `colour`", 3),
         ("missing.hcl", "group {\n  include \"nowhere\" {}\n}\n", "no group named `nowhere`", 2),
-        ("badtype.hcl", "group {\n  node \"x\" {\n    type = \"drivers/nothing\"\n  }\n}\n", "has no node type `nothing`", 3),
+        ("badtype.hcl", "group {\n  node \"drivers/nothing\" {}\n}\n", "has no node `nothing`", 2),
         (
             "collide.hcl",
             "group {\n  param \"lidar_args\" {}\n  include \"base\" {\n    expose = true\n  }\n}\n",
@@ -199,7 +197,7 @@ fn semantic_errors_point_at_their_place() {
             3,
         ),
         ("cycle_a.hcl", "group {\n  include \"cycle_b\" {}\n}\n", "include cycle", 0),
-        ("nodetype.hcl", "group {\n  node \"x\" {}\n}\n", "no node type named `x`", 2),
+        ("nodetype.hcl", "group {\n  node \"x\" {}\n}\n", "no node named `x`", 2),
         ("default.hcl", "group {\n  param \"n\" {\n    type    = int\n    default = \"ten\"\n  }\n}\n", "default: param `n` is int", 4),
     ];
     let t = workspace_with(&[("cycle_b.hcl", "group {\n  include \"cycle_a\" {}\n}\n")]);

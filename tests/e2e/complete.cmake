@@ -28,8 +28,8 @@ group {
     type    = bool
     default = false
   }
-  node "x" {
-    type = "demo/sensor"
+  node "demo/sensor" {
+    name = "x"
   }
 }
 ]])
