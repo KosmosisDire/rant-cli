@@ -1,0 +1,5 @@
+cmake_minimum_required(VERSION 3.21)
+project(lidar_driver CXX)
+find_package(rant REQUIRED)
+add_executable(talker talker.cpp)
+target_link_libraries(talker PRIVATE rant::rant)

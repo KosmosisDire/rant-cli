@@ -17,3 +17,4 @@ endfunction()
 
 e2e_test(init)
 e2e_test(mesh_read)
+e2e_test(discovery)
