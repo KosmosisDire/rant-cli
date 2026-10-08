@@ -1,6 +1,5 @@
-//! The C ABI for adding and updating the Rant library in packages, the GitHub releases and
-//! downloads that `rant lib` and `rant explore` need, and the templates of `rant new`. Same
-//! rules as `ffi`: every handle owns what its view points into.
+//! The C ABI for adding and updating the Rant library in packages and for the templates of
+//! `rant new`. Same rules as `ffi`: every handle owns what its view points into.
 
 use std::ffi::c_char;
 use std::path::{Path, PathBuf};
@@ -8,7 +7,6 @@ use std::path::{Path, PathBuf};
 use crate::ffi::{arg_path, arg_str, RantConfigDiagnostic, RantConfigParam, Store};
 use crate::lib_use::{self, How, Kind};
 use crate::model::{python, venv_python};
-use crate::release;
 use crate::template::{self, Origin};
 use crate::workspace;
 
@@ -60,28 +58,6 @@ pub struct RantConfigOutcomeView {
 
 pub struct RantConfigOutcome {
     view: RantConfigOutcomeView,
-    #[allow(dead_code)]
-    store: Store,
-}
-
-#[repr(C)]
-pub struct RantConfigAsset {
-    pub name: *const c_char,
-    pub url: *const c_char,
-}
-
-/// A release, or error when it could not be found. version is the tag without its `v`.
-#[repr(C)]
-pub struct RantConfigReleaseView {
-    pub tag: *const c_char,
-    pub version: *const c_char,
-    pub assets: *const RantConfigAsset,
-    pub asset_count: usize,
-    pub error: *const c_char,
-}
-
-pub struct RantConfigRelease {
-    view: RantConfigReleaseView,
     #[allow(dead_code)]
     store: Store,
 }
@@ -193,58 +169,6 @@ pub unsafe extern "C" fn rant_config_lib_add(lib_kind: RantConfigLibKind, file: 
         RantConfigLibKind::CSharp => Kind::CSharp,
     };
     outcome(lib_use::add(k, &arg_path(file), &arg_str(version)))
-}
-
-/// The release of `owner/name` tagged tag, or the latest when tag is NULL. Never NULL:
-/// a failure is in the view's error.
-///
-/// # Safety
-/// `repo` must be a NUL terminated UTF-8 string, `tag` NULL or one.
-#[no_mangle]
-pub unsafe extern "C" fn rant_config_release(repo: *const c_char, tag: *const c_char) -> *mut RantConfigRelease {
-    let tag = (!tag.is_null()).then(|| arg_str(tag));
-    let mut store = Store::default();
-    let view = match release::release(&arg_str(repo), tag.as_deref()) {
-        Ok(r) => {
-            let assets: Vec<RantConfigAsset> =
-                r.assets.iter().map(|a| RantConfigAsset { name: store.str(&a.name), url: store.str(&a.url) }).collect();
-            let (assets, asset_count) = store.array(assets);
-            RantConfigReleaseView { tag: store.str(&r.tag), version: store.str(r.version()), assets, asset_count, error: std::ptr::null() }
-        }
-        Err(e) => RantConfigReleaseView {
-            tag: std::ptr::null(),
-            version: std::ptr::null(),
-            assets: std::ptr::null(),
-            asset_count: 0,
-            error: store.str(&e),
-        },
-    };
-    Box::into_raw(Box::new(RantConfigRelease { view, store }))
-}
-
-/// # Safety
-/// `r` must be a live handle from rant_config_release.
-#[no_mangle]
-pub unsafe extern "C" fn rant_config_release_view(r: *const RantConfigRelease) -> *const RantConfigReleaseView {
-    &(*r).view
-}
-
-/// # Safety
-/// `r` must be NULL or a live handle, and is invalid afterwards.
-#[no_mangle]
-pub unsafe extern "C" fn rant_config_release_free(r: *mut RantConfigRelease) {
-    if !r.is_null() {
-        drop(Box::from_raw(r));
-    }
-}
-
-/// Downloads url to dest, which is whole or untouched afterwards.
-///
-/// # Safety
-/// Both arguments must be NUL terminated UTF-8 strings.
-#[no_mangle]
-pub unsafe extern "C" fn rant_config_download(url: *const c_char, dest: *const c_char) -> *mut RantConfigOutcome {
-    outcome(release::download(&arg_str(url), &arg_path(dest)).map(|_| None))
 }
 
 /// # Safety

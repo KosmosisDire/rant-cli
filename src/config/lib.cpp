@@ -55,26 +55,4 @@ Outcome lib_add(LibKind kind, const fs::path& file, const std::string& version) 
                               &rant_config_outcome_free));
 }
 
-const Asset* Release::asset(const std::string& name) const {
-    for (auto& a : assets)
-        if (a.name == name) return &a;
-    return nullptr;
-}
-
-Release release(const std::string& repo, const std::string& tag) {
-    std::unique_ptr<RantConfigRelease, decltype(&rant_config_release_free)> h(
-        rant_config_release(repo.c_str(), tag.empty() ? nullptr : tag.c_str()), &rant_config_release_free);
-    const RantConfigReleaseView* v = rant_config_release_view(h.get());
-    Release out;
-    out.tag = str(v->tag);
-    out.version = str(v->version);
-    out.error = str(v->error);
-    for (size_t i = 0; i < v->asset_count; i++) out.assets.push_back({ str(v->assets[i].name), str(v->assets[i].url) });
-    return out;
-}
-
-Outcome download(const std::string& url, const fs::path& dest) {
-    return read(OutcomeHandle(rant_config_download(url.c_str(), to_utf8(dest).c_str()), &rant_config_outcome_free));
-}
-
 }

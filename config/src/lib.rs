@@ -6,8 +6,6 @@ mod argv;
 mod build_plan;
 mod diag;
 mod discover;
-#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
-mod dns;
 mod eval;
 pub mod ffi;
 pub mod ffi_lib;
@@ -20,7 +18,6 @@ mod param;
 mod paths;
 mod plan;
 mod refs;
-mod release;
 mod scan;
 mod template;
 mod source;

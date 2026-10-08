@@ -40,6 +40,7 @@ add_library(rant_cli_core STATIC
   mesh/snapshot.cpp
   mesh/text.cpp
   mesh/values.cpp
+  net/github.cpp
   process/command.cpp
   process/quote.cpp
   run/nodes.cpp

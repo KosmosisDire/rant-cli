@@ -56,7 +56,7 @@ static int install(app::Context& ctx) {
     if (w.size() > 2) throw app::UsageError("lib install takes at most one folder");
     bool one = w.size() == 2;
     fs::path dir = one ? folder(ctx, w[1]) : ctx.cwd;
-    config::Release r = library::release(ctx.args.get("version").value_or(""));
+    net::Release r = library::release(ctx.args.get("version").value_or(""));
     return library::install(ctx, dir, !one, r) ? 0 : 1;
 }
 

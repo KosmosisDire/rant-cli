@@ -5,14 +5,11 @@
 #include <string>
 #include <vector>
 
-/* The C++ face of the crate's library and release calls: where packages take Rant from,
- * the edits that move it, and GitHub releases and downloads. Values are copied out, so
- * nothing here points into Rust memory. */
+/* The C++ face of the crate's library calls: where packages take Rant from and the edits
+ * that move it. Values are copied out, so nothing here points into Rust memory. */
 namespace config {
 
 namespace fs = std::filesystem;
-
-inline constexpr const char* rant_repo = "KosmosisDire/Rant";
 
 enum class LibKind { CMake, Python, CSharp };
 const char* lib_kind_name(LibKind k);    /* "cmake", "python", "csharp" */
@@ -44,25 +41,5 @@ Outcome lib_set(const fs::path& file, const std::string& version);
 
 /* Adds Rant to a CMakeLists or a C# project. The note is a line still to add by hand. */
 Outcome lib_add(LibKind kind, const fs::path& file, const std::string& version);
-
-struct Asset {
-    std::string name;
-    std::string url;
-};
-
-struct Release {
-    std::string        tag;
-    std::string        version;    /* the tag without its v */
-    std::vector<Asset> assets;
-    std::string        error;      /* set when the release could not be found */
-
-    const Asset* asset(const std::string& name) const;
-};
-
-/* A release of owner/name, the latest when tag is empty. */
-Release release(const std::string& repo, const std::string& tag = "");
-
-/* Downloads url to dest, which is whole or untouched afterwards. */
-Outcome download(const std::string& url, const fs::path& dest);
 
 }

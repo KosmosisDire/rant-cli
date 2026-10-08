@@ -4,7 +4,8 @@
 
 #include "app/failure.hpp"
 #include "commands/commands.hpp"
-#include "config/lib.hpp"
+#include "config/config.hpp"
+#include "net/github.hpp"
 #include "process/supervisor.hpp"
 #include "ui/prompt.hpp"
 #include "util/home.hpp"
@@ -60,30 +61,25 @@ static std::optional<fs::path> locate(const app::Context& ctx) {
 }
 
 /* Downloads the release's explorer for this platform into ~/.rant/bin. */
-static void install(const app::Context& ctx, const config::Release& r) {
+static void install(const app::Context& ctx, const net::Release& r) {
     std::string asset = "rant-explorer-" + r.version + "-" + platform();
-    const config::Asset* a = r.asset(asset);
+    const net::Asset* a = r.asset(asset);
     if (!a) throw app::Failure("the explorer " + r.version + " has no build for this platform, there is no " + asset);
     ctx.out.note("downloading " + asset);
-    config::Outcome o = config::download(a->url, installed());
-    if (!o.error.empty()) throw app::Failure(o.error);
+    net::download(a->url, installed());
     std::error_code ec;
     fs::permissions(installed(), fs::perms::owner_exec | fs::perms::group_exec | fs::perms::others_exec, fs::perm_options::add, ec);
     std::ofstream(version_file()) << r.version << "\n";
     ctx.out.note("installed the explorer " + r.version + " as " + config::to_utf8(installed()));
 }
 
-static config::Release latest() {
-    config::Release r = config::release(explorer_repo);
-    if (!r.error.empty()) throw app::Failure(r.error);
-    return r;
-}
+static net::Release latest() { return net::release(explorer_repo); }
 
 static int run(app::Context& ctx) {
     if (!ctx.args.words.empty()) throw app::UsageError("explore takes no words");
     std::optional<fs::path> exe = locate(ctx);
     if (!exe) {
-        config::Release r = latest();
+        net::Release r = latest();
         if (!ui::confirm("The explorer is not installed. Download the explorer " + r.version + " into " +
                              config::to_utf8(installed().parent_path()) + "?",
                          ctx.yes))
@@ -91,7 +87,7 @@ static int run(app::Context& ctx) {
         install(ctx, r);
         exe = installed();
     } else if (ctx.args.has("update")) {
-        config::Release r = latest();
+        net::Release r = latest();
         if (installed_version() == r.version && fs::is_regular_file(installed())) ctx.out.note("the explorer " + r.version + " is the newest");
         else install(ctx, r);
         if (*exe != installed()) ctx.out.note("still starting " + config::to_utf8(*exe) + ", which comes first");

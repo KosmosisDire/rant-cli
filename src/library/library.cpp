@@ -8,6 +8,7 @@
 
 #include "app/failure.hpp"
 #include "config/config.hpp"
+#include "config/lib.hpp"
 #include "process/command.hpp"
 #include "ui/prompt.hpp"
 #include "util/home.hpp"
@@ -17,7 +18,7 @@ namespace library {
 namespace fs = std::filesystem;
 
 /* The wheel of a release for the platform this CLI runs on. */
-static const config::Asset* wheel(const config::Release& r) {
+static const net::Asset* wheel(const net::Release& r) {
 #if defined(_WIN32) && (defined(_M_ARM64) || defined(__aarch64__))
     const char* platform = "win_arm64";
 #elif defined(_WIN32)
@@ -40,8 +41,8 @@ static void require(const config::Outcome& o) {
 }
 
 /* Makes the venv when it is missing, then pip installs the release's wheel into it. */
-static void install_python(const app::Context& ctx, const config::LibUse& u, const config::Release& r) {
-    const config::Asset* w = wheel(r);
+static void install_python(const app::Context& ctx, const config::LibUse& u, const net::Release& r) {
+    const net::Asset* w = wheel(r);
     if (!w) throw app::Failure("Rant " + r.version + " has no Python wheel for this platform");
     if (!u.venv_exists) {
         ctx.out.note("creating the venv " + ctx.shown(u.file));
@@ -74,12 +75,12 @@ static fs::path nuget_config() {
 
 /* The Rant package is not on nuget.org yet, so it goes to a feed under ~/.rant that dotnet
  * is told about once. */
-static void install_nupkg(const app::Context& ctx, const config::Release& r) {
+static void install_nupkg(const app::Context& ctx, const net::Release& r) {
     std::string name = "Rant." + r.version + ".nupkg";
-    const config::Asset* a = r.asset(name);
+    const net::Asset* a = r.asset(name);
     if (!a) throw app::Failure("Rant " + r.version + " has no " + name);
     fs::path feed = (util::rant_home() / "nuget").make_preferred();
-    if (!fs::exists(feed / name)) require(config::download(a->url, feed / name));
+    if (!fs::exists(feed / name)) net::download(a->url, feed / name);
 
     std::string text;
     {    /* closed before dotnet writes it, which Windows refuses while it is open */
@@ -93,19 +94,15 @@ static void install_nupkg(const app::Context& ctx, const config::Release& r) {
         throw app::Failure("dotnet could not add the feed " + config::to_utf8(feed));
 }
 
-config::Release release(const std::string& version) {
-    config::Release r = config::release(config::rant_repo, version);
-    if (!r.error.empty()) throw app::Failure(r.error);
-    return r;
-}
+net::Release release(const std::string& version) { return net::release(rant_repo, version); }
 
 /* A use the release would change. An unpinned pyproject dependency takes what its venv has. */
-static bool changes(const config::LibUse& u, const config::Release& r) {
+static bool changes(const config::LibUse& u, const net::Release& r) {
     return u.version != r.version && !(u.how == "pyproject" && !u.version);
 }
 
 /* Brings one use to the release. Returns what it did, empty when there was nothing to do. */
-static std::string update(const app::Context& ctx, const config::LibUse& u, const config::Release& r) {
+static std::string update(const app::Context& ctx, const config::LibUse& u, const net::Release& r) {
     if (!changes(u, r)) {
         if (u.how == "PackageReference") install_nupkg(ctx, r);    /* the feed may still lack it */
         return "";
@@ -136,7 +133,7 @@ static std::vector<std::pair<config::LibKind, fs::path>> missing(const fs::path&
     return out;
 }
 
-bool install(const app::Context& ctx, const fs::path& dir, bool recursive, const config::Release& r) {
+bool install(const app::Context& ctx, const fs::path& dir, bool recursive, const net::Release& r) {
     std::vector<config::LibUse> uses = config::lib_uses(dir, recursive);
     auto adds = recursive ? decltype(missing(dir, uses)){} : missing(dir, uses);
     if (uses.empty() && adds.empty())
