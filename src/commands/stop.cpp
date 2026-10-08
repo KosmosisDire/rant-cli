@@ -2,8 +2,8 @@
 
 #include "app/failure.hpp"
 #include "commands/commands.hpp"
-#include "complete/complete.hpp"
 #include "commands/plan_output.hpp"
+#include "complete/complete.hpp"
 #include "run/nodes.hpp"
 #include "ui/prompt.hpp"
 

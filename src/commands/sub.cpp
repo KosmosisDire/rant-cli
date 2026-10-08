@@ -5,8 +5,8 @@
 
 #include "app/failure.hpp"
 #include "commands/commands.hpp"
-#include "complete/complete.hpp"
 #include "commands/format.hpp"
+#include "complete/complete.hpp"
 #include "mesh/client.hpp"
 #include "mesh/values.hpp"
 #include "ui/csv.hpp"
