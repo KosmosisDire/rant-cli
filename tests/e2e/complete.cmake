@@ -17,20 +17,18 @@ endfunction()
 
 use_fixture(groups)
 install_test_node(demo/bin)
-file(WRITE "${SCRATCH}/opts.hcl" [[
-group {
-  param "target" {
-    type    = string
-    default = "red_bin"
-    options = ["red_bin", "blue_bin"]
-  }
-  param "fast" {
-    type    = bool
-    default = false
-  }
-  node "demo/sensor" {
-    name = "x"
-  }
+file(WRITE "${SCRATCH}/opts.group.hcl" [[
+param "target" {
+  type    = string
+  default = "red_bin"
+  options = ["red_bin", "blue_bin"]
+}
+param "fast" {
+  type    = bool
+  default = false
+}
+node "demo/sensor" {
+  name = "x"
 }
 ]])
 

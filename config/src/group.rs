@@ -18,7 +18,10 @@ use crate::paths;
 use crate::plan::{Instance, Plan};
 use crate::refs;
 use crate::param::{self, Param};
-use crate::source::{no_labels, one_label, Fields, Loc, Source};
+use crate::source::{one_label, Fields, Loc, Source};
+
+/// What makes a file a group: `nav.group.hcl` is the group `nav`.
+pub const SUFFIX: &str = ".group.hcl";
 
 /// A group file and the name it goes by: `package/stem` inside a package, else `stem`.
 #[derive(Debug, Clone)]
@@ -28,12 +31,13 @@ pub struct GroupFile {
     pub path: PathBuf,
 }
 
-/// Names group files after their stem and their package. Two files of one name are an
-/// error, and the second is dropped.
+/// Names group files after their name without SUFFIX and their package. Two files of one
+/// name are an error, and the second is dropped.
 pub fn name_files(files: Vec<PathBuf>, packages: &[Package], diags: &mut Vec<Diag>) -> Vec<GroupFile> {
     let mut out: Vec<GroupFile> = Vec::new();
     for path in files {
-        let stem = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+        let file_name = path.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+        let stem = file_name.strip_suffix(SUFFIX).unwrap_or(&file_name).to_string();
         let package = packages
             .iter()
             .filter(|p| paths::within(&path, &p.dir))
@@ -88,13 +92,8 @@ impl GroupDef {
 
 fn parse(file: GroupFile, root: &Path) -> Result<GroupDef, Diag> {
     let src = Source::read(&file.path)?;
-    let blocks = src.top_blocks()?;
-    let block = match blocks.as_slice() {
-        [b] if b.ident.as_str() == "group" => *b,
-        _ => return Err(Diag::file(&file.path, "a group file holds exactly one `group` block")),
-    };
-    no_labels(&src, block)?;
-    let fields = Fields::of(&src, block, &["description"], &["param", "include", "node"])?;
+    // the whole file is the group, no block around it
+    let fields = Fields::of_body(&src, &src.body, "a group file", &["description"], &["param", "include", "node"])?;
     let dir = src.dir().to_path_buf();
     let empty = BTreeMap::new();
     let scope = Scope { params: Some(&empty), file_dir: &dir, package_dir: None, workspace: root };
@@ -103,7 +102,7 @@ fn parse(file: GroupFile, root: &Path) -> Result<GroupDef, Diag> {
     let params = param::parse_all(&src, &fields, &scope)?;
 
     let mut items = Vec::new();
-    for s in block.body.iter() {
+    for s in src.body.iter() {
         let Structure::Block(b) = s else { continue };
         match b.ident.as_str() {
             "include" => items.push(Item::Include(parse_include(&src, b, &scope)?)),

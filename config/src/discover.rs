@@ -1,9 +1,8 @@
 //! The walk that finds packages, group files and Python nodes: every directory under the
-//! workspace root that declares `package {}` or has a manifest that uses Rant, every `*.hcl`
-//! file whose first block is `group`, and every Python file that is a node, skipping
-//! gitignored paths and the workspace `ignore` globs.
+//! workspace root that declares `package {}` or has a manifest that uses Rant, every
+//! `*.group.hcl` file, and every Python file that is a node, skipping gitignored paths and
+//! the workspace `ignore` globs.
 
-use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use globset::{GlobBuilder, GlobSet, GlobSetBuilder};
@@ -58,30 +57,6 @@ fn build_tree(dir: &Path) -> bool {
     dir.join("CMakeCache.txt").is_file()
 }
 
-/// The first top level identifier, past whitespace and comments. Only the start of a file
-/// is read, so another tool's .hcl file costs almost nothing.
-pub fn first_identifier(text: &str) -> Option<&str> {
-    let mut rest = text;
-    loop {
-        rest = rest.trim_start();
-        if rest.starts_with('#') || rest.starts_with("//") {
-            rest = rest.find('\n').map(|i| &rest[i..]).unwrap_or("");
-        } else if let Some(body) = rest.strip_prefix("/*") {
-            rest = body.find("*/").map(|i| &body[i + 2..]).unwrap_or("");
-        } else {
-            break;
-        }
-    }
-    let end = rest.find(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == '-')).unwrap_or(rest.len());
-    (end > 0).then(|| &rest[..end])
-}
-
-fn is_group_file(path: &Path) -> bool {
-    let mut head = Vec::new();
-    let read = std::fs::File::open(path).and_then(|f| f.take(4096).read_to_end(&mut head));
-    read.is_ok() && first_identifier(&String::from_utf8_lossy(&head)) == Some("group")
-}
-
 pub fn walk(config: &WorkspaceConfig, cache: &mut Cache, diags: &mut Vec<Diag>) -> Found {
     let ignore = match glob_set(&config.ignore, &config.root.join(MANIFEST)) {
         Ok(g) => g,
@@ -116,7 +91,7 @@ pub fn walk(config: &WorkspaceConfig, cache: &mut Cache, diags: &mut Vec<Diag>) 
         let path = entry.path();
         if entry.file_type().is_some_and(|t| t.is_file()) {
             let ext = path.extension().unwrap_or_default();
-            if ext == "hcl" && path.file_name().is_some_and(|n| n != MANIFEST) && is_group_file(path) {
+            if path.file_name().is_some_and(|n| n.to_string_lossy().ends_with(crate::group::SUFFIX)) {
                 found.group_files.push(path.to_path_buf());
             }
             if ext == "py" && entry.metadata().is_ok_and(|m| cache.classify(path, &m) == Some(NodeKind::Python)) {
@@ -138,16 +113,4 @@ pub fn walk(config: &WorkspaceConfig, cache: &mut Cache, diags: &mut Vec<Diag>) 
         }
     }
     found
-}
-
-#[cfg(test)]
-mod tests {
-    use super::first_identifier;
-
-    #[test]
-    fn first_identifier_skips_comments() {
-        assert_eq!(first_identifier("# x\n// y\n/* z\n */  group {"), Some("group"));
-        assert_eq!(first_identifier("\n\nresource \"a\" {}"), Some("resource"));
-        assert_eq!(first_identifier("/* never closed"), None);
-    }
 }

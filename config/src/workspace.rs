@@ -69,7 +69,7 @@ pub fn check_kinds(src: &Source, blocks: &[&hcl_edit::structure::Block]) -> Resu
                 }
                 seen.push(ident);
             }
-            "group" => return Err(src.diag_at(*b, "a group lives in its own file, not in rant.hcl")),
+            "group" => return Err(src.diag_at(*b, "a group lives in its own .group.hcl file, not in rant.hcl")),
             other => return Err(src.diag_at(*b, format!("unknown block `{other}`, expected workspace or package"))),
         }
     }

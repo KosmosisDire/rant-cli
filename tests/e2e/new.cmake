@@ -3,11 +3,11 @@ include("${CMAKE_CURRENT_LIST_DIR}/lib.cmake")
 rant(init)
 
 rant(new group nav)
-expect_match("${OUT}" "created nav[.]hcl")
-file(READ "${SCRATCH}/nav.hcl" nav)
+expect_match("${OUT}" "created nav[.]group[.]hcl")
+file(READ "${SCRATCH}/nav.group.hcl" nav)
 expect_match("${nav}" "description = \"What nav runs\"")
 rant(new group nav FAILS)
-expect_match("${ERR}" "nav[.]hcl exists already, nothing was written")
+expect_match("${ERR}" "nav[.]group[.]hcl exists already, nothing was written")
 
 # A node takes the language of the package it is made in.
 file(WRITE "${SCRATCH}/py/pyproject.toml" "[project]\nname = \"py\"\ndependencies = [\"rant-middleware\"]\n")

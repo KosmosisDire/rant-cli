@@ -79,6 +79,6 @@ mod tests {
     fn a_param_cannot_take_the_name() {
         let text = "template {\n  param \"name\" {}\n}\n";
         assert!(read(text, Path::new("t.hcl")).err().unwrap().message.contains("`name` is the name"));
-        assert!(read("group {}\n", Path::new("t.hcl")).is_err());
+        assert!(read("other {}\n", Path::new("t.hcl")).is_err());
     }
 }

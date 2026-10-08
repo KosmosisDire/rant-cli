@@ -83,9 +83,13 @@ pub struct Fields<'a> {
 
 impl<'a> Fields<'a> {
     pub fn of(src: &Source, block: &'a Block, attrs: &[&str], blocks: &[&str]) -> Result<Fields<'a>, Diag> {
-        let kind = block.ident.as_str();
+        Fields::of_body(src, &block.body, block.ident.as_str(), attrs, blocks)
+    }
+
+    /// The same for a whole body, such as the top level of a file. kind names it in errors.
+    pub fn of_body(src: &Source, body: &'a Body, kind: &str, attrs: &[&str], blocks: &[&str]) -> Result<Fields<'a>, Diag> {
         let mut out = Fields { attrs: Vec::new(), blocks: Vec::new() };
-        for s in block.body.iter() {
+        for s in body.iter() {
             match s {
                 Structure::Attribute(a) => {
                     let key = a.key.as_str();
