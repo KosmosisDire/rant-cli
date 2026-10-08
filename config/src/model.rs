@@ -55,7 +55,7 @@ impl Model {
         let cache_path = cache_dir(&config.root).join("scan.json");
         let mut cache = Cache::load(&cache_path);
         let mut found = discover::walk(&config, &mut cache, &mut diags);
-        let mut candidates = std::mem::take(&mut found.packages);
+        let mut candidates = without_cmake_subdirectories(std::mem::take(&mut found.packages));
         candidates.sort_by(|a, b| a.dir.cmp(&b.dir));
         let mut packages = name_packages(candidates, &mut diags);
         let groups = group::name_files(found.group_files, &packages, &mut diags);
@@ -102,6 +102,22 @@ impl Model {
     pub fn package_holding(&self, p: &Path) -> Option<&Package> {
         self.packages.iter().filter(|pkg| paths::within(p, &pkg.dir)).max_by_key(|pkg| pkg.dir.components().count())
     }
+}
+
+/// A CMake folder inside another CMake package is part of it, since CMake nests projects
+/// through add_subdirectory and the parent builds the child. A `package {}` block makes a
+/// folder its own package whatever its manifests say.
+fn without_cmake_subdirectories(candidates: Vec<Candidate>) -> Vec<Candidate> {
+    let cmake = |c: &Candidate| c.manifests.iter().any(|m| m.kind == ManifestKind::CMake);
+    let parents: Vec<PathBuf> = candidates.iter().filter(|c| cmake(c)).map(|c| c.dir.clone()).collect();
+    candidates
+        .into_iter()
+        .filter(|c| {
+            let only_cmake = c.block.is_none() && c.manifests.iter().filter(|m| m.uses_rant).all(|m| m.kind == ManifestKind::CMake);
+            let nested = parents.iter().any(|p| *p != c.dir && paths::within(&c.dir, p));
+            !(only_cmake && nested)
+        })
+        .collect()
 }
 
 /// Names each package: `package { name }`, else the manifest's, else the directory's.

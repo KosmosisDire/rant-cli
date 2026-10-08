@@ -125,6 +125,21 @@ fn the_scan_cache_is_written_and_reused() {
 }
 
 #[test]
+fn a_cmake_folder_inside_a_cmake_package_is_part_of_it() {
+    let t = TestDir::new();
+    t.write("rant.hcl", "workspace {}\n");
+    t.write("CMakeLists.txt", "project(arna_system)\nCPMAddPackage(NAME rant GIT_TAG v0.0.18)\nadd_subdirectory(src/ft)\n");
+    t.write("src/ft/CMakeLists.txt", "add_executable(ft ft.cpp)\ntarget_link_libraries(ft PRIVATE rant::rant_host)\n");
+    t.write("src/arm/CMakeLists.txt", "add_executable(arm arm.cpp)\ntarget_link_libraries(arm PRIVATE rant::rant_host)\n");
+    t.write("src/arm/rant.hcl", "package {\n  name = \"arm\"\n}\n");
+    t.write("tools/py/pyproject.toml", "[project]\nname = \"tool\"\ndependencies = [\"rant-middleware\"]\n");
+    let m = load(&t);
+    let mut names: Vec<&str> = m.packages.iter().map(|p| p.name.as_str()).collect();
+    names.sort();
+    assert_eq!(names, ["arm", "arna_system", "tool"], "a block keeps arm, ft belongs to the top");
+}
+
+#[test]
 fn python_nodes_outside_packages_have_no_package() {
     let t = TestDir::new();
     t.write("rant.hcl", "workspace {}\n");
