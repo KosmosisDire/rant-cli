@@ -89,8 +89,9 @@ int run(Context& ctx, const std::vector<std::string>& tokens) {
     const Command* cmd = find(name);
     if (!cmd) throw UsageError("unknown command `" + name + "`, run `rant --help` for the list");
 
-    std::vector<OptionSpec> specs = global_options();
-    specs.insert(specs.end(), cmd->options.begin(), cmd->options.end());
+    /* a command's own option wins over a global one of the same name, as lib install --version */
+    std::vector<OptionSpec> specs = cmd->options;
+    specs.insert(specs.end(), global_options().begin(), global_options().end());
     ctx.args = parse_args({ tokens.begin() + consumed + 1, tokens.end() }, specs);
     ctx.args.merge(global);
 

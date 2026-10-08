@@ -176,7 +176,7 @@ static Line read_line(app::Context& ctx, const std::vector<std::string>& before)
             if (l.command || l.unknown) {
                 l.words.push_back(t);
             } else if ((l.command = find_command(t))) {
-                l.specs.insert(l.specs.end(), l.command->options.begin(), l.command->options.end());
+                l.specs.insert(l.specs.begin(), l.command->options.begin(), l.command->options.end());
             } else {
                 l.unknown = true;
             }
