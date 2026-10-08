@@ -37,9 +37,10 @@ struct NodeType {
 };
 
 struct Package {
-    std::string           name;
-    fs::path              dir;
-    std::vector<NodeType> nodes;
+    std::string              name;
+    fs::path                 dir;
+    std::vector<std::string> kinds;    /* "cmake", "python", "csharp", "rant.hcl" */
+    std::vector<NodeType>    nodes;
 };
 
 struct GroupFile {

@@ -10,6 +10,7 @@ use std::rc::Rc;
 use crate::build_plan;
 use crate::diag::Diag;
 use crate::group::{GroupDef, Groups};
+use crate::manifest::ManifestKind;
 use crate::model::{Model, NodeType, Package};
 use crate::param::{self, Param};
 use crate::paths;
@@ -55,6 +56,10 @@ pub struct RantConfigNodeType {
 pub struct RantConfigPackage {
     pub name: *const c_char,
     pub dir: *const c_char,
+    /// What makes it a package: "cmake", "python", "csharp" for its manifests, "rant.hcl"
+    /// for a package block.
+    pub kinds: *const *const c_char,
+    pub kind_count: usize,
     pub nodes: *const RantConfigNodeType,
     pub node_count: usize,
 }
@@ -220,7 +225,22 @@ impl Store {
     fn package(&mut self, p: &Package) -> RantConfigPackage {
         let nodes: Vec<RantConfigNodeType> = p.nodes.iter().map(|n| self.node_type(n)).collect();
         let (nodes, node_count) = self.array(nodes);
-        RantConfigPackage { name: self.str(&p.name), dir: self.path(&p.dir), nodes, node_count }
+        let mut kinds: Vec<String> = p
+            .manifests
+            .iter()
+            .map(|m| match m.kind {
+                ManifestKind::CMake => "cmake",
+                ManifestKind::Python => "python",
+                ManifestKind::CSharp => "csharp",
+            })
+            .map(str::to_string)
+            .collect();
+        kinds.dedup();
+        if p.block.is_some() {
+            kinds.push("rant.hcl".into());
+        }
+        let (kinds, kind_count) = self.strs(&kinds);
+        RantConfigPackage { name: self.str(&p.name), dir: self.path(&p.dir), kinds, kind_count, nodes, node_count }
     }
 
     fn instance(&mut self, i: &plan::Instance) -> RantConfigInstance {

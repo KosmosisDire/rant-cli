@@ -70,7 +70,7 @@ static Opened read(Handle h) {
     Workspace ws = paths_only(v->root, v->logs, v->data);
     for (size_t i = 0; i < v->package_count; i++) {
         const RantConfigPackage& p = v->packages[i];
-        Package pkg{ str(p.name), from_utf8(str(p.dir)), {} };
+        Package pkg{ str(p.name), from_utf8(str(p.dir)), strs(p.kinds, p.kind_count), {} };
         for (size_t j = 0; j < p.node_count; j++) pkg.nodes.push_back(node_type(p.nodes[j]));
         ws.packages.push_back(std::move(pkg));
     }
