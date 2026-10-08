@@ -9,7 +9,8 @@ use std::rc::Rc;
 
 use crate::build_plan;
 use crate::diag::Diag;
-use crate::group::{self, GroupDef, Groups, Param};
+use crate::group::{GroupDef, Groups};
+use crate::param::{self, Param};
 use crate::model::{Model, NodeType, Package};
 use crate::paths;
 use crate::plan::{self, Plan};
@@ -335,7 +336,7 @@ fn plan_handle(loaded: &Loaded, planned: Result<Planned, Diag>) -> *mut RantConf
     let (group, params) = match &planned.group {
         Some((name, values)) => {
             let pairs: Vec<RantConfigPair> =
-                values.iter().map(|(k, v)| RantConfigPair { name: store.str(k), value: store.str(&group::text(v)) }).collect();
+                values.iter().map(|(k, v)| RantConfigPair { name: store.str(k), value: store.str(&param::text(v)) }).collect();
             (store.str(name), pairs)
         }
         None => (std::ptr::null(), Vec::new()),
@@ -430,7 +431,7 @@ fn plan_group(model: &Model, start: &Path, reference: &str, raw: &[String]) -> R
                 def.file.name, def.file.name
             )));
         };
-        if given.insert(k.to_string(), group::parse_value(p, v).map_err(Diag::plain)?).is_some() {
+        if given.insert(k.to_string(), param::parse_value(p, v).map_err(Diag::plain)?).is_some() {
             return Err(Diag::plain(format!("param `{k}` is given twice")));
         }
     }
@@ -526,12 +527,12 @@ pub unsafe extern "C" fn rant_config_group(start_dir: *const c_char, group: *con
             let params: Vec<RantConfigParam> = iface
                 .iter()
                 .map(|p| {
-                    let opts: Vec<String> = p.options.iter().map(group::text).collect();
+                    let opts: Vec<String> = p.options.iter().map(param::text).collect();
                     let (options, option_count) = store.strs(&opts);
                     RantConfigParam {
                         name: store.str(&p.name),
                         type_name: store.str(p.ty.name()),
-                        default_value: p.default.as_ref().map(|d| store.str(&group::text(d))).unwrap_or(std::ptr::null()),
+                        default_value: p.default.as_ref().map(|d| store.str(&param::text(d))).unwrap_or(std::ptr::null()),
                         options,
                         option_count,
                         description: p.description.as_deref().map(|d| store.str(d)).unwrap_or(std::ptr::null()),

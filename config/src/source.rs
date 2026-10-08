@@ -152,6 +152,29 @@ fn syntax_message(message: &str) -> String {
     }
 }
 
+/// A place in a source file, kept so a later error can point back at it.
+#[derive(Debug, Clone)]
+pub struct Loc {
+    file: PathBuf,
+    line: u32,
+    column: u32,
+}
+
+impl Loc {
+    pub fn of(src: &Source, item: &dyn Span) -> Loc {
+        let d = src.diag_at(item, "");
+        Loc { file: d.file, line: d.line, column: d.column }
+    }
+
+    pub fn diag(&self, message: impl Into<String>) -> Diag {
+        Diag::new(&self.file, self.line, self.column, message)
+    }
+
+    pub fn shown(&self) -> String {
+        format!("{}:{}:{}", self.file.display(), self.line, self.column)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

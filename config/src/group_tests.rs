@@ -6,7 +6,8 @@ use std::collections::BTreeMap;
 use hcl::Value;
 
 use crate::diag::Diag;
-use crate::group::{parse_value, Groups};
+use crate::group::Groups;
+use crate::param::parse_value;
 use crate::model::Model;
 use crate::plan::Plan;
 use crate::testdir::TestDir;

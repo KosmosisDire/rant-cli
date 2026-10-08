@@ -14,6 +14,7 @@ mod lib_use;
 mod manifest;
 mod model;
 mod package;
+mod param;
 mod paths;
 mod plan;
 mod refs;
