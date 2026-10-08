@@ -8,6 +8,7 @@ use globset::GlobSet;
 
 use crate::diag::Diag;
 use crate::discover::{self, Candidate};
+use crate::group::{self, GroupFile};
 use crate::manifest::Manifest;
 use crate::package::PackageBlock;
 use crate::paths;
@@ -39,6 +40,7 @@ pub struct Package {
 pub struct Model {
     pub config: WorkspaceConfig,
     pub packages: Vec<Package>,
+    pub groups: Vec<GroupFile>,
 }
 
 pub fn cache_dir(root: &Path) -> PathBuf {
@@ -48,9 +50,11 @@ pub fn cache_dir(root: &Path) -> PathBuf {
 impl Model {
     pub fn load(config: WorkspaceConfig) -> (Model, Vec<Diag>) {
         let mut diags = Vec::new();
-        let mut candidates = discover::candidates(&config, &mut diags);
+        let found = discover::walk(&config, &mut diags);
+        let mut candidates = found.packages;
         candidates.sort_by(|a, b| a.dir.cmp(&b.dir));
         let mut packages = name_packages(candidates, &mut diags);
+        let groups = group::name_files(found.group_files, &packages, &mut diags);
 
         let cache_path = cache_dir(&config.root).join("scan.json");
         let mut cache = Cache::load(&cache_path);
@@ -69,7 +73,7 @@ impl Model {
             pkg.nodes = node_types(pkg, found, &config.root);
         }
         cache.save(&cache_path);
-        (Model { config, packages }, diags)
+        (Model { config, packages, groups }, diags)
     }
 
     pub fn package(&self, name: &str) -> Option<&Package> {

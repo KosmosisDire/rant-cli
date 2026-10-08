@@ -7,6 +7,7 @@ mod diag;
 mod discover;
 mod eval;
 pub mod ffi;
+mod group;
 mod manifest;
 mod model;
 mod package;
@@ -21,3 +22,5 @@ mod workspace;
 mod testdir;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod group_tests;

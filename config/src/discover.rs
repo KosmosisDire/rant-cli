@@ -1,6 +1,8 @@
-//! The walk that finds packages: every directory under the workspace root that uses Rant
-//! or declares `package {}`, skipping gitignored paths and the workspace `ignore` globs.
+//! The walk that finds packages and group files: every directory under the workspace root
+//! that uses Rant or declares `package {}`, and every `*.hcl` file whose first block is
+//! `group`, skipping gitignored paths and the workspace `ignore` globs.
 
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use globset::{GlobBuilder, GlobSet, GlobSetBuilder};
@@ -10,13 +12,19 @@ use crate::manifest::{self, Manifest};
 use crate::package::{self, PackageBlock};
 use crate::paths;
 use crate::scan::skipped_dir;
-use crate::workspace::WorkspaceConfig;
+use crate::workspace::{WorkspaceConfig, MANIFEST};
 
 /// A directory that is a package, before it is named and scanned.
 pub struct Candidate {
     pub dir: PathBuf,
     pub manifests: Vec<Manifest>,
     pub block: Option<PackageBlock>,
+}
+
+/// What one walk of the workspace finds.
+pub struct Found {
+    pub packages: Vec<Candidate>,
+    pub group_files: Vec<PathBuf>,
 }
 
 /// Globs where `*` stops at a slash and `**` crosses any number of directories.
@@ -47,8 +55,32 @@ fn build_tree(dir: &Path) -> bool {
     dir.join("CMakeCache.txt").is_file()
 }
 
-pub fn candidates(config: &WorkspaceConfig, diags: &mut Vec<Diag>) -> Vec<Candidate> {
-    let ignore = match glob_set(&config.ignore, &config.root.join(crate::workspace::MANIFEST)) {
+/// The first top level identifier, past whitespace and comments. Only the start of a file
+/// is read, so another tool's .hcl file costs almost nothing.
+pub fn first_identifier(text: &str) -> Option<&str> {
+    let mut rest = text;
+    loop {
+        rest = rest.trim_start();
+        if rest.starts_with('#') || rest.starts_with("//") {
+            rest = rest.find('\n').map(|i| &rest[i..]).unwrap_or("");
+        } else if let Some(body) = rest.strip_prefix("/*") {
+            rest = body.find("*/").map(|i| &body[i + 2..]).unwrap_or("");
+        } else {
+            break;
+        }
+    }
+    let end = rest.find(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == '-')).unwrap_or(rest.len());
+    (end > 0).then(|| &rest[..end])
+}
+
+fn is_group_file(path: &Path) -> bool {
+    let mut head = Vec::new();
+    let read = std::fs::File::open(path).and_then(|f| f.take(4096).read_to_end(&mut head));
+    read.is_ok() && first_identifier(&String::from_utf8_lossy(&head)) == Some("group")
+}
+
+pub fn walk(config: &WorkspaceConfig, diags: &mut Vec<Diag>) -> Found {
+    let ignore = match glob_set(&config.ignore, &config.root.join(MANIFEST)) {
         Ok(g) => g,
         Err(d) => {
             diags.push(d);
@@ -56,6 +88,7 @@ pub fn candidates(config: &WorkspaceConfig, diags: &mut Vec<Diag>) -> Vec<Candid
         }
     };
     let root = config.root.clone();
+    let filter = ignore.clone();
     let walker = ignore::WalkBuilder::new(&config.root)
         .hidden(false)
         .parents(false)
@@ -67,31 +100,48 @@ pub fn candidates(config: &WorkspaceConfig, diags: &mut Vec<Diag>) -> Vec<Candid
         .follow_links(false)
         .filter_entry(move |e| {
             let p = e.path();
-            if !e.file_type().is_some_and(|t| t.is_dir()) || p == root {
+            if p == root {
                 return true;
             }
-            !(skipped_dir(p) || build_tree(p) || ignored(&ignore, &root, p, true))
+            let is_dir = e.file_type().is_some_and(|t| t.is_dir());
+            !(is_dir && (skipped_dir(p) || build_tree(p))) && !ignored(&filter, &root, p, is_dir)
         })
         .build();
 
-    let mut out = Vec::new();
+    let mut found = Found { packages: Vec::new(), group_files: Vec::new() };
     for entry in walker.flatten() {
-        if !entry.file_type().is_some_and(|t| t.is_dir()) {
+        let path = entry.path();
+        if entry.file_type().is_some_and(|t| t.is_file()) {
+            let hcl = path.extension().is_some_and(|e| e == "hcl");
+            if hcl && path.file_name().is_some_and(|n| n != MANIFEST) && is_group_file(path) {
+                found.group_files.push(path.to_path_buf());
+            }
             continue;
         }
-        let dir = entry.path();
-        let is_root = dir == config.root;
-        let block = match package::read(dir, &config.root, is_root) {
+        let is_root = path == config.root;
+        let block = match package::read(path, &config.root, is_root) {
             Ok(b) => b,
             Err(d) => {
                 diags.push(d);
                 continue;
             }
         };
-        let manifests = manifest::in_dir(dir);
+        let manifests = manifest::in_dir(path);
         if block.is_some() || manifests.iter().any(|m| m.uses_rant) {
-            out.push(Candidate { dir: dir.to_path_buf(), manifests, block });
+            found.packages.push(Candidate { dir: path.to_path_buf(), manifests, block });
         }
     }
-    out
+    found
+}
+
+#[cfg(test)]
+mod tests {
+    use super::first_identifier;
+
+    #[test]
+    fn first_identifier_skips_comments() {
+        assert_eq!(first_identifier("# x\n// y\n/* z\n */  group {"), Some("group"));
+        assert_eq!(first_identifier("\n\nresource \"a\" {}"), Some("resource"));
+        assert_eq!(first_identifier("/* never closed"), None);
+    }
 }

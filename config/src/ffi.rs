@@ -2,11 +2,15 @@
 //! stays valid until its handle is freed. cbindgen writes rant_config.h from this file.
 
 use std::any::Any;
+use std::collections::BTreeMap;
 use std::ffi::{c_char, CStr, CString};
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 use crate::diag::Diag;
+use crate::group::{self, GroupDef, Groups, Param};
 use crate::model::{Model, NodeType, Package};
+use crate::paths;
 use crate::plan::{self, Plan};
 use crate::scan::NodeKind;
 use crate::workspace::{self, WorkspaceConfig};
@@ -53,8 +57,15 @@ pub struct RantConfigPackage {
     pub node_count: usize,
 }
 
+/// A group file and the name it goes by.
+#[repr(C)]
+pub struct RantConfigGroupFile {
+    pub name: *const c_char,
+    pub file: *const c_char,
+}
+
 /// What rant_config_open found. root is NULL when no workspace encloses the directory.
-/// data is the workspace's .rant directory. packages is filled only when
+/// data is the workspace's .rant directory. packages and groups are filled only when
 /// RANT_CONFIG_PACKAGES was asked for.
 #[repr(C)]
 pub struct RantConfigWorkspaceView {
@@ -63,6 +74,8 @@ pub struct RantConfigWorkspaceView {
     pub data: *const c_char,
     pub packages: *const RantConfigPackage,
     pub package_count: usize,
+    pub groups: *const RantConfigGroupFile,
+    pub group_count: usize,
     pub diagnostics: *const RantConfigDiagnostic,
     pub diagnostic_count: usize,
 }
@@ -74,9 +87,9 @@ pub struct RantConfigWorkspace {
     store: Store,
 }
 
-/// One environment entry a node gets on top of the inherited environment.
+/// A name and a value: an environment entry, or a resolved group param.
 #[repr(C)]
-pub struct RantConfigEnvVar {
+pub struct RantConfigPair {
     pub name: *const c_char,
     pub value: *const c_char,
 }
@@ -89,17 +102,22 @@ pub struct RantConfigInstance {
     pub kind: RantConfigNodeKind,
     pub argv: *const *const c_char,
     pub argc: usize,
-    pub env: *const RantConfigEnvVar,
+    pub env: *const RantConfigPair,
     pub env_count: usize,
     pub cwd: *const c_char,
 }
 
 /// A resolved plan in start order, every path absolute. Empty when diagnostics are not.
+/// group and params name a group root, with every param resolved, defaults included. For a
+/// single node group is NULL.
 #[repr(C)]
 pub struct RantConfigPlanView {
     pub root: *const c_char,
     pub logs: *const c_char,
     pub data: *const c_char,
+    pub group: *const c_char,
+    pub params: *const RantConfigPair,
+    pub param_count: usize,
     pub instances: *const RantConfigInstance,
     pub instance_count: usize,
     pub diagnostics: *const RantConfigDiagnostic,
@@ -183,8 +201,8 @@ impl Store {
 
     fn instance(&mut self, i: &plan::Instance) -> RantConfigInstance {
         let (argv, argc) = self.strs(&i.argv);
-        let env: Vec<RantConfigEnvVar> =
-            i.env.iter().map(|(k, v)| RantConfigEnvVar { name: self.str(k), value: self.str(v) }).collect();
+        let env: Vec<RantConfigPair> =
+            i.env.iter().map(|(k, v)| RantConfigPair { name: self.str(k), value: self.str(v) }).collect();
         let (env, env_count) = self.array(env);
         RantConfigInstance {
             name: self.str(&i.name),
@@ -263,29 +281,53 @@ fn workspace_handle(loaded: &Loaded, extra: Vec<Diag>) -> *mut RantConfigWorkspa
     let packages: Vec<RantConfigPackage> =
         loaded.model.iter().flat_map(|m| m.packages.iter()).map(|p| store.package(p)).collect();
     let (packages, package_count) = store.array(packages);
+    let groups: Vec<RantConfigGroupFile> = loaded
+        .model
+        .iter()
+        .flat_map(|m| m.groups.iter())
+        .map(|g| RantConfigGroupFile { name: store.str(&g.name), file: store.path(&g.path) })
+        .collect();
+    let (groups, group_count) = store.array(groups);
     let diags: Vec<Diag> = loaded.diags.iter().cloned().chain(extra).collect();
     let (diagnostics, diagnostic_count) = store.diags(&diags);
     let [root, logs, data] = store.roots(loaded.config.as_ref());
-    let view = RantConfigWorkspaceView { root, logs, data, packages, package_count, diagnostics, diagnostic_count };
+    let view =
+        RantConfigWorkspaceView { root, logs, data, packages, package_count, groups, group_count, diagnostics, diagnostic_count };
     Box::into_raw(Box::new(RantConfigWorkspace { view, store }))
 }
 
-fn plan_handle(loaded: &Loaded, plan: Result<Plan, Diag>) -> *mut RantConfigPlan {
+/// A plan, and for a group root the group's name and its resolved params.
+struct Planned {
+    plan: Plan,
+    group: Option<(String, BTreeMap<String, hcl::Value>)>,
+}
+
+fn plan_handle(loaded: &Loaded, planned: Result<Planned, Diag>) -> *mut RantConfigPlan {
     let mut store = Store::default();
     let mut diags = loaded.diags.clone();
-    let plan = match plan {
+    let planned = match planned {
         Ok(p) if diags.is_empty() => p,
-        Ok(_) => Plan::default(),
+        Ok(_) => Planned { plan: Plan::default(), group: None },
         Err(d) => {
             diags.push(d);
-            Plan::default()
+            Planned { plan: Plan::default(), group: None }
         }
     };
-    let instances: Vec<RantConfigInstance> = plan.instances.iter().map(|i| store.instance(i)).collect();
+    let instances: Vec<RantConfigInstance> = planned.plan.instances.iter().map(|i| store.instance(i)).collect();
     let (instances, instance_count) = store.array(instances);
+    let (group, params) = match &planned.group {
+        Some((name, values)) => {
+            let pairs: Vec<RantConfigPair> =
+                values.iter().map(|(k, v)| RantConfigPair { name: store.str(k), value: store.str(&group::text(v)) }).collect();
+            (store.str(name), pairs)
+        }
+        None => (std::ptr::null(), Vec::new()),
+    };
+    let (params, param_count) = store.array(params);
     let (diagnostics, diagnostic_count) = store.diags(&diags);
     let [root, logs, data] = store.roots(loaded.config.as_ref());
-    let view = RantConfigPlanView { root, logs, data, instances, instance_count, diagnostics, diagnostic_count };
+    let view =
+        RantConfigPlanView { root, logs, data, group, params, param_count, instances, instance_count, diagnostics, diagnostic_count };
     Box::into_raw(Box::new(RantConfigPlan { view, store }))
 }
 
@@ -340,11 +382,168 @@ pub unsafe extern "C" fn rant_config_free(ws: *mut RantConfigWorkspace) {
 pub unsafe extern "C" fn rant_config_plan_node(start_dir: *const c_char, node_type: *const c_char) -> *mut RantConfigPlan {
     let start = arg_path(start_dir);
     let loaded = load(&start, true);
-    let plan = match &loaded.model {
-        Some(m) => plan::single(m, &arg_str(node_type), &start),
+    let planned = match &loaded.model {
+        Some(m) => plan::single(m, &arg_str(node_type), &start).map(|plan| Planned { plan, group: None }),
         None => Err(no_workspace()),
     };
-    plan_handle(&loaded, plan)
+    plan_handle(&loaded, planned)
+}
+
+/// The group a reference names from start_dir, read and with its interface worked out.
+fn group_def(groups: &Groups, model: &Model, start: &Path, reference: &str) -> Result<(Rc<GroupDef>, Vec<Param>), Diag> {
+    let package = model.package_holding(&paths::normalize(start)).map(|p| p.name.clone());
+    let file = groups.find(reference, package.as_deref()).map_err(Diag::plain)?;
+    let def = groups.load(file)?;
+    let iface = groups.interface(&def)?;
+    Ok((def, iface))
+}
+
+/// The plan for a group started with `key=value` params, each read as its param's type.
+fn plan_group(model: &Model, start: &Path, reference: &str, raw: &[String]) -> Result<Planned, Diag> {
+    let groups = Groups::new(model);
+    let (def, iface) = group_def(&groups, model, start, reference)?;
+    let mut given = BTreeMap::new();
+    for kv in raw {
+        let Some((k, v)) = kv.split_once('=') else {
+            return Err(Diag::plain(format!("params are key=value, not `{kv}`")));
+        };
+        let Some(p) = iface.iter().find(|p| p.name == k) else {
+            return Err(Diag::plain(format!(
+                "group `{}` has no param `{k}`, see `rant start group {} --help`",
+                def.file.name, def.file.name
+            )));
+        };
+        if given.insert(k.to_string(), group::parse_value(p, v).map_err(Diag::plain)?).is_some() {
+            return Err(Diag::plain(format!("param `{k}` is given twice")));
+        }
+    }
+    let (plan, values) = groups.plan(&def, given)?;
+    Ok(Planned { plan, group: Some((def.file.name.clone(), values)) })
+}
+
+/// The plan for a group, given by reference from start_dir, with params as an array of
+/// "key=value" strings. Never NULL: failures are in the view's diagnostics.
+///
+/// # Safety
+/// start_dir and group must be NULL or NUL terminated UTF-8 strings, and params must point
+/// at param_count such strings.
+#[no_mangle]
+pub unsafe extern "C" fn rant_config_plan_group(
+    start_dir: *const c_char,
+    group: *const c_char,
+    params: *const *const c_char,
+    param_count: usize,
+) -> *mut RantConfigPlan {
+    let start = arg_path(start_dir);
+    let raw: Vec<String> = (0..param_count).map(|i| arg_str(*params.add(i))).collect();
+    let loaded = load(&start, true);
+    let planned = match &loaded.model {
+        Some(m) => plan_group(m, &start, &arg_str(group), &raw),
+        None => Err(no_workspace()),
+    };
+    plan_handle(&loaded, planned)
+}
+
+/// One param of a group's interface. default_value is NULL for a required param.
+#[repr(C)]
+pub struct RantConfigParam {
+    pub name: *const c_char,
+    pub type_name: *const c_char,
+    pub default_value: *const c_char,
+    pub options: *const *const c_char,
+    pub option_count: usize,
+    pub description: *const c_char,
+}
+
+/// A group and the params it takes, own and exposed, for help and completion.
+#[repr(C)]
+pub struct RantConfigGroupView {
+    pub name: *const c_char,
+    pub file: *const c_char,
+    pub description: *const c_char,
+    pub params: *const RantConfigParam,
+    pub param_count: usize,
+    pub diagnostics: *const RantConfigDiagnostic,
+    pub diagnostic_count: usize,
+}
+
+/// A described group and everything its view points into.
+pub struct RantConfigGroup {
+    view: RantConfigGroupView,
+    #[allow(dead_code)]
+    store: Store,
+}
+
+/// A group by reference from start_dir, with its params. Never NULL: failures are in the
+/// view's diagnostics.
+///
+/// # Safety
+/// Both arguments must be NULL or NUL terminated UTF-8 strings.
+#[no_mangle]
+pub unsafe extern "C" fn rant_config_group(start_dir: *const c_char, group: *const c_char) -> *mut RantConfigGroup {
+    let start = arg_path(start_dir);
+    let loaded = load(&start, true);
+    let mut store = Store::default();
+    let mut diags = loaded.diags.clone();
+    let mut view = RantConfigGroupView {
+        name: std::ptr::null(),
+        file: std::ptr::null(),
+        description: std::ptr::null(),
+        params: std::ptr::null(),
+        param_count: 0,
+        diagnostics: std::ptr::null(),
+        diagnostic_count: 0,
+    };
+    let described = match &loaded.model {
+        Some(m) => {
+            let groups = Groups::new(m);
+            group_def(&groups, m, &start, &arg_str(group))
+        }
+        None => Err(no_workspace()),
+    };
+    match described {
+        Ok((def, iface)) if diags.is_empty() => {
+            view.name = store.str(&def.file.name);
+            view.file = store.path(&def.file.path);
+            view.description = def.description.as_deref().map(|d| store.str(d)).unwrap_or(std::ptr::null());
+            let params: Vec<RantConfigParam> = iface
+                .iter()
+                .map(|p| {
+                    let opts: Vec<String> = p.options.iter().map(group::text).collect();
+                    let (options, option_count) = store.strs(&opts);
+                    RantConfigParam {
+                        name: store.str(&p.name),
+                        type_name: store.str(p.ty.name()),
+                        default_value: p.default.as_ref().map(|d| store.str(&group::text(d))).unwrap_or(std::ptr::null()),
+                        options,
+                        option_count,
+                        description: p.description.as_deref().map(|d| store.str(d)).unwrap_or(std::ptr::null()),
+                    }
+                })
+                .collect();
+            (view.params, view.param_count) = store.array(params);
+        }
+        Ok(_) => {}
+        Err(d) => diags.push(d),
+    }
+    (view.diagnostics, view.diagnostic_count) = store.diags(&diags);
+    Box::into_raw(Box::new(RantConfigGroup { view, store }))
+}
+
+/// # Safety
+/// `group` must be a live handle from rant_config_group.
+#[no_mangle]
+pub unsafe extern "C" fn rant_config_group_view(group: *const RantConfigGroup) -> *const RantConfigGroupView {
+    &(*group).view
+}
+
+/// # Safety
+/// `group` must be NULL or a live handle, and is invalid afterwards.
+#[no_mangle]
+pub unsafe extern "C" fn rant_config_group_free(group: *mut RantConfigGroup) {
+    if !group.is_null() {
+        drop(Box::from_raw(group));
+    }
 }
 
 /// # Safety
