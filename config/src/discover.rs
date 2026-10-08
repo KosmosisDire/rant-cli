@@ -57,6 +57,39 @@ fn build_tree(dir: &Path) -> bool {
     dir.join("CMakeCache.txt").is_file()
 }
 
+/// Every folder under start and every venv met on the way, which is not entered. Version
+/// control, rant's data, npm trees, fetched sources, build trees and the workspace's
+/// `ignore` globs are left out, gitignored paths are not, since a venv usually is one.
+pub fn folders(start: &Path, config: Option<&WorkspaceConfig>) -> (Vec<PathBuf>, Vec<PathBuf>) {
+    let ignore = config.and_then(|c| glob_set(&c.ignore, &c.root.join(MANIFEST)).ok()).unwrap_or_else(GlobSet::empty);
+    let root = config.map(|c| c.root.clone()).unwrap_or_else(|| start.to_path_buf());
+    let top = start.to_path_buf();
+    let (mut dirs, mut venvs) = (Vec::new(), Vec::new());
+    let walker = ignore::WalkBuilder::new(start)
+        .standard_filters(false)
+        .follow_links(false)
+        .filter_entry(move |e| {
+            let p = e.path();
+            let is_dir = e.file_type().is_some_and(|t| t.is_dir());
+            p == top || !is_dir || !(build_tree(p) || ignored(&ignore, &root, p, true) || {
+                let name = p.file_name().map(|n| n.to_string_lossy()).unwrap_or_default();
+                name == ".git" || name == ".rant" || name == "node_modules" || name == "_deps"
+            })
+        })
+        .build();
+    for e in walker.flatten() {
+        if !e.file_type().is_some_and(|t| t.is_dir()) {
+            continue;
+        }
+        if e.path().join("pyvenv.cfg").is_file() {
+            venvs.push(e.path().to_path_buf());
+        } else if !venvs.iter().any(|v| crate::paths::within(e.path(), v)) {
+            dirs.push(e.path().to_path_buf());
+        }
+    }
+    (dirs, venvs)
+}
+
 pub fn walk(config: &WorkspaceConfig, cache: &mut Cache, diags: &mut Vec<Diag>) -> Found {
     let ignore = match glob_set(&config.ignore, &config.root.join(MANIFEST)) {
         Ok(g) => g,

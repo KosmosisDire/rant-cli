@@ -284,6 +284,15 @@ static std::string read_file(const fs::path& p) {
     return std::string(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
 }
 
+/* A venv's own python. */
+static fs::path python_in(const fs::path& venv) {
+#ifdef _WIN32
+    return venv / "Scripts" / "python.exe";
+#else
+    return venv / "bin" / "python";
+#endif
+}
+
 static bool has_python(const fs::path& dir) {
     std::error_code ec;
     for (auto& e : fs::directory_iterator(dir, ec))
@@ -316,13 +325,7 @@ static void python_uses(const fs::path& dir, bool explicit_folder, std::vector<U
     } else {
         /* a new venv goes beside the pyproject, else at the workspace root, else here */
         u.file = (fs::exists(pyproject) || !py.root ? dir : *py.root) / ".venv";
-        u.venv_python = u.file / (
-#ifdef _WIN32
-            fs::path("Scripts") / "python.exe"
-#else
-            fs::path("bin") / "python"
-#endif
-        );
+        u.venv_python = python_in(u.file);
         u.python = py.interpreter;
     }
     out.push_back(u);
@@ -422,36 +425,29 @@ static std::vector<Use> folder_uses(const fs::path& dir, bool explicit_folder) {
 
 std::vector<Use> in_folder(const fs::path& dir) { return folder_uses(dir, true); }
 
-/* Folders a walk passes over: version control, rant's data, npm trees, fetched sources,
- * venvs and CMake build trees. */
-static bool passed_over(const fs::path& dir) {
-    std::string name = dir.filename().u8string();
-    return name == ".git" || name == ".rant" || name == "node_modules" || name == "_deps" || fs::exists(dir / "pyvenv.cfg") ||
-           fs::exists(dir / "CMakeCache.txt");
-}
-
 std::vector<Use> under(const fs::path& start) {
+    config::Folders walk = config::folders_under(start);
     std::vector<Use> out;
-    std::vector<fs::path> dirs = { start };
-    std::error_code ec;
-    for (auto it = fs::recursive_directory_iterator(start, fs::directory_options::skip_permission_denied, ec);
-         it != fs::recursive_directory_iterator(); it.increment(ec)) {
-        if (ec) break;
-        if (!it->is_directory(ec) || it->is_symlink(ec)) continue;
-        if (passed_over(it->path())) {
-            it.disable_recursion_pending();
-            continue;
-        }
-        dirs.push_back(it->path());
-    }
-    for (auto& d : dirs)
+    auto listed = [&](const fs::path& venv) {
+        return std::any_of(out.begin(), out.end(), [&](const Use& o) { return o.how == "venv" && o.file == venv; });
+    };
+    for (auto& d : walk.folders)
         for (auto& u : folder_uses(d, false)) {
             if (u.how == "venv" && u.venv_exists) {
-                if (std::any_of(out.begin(), out.end(), [&](const Use& o) { return o.how == "venv" && o.file == u.file; })) continue;
+                if (listed(u.file)) continue;
                 u.dir = u.file.parent_path();
             }
             out.push_back(u);
         }
+    for (auto& venv : walk.venvs) {
+        if (listed(venv)) continue;
+        Use u = use_of(Kind::Python, "venv", venv.parent_path(), venv);
+        u.venv_exists = true;
+        u.version = venv_version(venv);
+        u.wanted = u.version.has_value();
+        u.venv_python = python_in(venv);
+        out.push_back(u);
+    }
     std::stable_sort(out.begin(), out.end(), [](const Use& a, const Use& b) { return a.dir < b.dir; });
     return out;
 }

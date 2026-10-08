@@ -165,6 +165,16 @@ struct PythonInfo {
 
 PythonInfo python_of(const fs::path& dir);
 
+/* Every folder under start, start included, and every venv met on the way, which is not
+ * entered. The workspace's ignore globs and rant's usual skips apply, .gitignore does not,
+ * since a venv usually is in it. */
+struct Folders {
+    std::vector<fs::path> folders;
+    std::vector<fs::path> venvs;
+};
+
+Folders folders_under(const fs::path& start);
+
 /* Finds the enclosing workspace. With packages it also discovers every package and scans
  * it for node types, which reads the tree and is slower. */
 Opened open(const fs::path& start, bool packages = false);

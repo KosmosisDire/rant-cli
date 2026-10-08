@@ -191,6 +191,16 @@ PythonInfo python_of(const fs::path& dir) {
     return out;
 }
 
+Folders folders_under(const fs::path& start) {
+    std::unique_ptr<RantConfigFolders, decltype(&rant_config_folders_free)> h(rant_config_folders(to_utf8(start).c_str()),
+                                                                             &rant_config_folders_free);
+    const RantConfigFoldersView* v = rant_config_folders_view(h.get());
+    Folders out;
+    for (auto& f : strs(v->folders, v->folder_count)) out.folders.push_back(from_utf8(f));
+    for (auto& f : strs(v->venvs, v->venv_count)) out.venvs.push_back(from_utf8(f));
+    return out;
+}
+
 Opened open(const fs::path& start, bool packages) {
     return read(Handle(rant_config_open(to_utf8(start).c_str(), packages ? RANT_CONFIG_PACKAGES : 0), &rant_config_free));
 }

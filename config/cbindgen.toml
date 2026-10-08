@@ -9,7 +9,7 @@ usize_is_size_t = true
 parse_deps = false
 
 [export]
-include = ["RantConfigWorkspaceView", "RantConfigPlanView", "RantConfigGroupView", "RantConfigBuildView", "RantConfigPythonView", "RantConfigDiagnostic", "RantConfigTemplateView"]
+include = ["RantConfigWorkspaceView", "RantConfigPlanView", "RantConfigGroupView", "RantConfigBuildView", "RantConfigPythonView", "RantConfigFoldersView", "RantConfigDiagnostic", "RantConfigTemplateView"]
 
 # C enum constants share one namespace, so each carries its enum name.
 [enum]

@@ -25,6 +25,7 @@ struct Use {
     fs::path                   file;       /* the build file, or the venv, which may not exist yet */
     std::optional<std::string> version;    /* none when not named, or not in the venv */
     bool                       venv_exists = false;
+    bool                       wanted = true;    /* false for a venv found only by the walk, Rant not in it */
     fs::path                   venv_python;
     std::vector<std::string>   python;     /* the interpreter that makes a missing venv */
 };
@@ -33,8 +34,8 @@ struct Use {
 std::vector<Use> in_folder(const fs::path& dir);
 
 /* The uses in every folder under start, by folder, where only Python that imports rant
- * counts. Version control, build trees, venvs and fetched sources are left out, and a venv
- * is listed once, under the folder that holds it. */
+ * counts, and every venv under it with the Rant it holds, if any. The walk follows the
+ * workspace's ignore globs, and a venv is listed once, under the folder that holds it. */
 std::vector<Use> under(const fs::path& start);
 
 /* Moves the Rant version a CMakeLists, pyproject or C# project names. Throws app::Failure. */

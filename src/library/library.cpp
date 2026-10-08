@@ -94,7 +94,7 @@ net::Release release(const std::string& version) { return net::release(rant_repo
 
 /* A use the release would change. An unpinned pyproject dependency takes what its venv has. */
 static bool changes(const Use& u, const net::Release& r) {
-    return u.version != r.version && !(u.how == "pyproject" && !u.version);
+    return u.wanted && u.version != r.version && !(u.how == "pyproject" && !u.version);
 }
 
 /* Brings one use to the release. Returns what it did, empty when there was nothing to do. */

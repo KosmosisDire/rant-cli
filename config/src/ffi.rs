@@ -781,3 +781,52 @@ pub unsafe extern "C" fn rant_config_python_free(p: *mut RantConfigPython) {
         drop(Box::from_raw(p));
     }
 }
+
+/// The folders under a folder and the venvs among them, as `rant lib` walks them.
+#[repr(C)]
+pub struct RantConfigFoldersView {
+    pub folders: *const *const c_char,
+    pub folder_count: usize,
+    pub venvs: *const *const c_char,
+    pub venv_count: usize,
+}
+
+pub struct RantConfigFolders {
+    view: RantConfigFoldersView,
+    #[allow(dead_code)]
+    store: Store,
+}
+
+/// Every folder under start, start included, and every venv met on the way, by the
+/// enclosing workspace's `ignore` globs when there is one.
+///
+/// # Safety
+/// `start` must be NULL or a NUL terminated UTF-8 string.
+#[no_mangle]
+pub unsafe extern "C" fn rant_config_folders(start: *const c_char) -> *mut RantConfigFolders {
+    let start = arg_path(start);
+    let config = workspace::open(&start).ok().flatten();
+    let (dirs, venvs) = crate::discover::folders(&start, config.as_ref());
+    let mut store = Store::default();
+    let dirs: Vec<String> = dirs.iter().map(|d| crate::eval::slash(d)).collect();
+    let venvs: Vec<String> = venvs.iter().map(|v| crate::eval::slash(v)).collect();
+    let (folders, folder_count) = store.strs(&dirs);
+    let (venvs, venv_count) = store.strs(&venvs);
+    Box::into_raw(Box::new(RantConfigFolders { view: RantConfigFoldersView { folders, folder_count, venvs, venv_count }, store }))
+}
+
+/// # Safety
+/// `f` must be a live handle from rant_config_folders.
+#[no_mangle]
+pub unsafe extern "C" fn rant_config_folders_view(f: *const RantConfigFolders) -> *const RantConfigFoldersView {
+    &(*f).view
+}
+
+/// # Safety
+/// `f` must be NULL or a live handle, and is invalid afterwards.
+#[no_mangle]
+pub unsafe extern "C" fn rant_config_folders_free(f: *mut RantConfigFolders) {
+    if !f.is_null() {
+        drop(Box::from_raw(f));
+    }
+}

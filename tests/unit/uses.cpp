@@ -126,3 +126,17 @@ TEST(a_shared_venv_is_listed_once_where_it_is) {
     CHECK_EQ(uses.size(), size_t(1));
     CHECK(!uses.empty() && fs::equivalent(uses[0].dir, t.root));
 }
+
+TEST(every_venv_under_a_folder_is_listed_by_the_workspace_ignore_rules) {
+    Scratch t;
+    t.write("rant.hcl", "workspace {\n  ignore = [\"old/**\"]\n}\n");
+    t.write(".gitignore", ".venv/\ntools/\n");
+    t.write(".venv/pyvenv.cfg", "home = x\n");
+    t.write(".venv/Lib/site-packages/rant_middleware-0.0.18.dist-info/METADATA", "x");
+    t.write("tools/env/pyvenv.cfg", "home = x\n");
+    t.write("old/env/pyvenv.cfg", "home = x\n");
+    auto uses = library::under(t.root);
+    CHECK_EQ(uses.size(), size_t(2));
+    CHECK(uses.size() == 2 && uses[0].version == std::string("0.0.18") && uses[0].wanted);
+    CHECK(uses.size() == 2 && !uses[1].version && !uses[1].wanted && fs::equivalent(uses[1].file, t.root / "tools" / "env"));
+}
