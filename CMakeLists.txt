@@ -35,6 +35,12 @@ CPMAddPackage(NAME rant
 # so they all build against the same runtime.
 include("${rant_SOURCE_DIR}/tools/static_runtime.cmake")
 
+# One Linux build for every distribution: glibc is linked in too, so the binary needs only
+# the kernel. Safe because nothing here calls the NSS lookups that static glibc breaks.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND RANT_STATIC_RUNTIME)
+  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static")
+endif()
+
 CPMAddPackage(NAME Corrosion
   GITHUB_REPOSITORY corrosion-rs/corrosion
   VERSION 0.5.2
