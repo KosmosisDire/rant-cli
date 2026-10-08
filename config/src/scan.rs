@@ -43,7 +43,7 @@ struct Entry {
 }
 
 /// Bumped whenever the rules for what is a node change, so old verdicts are dropped.
-const CACHE_VERSION: u32 = 2;
+const CACHE_VERSION: u32 = 3;
 
 impl Cache {
     pub fn load(path: &Path) -> Cache {
@@ -163,7 +163,8 @@ fn classify(path: &Path) -> Option<NodeKind> {
 }
 
 /// A Python file is a node when it imports rant itself and either runs as a program, with a
-/// main guard or a main function, or is named after its folder, as `camera/camera.py`.
+/// main guard or a main function, or is its folder's script: named after the folder, as
+/// `camera/camera.py`, or `main.py`.
 pub fn python_node(path: &Path, text: &str) -> bool {
     static MAIN: OnceLock<Regex> = OnceLock::new();
     static IMPORT: OnceLock<Regex> = OnceLock::new();
@@ -172,8 +173,9 @@ pub fn python_node(path: &Path, text: &str) -> bool {
     });
     let import = IMPORT.get_or_init(|| Regex::new(r"(?m)^\s*(import\s+rant\b|from\s+rant(\.\w+)*\s+import\b)").unwrap());
     let stem = path.file_stem();
-    let named_for_folder = stem.is_some() && path.parent().and_then(|d| d.file_name()) == stem;
-    import.is_match(text) && (named_for_folder || main.is_match(text))
+    let folder_script = stem.is_some_and(|s| s == "main" || s == "__main__")
+        || (stem.is_some() && path.parent().and_then(|d| d.file_name()) == stem);
+    import.is_match(text) && (folder_script || main.is_match(text))
 }
 
 /// The prefix every binary that links Rant carries. Assembled at run time, so the search
@@ -221,6 +223,7 @@ mod tests {
         assert!(python_node(Path::new("camera/camera.py"), "import rant\nnode = rant.Node()\n"));
         assert!(!python_node(Path::new("camera/camera.py"), "import os\n"));
         assert!(!python_node(Path::new("camera/helpers.py"), "import rant\n"));
+        assert!(python_node(Path::new("detector/main.py"), "import rant\nnode = rant.Node()\n"));
     }
 
     #[test]
