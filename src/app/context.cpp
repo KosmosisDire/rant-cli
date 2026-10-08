@@ -10,6 +10,13 @@ void Context::open(bool packages) {
     with_packages_ = packages;
 }
 
+std::string Context::shown(const std::filesystem::path& p) const {
+    std::error_code ec;
+    std::filesystem::path rel = std::filesystem::relative(p, cwd, ec);
+    if (ec || rel.empty()) return config::to_utf8(p);
+    return config::to_utf8(rel);
+}
+
 const config::Workspace* Context::workspace() {
     open(false);
     if (!opened_->diagnostics.empty()) {

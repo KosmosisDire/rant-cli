@@ -28,6 +28,7 @@ add_library(rant_cli_core STATIC
   complete/shells.cpp
   config/config.cpp
   config/lib.cpp
+  library/library.cpp
   mesh/access.cpp
   mesh/client.cpp
   mesh/encode.cpp

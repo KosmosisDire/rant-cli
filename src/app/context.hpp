@@ -21,6 +21,9 @@ public:
     uint16_t   domain = 0;      /* --domain */
     std::filesystem::path cwd = std::filesystem::current_path();
 
+    /* A path for messages: relative to the working directory, "." for it. */
+    std::string shown(const std::filesystem::path& p) const;
+
     /* The enclosing workspace, or nullptr when there is none. A broken config is reported
      * as a warning, since mesh commands still work without it. */
     const config::Workspace* workspace();
