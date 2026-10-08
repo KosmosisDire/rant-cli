@@ -3,6 +3,7 @@
 
 #include "app/failure.hpp"
 #include "commands/commands.hpp"
+#include "commands/format.hpp"
 #include "mesh/access.hpp"
 
 namespace commands {
@@ -15,6 +16,7 @@ static int run(app::Context& ctx) {
     if (w.size() < 2) throw app::UsageError("set takes a variable and a value, such as `rant set speed 2.5`");
     const std::string& name = w[0];
     mesh::Assignments values = mesh::parse_words({ w.begin() + 1, w.end() });
+    format_of(ctx);
 
     mesh::Client mesh(ctx.domain);
     mesh.settle();
@@ -37,12 +39,13 @@ static int run(app::Context& ctx) {
         std::this_thread::sleep_for(10ms);
     }
     if (!now || *now != bytes) throw app::Failure("the owner of `" + name + "` did not apply the value in time");
-    ctx.out.line(mesh::to_text(rant::Bytes(now->data(), now->size()), var.schema()));
+    print_value(ctx, mesh::to_json(rant::Bytes(now->data(), now->size()), var.schema()));
     return 0;
 }
 
 app::Command set() {
-    return { "set", "<variable> <value>", "write a variable and print what it holds after", app::Section::Mesh, {}, run };
+    return { "set", "<variable> <value>", "write a variable and print what it holds after", app::Section::Mesh,
+             { csv_option() }, run };
 }
 
 }

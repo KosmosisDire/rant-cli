@@ -176,8 +176,4 @@ json to_json(rant::Bytes data, const rant::Schema& schema) {
     return Walk(data, schema.raw()).root();
 }
 
-std::string to_text(rant::Bytes data, const rant::Schema& schema) {
-    return to_json(data, schema).dump(-1, ' ', false, json::error_handler_t::replace);
-}
-
 }

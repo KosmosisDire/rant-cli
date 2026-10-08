@@ -19,9 +19,6 @@ using json = nlohmann::ordered_json;
  * no schema become a "0x..." hex string. */
 json to_json(rant::Bytes data, const rant::Schema& schema);
 
-/* The compact one line form printed by sub, get and call. */
-std::string to_text(rant::Bytes data, const rant::Schema& schema);
-
 /* One value typed on the command line, as JSON that forgives what a shell makes awkward:
  * keys and words need no quotes, so {x: 1, frame: map} and [a, b] both read. Throws
  * app::Failure saying where the text stopped making sense. */
