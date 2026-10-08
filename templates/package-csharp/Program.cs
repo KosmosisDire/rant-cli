@@ -1,7 +1,7 @@
 using Rant;
 
-using var node = new RantNode("{{ name }}");
-var count = node.Publisher<double>("{{ name }}/count");
+using var node = new RantNode("{{name}}");
+var count = node.Publisher<double>("{{name}}/count");
 for (double i = 0; ; i++)
 {
     count.Send(i);

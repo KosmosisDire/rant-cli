@@ -1,5 +1,5 @@
 # The rant command line tool: C++ for the CLI, the mesh and the processes, a Rust crate in
-# config/ for the HCL config layer. CPM fetches Rant, Corrosion, nlohmann json and inja.
+# config/ for the HCL config layer. CPM fetches Rant, Corrosion and nlohmann json.
 
 cmake_minimum_required(VERSION 3.21)
 
@@ -52,15 +52,6 @@ CPMAddPackage(NAME nlohmann_json
   URL https://github.com/nlohmann/json/releases/download/v3.12.0/json.tar.xz
   VERSION 3.12.0
   EXCLUDE_FROM_ALL YES)
-
-# Header only, over the nlohmann json above.
-CPMAddPackage(NAME inja
-  GITHUB_REPOSITORY pantor/inja
-  VERSION 3.4.0
-  DOWNLOAD_ONLY YES)
-add_library(inja INTERFACE)
-target_include_directories(inja SYSTEM INTERFACE "${inja_SOURCE_DIR}/include")
-target_link_libraries(inja INTERFACE nlohmann_json::nlohmann_json)
 
 option(RANT_CLI_TESTS "Build the tests" ${PROJECT_IS_TOP_LEVEL})
 if(RANT_CLI_TESTS)

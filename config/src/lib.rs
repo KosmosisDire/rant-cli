@@ -8,7 +8,6 @@ mod diag;
 mod discover;
 mod eval;
 pub mod ffi;
-pub mod ffi_lib;
 mod group;
 mod manifest;
 mod model;
@@ -19,7 +18,6 @@ mod placement;
 mod plan;
 mod refs;
 mod scan;
-mod template;
 mod source;
 mod workspace;
 

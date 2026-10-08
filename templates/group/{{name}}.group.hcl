@@ -1,4 +1,4 @@
-description = "What {{ name }} runs"
+description = "What {{name}} runs"
 
 # param "speed" {
 #   type        = float

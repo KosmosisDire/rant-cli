@@ -247,8 +247,24 @@ std::string cmake_add(const std::string& text, const std::string& version, std::
         std::string piece = at == out.size() && !out.empty() && out.back() != '\n' ? "\n" + insert : insert;
         out.insert(at, piece);
     }
-    if (hint) *hint = link ? "" : "target_link_libraries(<your target> PRIVATE rant::rant_host)";
+    if (hint) *hint = link || linked ? "" : "target_link_libraries(<your target> PRIVATE rant::rant_host)";
     return out;
+}
+
+std::string cmake_add_node(const std::string& text, const std::string& name, const std::string& source) {
+    std::optional<size_t> after;
+    for (auto& c : cmake_calls(text)) {
+        if (!named(c, { "add_executable", "add_library", "target_link_libraries" })) continue;
+        if (!named(c, { "target_link_libraries" }) && first_arg(c.args(text)) == name)
+            throw app::Failure("CMakeLists.txt has a target `" + name + "` already, nothing was written");
+        after = c.end;
+    }
+    std::string lines = "add_executable(" + name + " " + source + ")\ntarget_link_libraries(" + name + " PRIVATE rant::rant_host)\n";
+    std::string out = text;
+    if (!out.empty() && out.back() != '\n') out += '\n';
+    if (!after) return out + (out.empty() ? "" : "\n") + lines;
+    size_t at = out.find('\n', *after);
+    return out.insert(at == std::string::npos ? out.size() : at + 1, lines);
 }
 
 // ---- Python ----
@@ -474,6 +490,11 @@ std::string add(Kind kind, const fs::path& file, const std::string& version) {
     else if (kind == Kind::CSharp) edit(file, csharp_add(text, version), text);
     else throw app::Failure("Python takes Rant into its venv, not its files");
     return hint;
+}
+
+void add_node(const fs::path& cmakelists, const std::string& name, const std::string& source) {
+    std::string text = read_file(cmakelists);
+    edit(cmakelists, cmake_add_node(text, name, source), text);
 }
 
 }

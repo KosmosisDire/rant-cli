@@ -65,6 +65,22 @@ TEST(add_follows_cpm_and_the_plain_link_signature) {
     CHECK(!hint.empty());
 }
 
+TEST(a_node_joins_after_the_last_target_and_never_twice) {
+    std::string text = "project(a)\nadd_executable(a a.cpp)\ntarget_link_libraries(a PRIVATE rant::rant_host)\n\ninstall(TARGETS a)\n";
+    CHECK_EQ(library::cmake_add_node(text, "lidar", "nodes/lidar.cpp"),
+             std::string("project(a)\nadd_executable(a a.cpp)\ntarget_link_libraries(a PRIVATE rant::rant_host)\n"
+                         "add_executable(lidar nodes/lidar.cpp)\ntarget_link_libraries(lidar PRIVATE rant::rant_host)\n\ninstall(TARGETS a)\n"));
+    CHECK_EQ(library::cmake_add_node("project(b)", "b", "b.cpp"),
+             std::string("project(b)\n\nadd_executable(b b.cpp)\ntarget_link_libraries(b PRIVATE rant::rant_host)\n"));
+    bool refused = false;
+    try {
+        library::cmake_add_node(text, "a", "a2.cpp");
+    } catch (const app::Failure&) {
+        refused = true;
+    }
+    CHECK(refused);
+}
+
 TEST(pyproject_pins_move_and_bare_ones_stay) {
     std::string text = "[project]\ndependencies = [\"numpy\", \"rant-middleware>=0.0.16\"]\n";
     CHECK_EQ(library::pyproject_set(text, "0.0.18"), replaced(text, "0.0.16", "0.0.18"));

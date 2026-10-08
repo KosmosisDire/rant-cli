@@ -67,7 +67,7 @@ endif()
 
 target_include_directories(rant_cli_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 
-# The built in templates of rant new, compiled in as bytes.
+# The presets of rant new, compiled in as bytes.
 file(GLOB_RECURSE template_files CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/templates/*")
 set(builtin_templates "${CMAKE_CURRENT_BINARY_DIR}/builtin_templates.cpp")
 add_custom_command(OUTPUT "${builtin_templates}"
@@ -78,7 +78,7 @@ add_custom_command(OUTPUT "${builtin_templates}"
 target_sources(rant_cli_core PRIVATE "${builtin_templates}")
 target_compile_definitions(rant_cli_core PUBLIC RANT_CLI_VERSION="${PROJECT_VERSION}")
 target_link_libraries(rant_cli_core PUBLIC
-  rant_impl rant_config nlohmann_json::nlohmann_json inja)
+  rant_impl rant_config nlohmann_json::nlohmann_json)
 
 if(MSVC)
   target_compile_options(rant_cli_core PUBLIC /W4 /utf-8)

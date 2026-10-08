@@ -9,6 +9,11 @@ expect_match("${nav}" "description = \"What nav runs\"")
 rant(new group nav FAILS)
 expect_match("${ERR}" "nav[.]group[.]hcl exists already, nothing was written")
 
+# With no name a node or group takes the name of the folder it is made in.
+file(MAKE_DIRECTORY "${SCRATCH}/lidar")
+rant(new group IN "${SCRATCH}/lidar")
+expect_match("${OUT}" "created lidar[.]group[.]hcl")
+
 # A node takes the language of the package it is made in.
 file(WRITE "${SCRATCH}/py/pyproject.toml" "[project]\nname = \"py\"\ndependencies = [\"rant-middleware\"]\n")
 rant(new node camera IN "${SCRATCH}/py")
@@ -23,38 +28,17 @@ expect_match("${ERR}" "unknown language `rust`")
 rant(new thing x FAILS)
 expect_match("${ERR}" "say what to make")
 
-# A template of one's own: params in template.hcl, asked for when missing and stdin is a
-# terminal, an error here since it is not.
-file(WRITE "${SCRATCH}/tpl/template.hcl" [[
-template {
-  description = "A web panel"
-  param "port" {
-    type        = int
-    description = "Where it listens"
-  }
-  param "theme" {
-    default = "dark"
-    options = ["dark", "light"]
-  }
-  next = "open http://localhost:{{ port }}"
-}
-]])
-file(WRITE "${SCRATCH}/tpl/{{name}}/{{snake(name)}}.txt" "{{ pascal(name) }} on {{ port }} in {{ theme }}\n")
-rant(new package "Web Panel" --template tpl --help)
-expect_match("${OUT}" "A web panel")
-expect_match("${OUT}" "port=<int> +required +Where it listens")
-expect_match("${OUT}" "theme=<string> +default dark, one of dark, light")
-rant(new package web --template tpl FAILS)
-expect_match("${ERR}" "required param `port` is not set")
-rant(new package web --template tpl port=80 theme=pink FAILS)
-expect_match("${ERR}" "must be one of dark, light")
-rant(new node "Web Panel" --template tpl port=8080)
-expect_match("${ERR}" "open http://localhost:8080")
-file(READ "${SCRATCH}/Web Panel/web_panel.txt" made)
-expect_match("${made}" "^WebPanel on 8080 in dark\n$")
-
-rant(new node x --template nowhere FAILS)
-expect_match("${ERR}" "no template `nowhere`")
+# A C++ node joins the CMake project around it, and needs one.
+rant(new node arm --lang cpp FAILS)
+expect_match("${ERR}" "no CMakeLists.txt here or above to add `arm` to")
+file(WRITE "${SCRATCH}/robot/CMakeLists.txt" "project(robot CXX)\nadd_executable(base base.cpp)\n")
+file(MAKE_DIRECTORY "${SCRATCH}/robot/nodes")
+rant(new node arm IN "${SCRATCH}/robot/nodes" MAY_FAIL)
+expect_match("${OUT}" "created arm[.]cpp\nadded arm to [.][.]/CMakeLists[.]txt\n")
+file(READ "${SCRATCH}/robot/CMakeLists.txt" robot)
+expect_match("${robot}" "add_executable[(]base base[.]cpp[)]\nadd_executable[(]arm nodes/arm[.]cpp[)]\ntarget_link_libraries[(]arm PRIVATE rant::rant_host[)]\n")
+rant(new node arm --lang cpp IN "${SCRATCH}/robot" FAILS)
+expect_match("${ERR}" "target `arm` already, nothing was written")
 
 # A package gets Rant through the same routine as rant lib install, which asks GitHub.
 rant(new package cam --lang cpp MAY_FAIL)

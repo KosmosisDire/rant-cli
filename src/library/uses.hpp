@@ -45,9 +45,14 @@ void set_version(const fs::path& file, const std::string& version);
  * hand, empty when there is none. Throws app::Failure. */
 std::string add(Kind kind, const fs::path& file, const std::string& version);
 
-/* The pure text edits behind set_version and add, for the tests. Throw app::Failure. */
+/* Adds a node to a CMakeLists: its own executable built from source, a path from the
+ * CMakeLists folder, linked to Rant. Throws app::Failure when the target exists. */
+void add_node(const fs::path& cmakelists, const std::string& name, const std::string& source);
+
+/* The pure text edits behind set_version, add and add_node, for the tests. Throw app::Failure. */
 std::string cmake_set(const std::string& text, const std::string& version);
 std::string cmake_add(const std::string& text, const std::string& version, std::string* hint);
+std::string cmake_add_node(const std::string& text, const std::string& name, const std::string& source);
 std::string pyproject_set(const std::string& text, const std::string& version);
 std::string csharp_set(const std::string& text, const std::string& version);
 std::string csharp_add(const std::string& text, const std::string& version);

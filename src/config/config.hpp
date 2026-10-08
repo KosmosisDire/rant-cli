@@ -115,21 +115,6 @@ struct GroupInfo {
 
 GroupInfo describe_group(const fs::path& start, const std::string& group);
 
-/* What a template.hcl declares. values holds every param's value as a JSON object when the
- * params were bound. Nothing but diagnostics is set when they are not empty. */
-struct TemplateManifest {
-    std::string              description;
-    std::vector<std::string> includes;
-    std::string              next;
-    std::vector<Param>       params;
-    std::string              values;
-    std::vector<Diagnostic>  diagnostics;
-};
-
-/* Reads a template.hcl from its text, path naming it in errors, and with bind checks the
- * "key=value" params against it. */
-TemplateManifest read_template(const std::string& text, const fs::path& path, const std::vector<std::string>& params, bool bind);
-
 /* One package's build. configure, when not empty, runs first once the user agrees. */
 struct BuildStep {
     std::string                           package;

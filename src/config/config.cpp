@@ -141,22 +141,6 @@ GroupInfo describe_group(const fs::path& start, const std::string& group) {
     return out;
 }
 
-TemplateManifest read_template(const std::string& text, const fs::path& path, const std::vector<std::string>& params, bool bind) {
-    std::vector<const char*> raw;
-    for (auto& p : params) raw.push_back(p.c_str());
-    std::string where = to_utf8(path);
-    std::unique_ptr<RantConfigTemplate, decltype(&rant_config_template_free)> h(
-        rant_config_template(text.c_str(), where.c_str(), raw.data(), raw.size(), bind), &rant_config_template_free);
-    const RantConfigTemplateView* v = rant_config_template_view(h.get());
-    TemplateManifest out;
-    out.description = str(v->description);
-    out.includes = strs(v->includes, v->include_count);
-    out.next = str(v->next);
-    out.params = params_of(v->params, v->param_count);
-    out.values = str(v->values);
-    out.diagnostics = diagnostics(v->diagnostics, v->diagnostic_count);
-    return out;
-}
 
 static std::vector<std::string> command(const RantConfigCommand& c) { return strs(c.argv, c.argc); }
 
