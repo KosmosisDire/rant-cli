@@ -267,9 +267,8 @@ static void workspace_answers(app::Context& ctx, std::optional<Kind> kind, const
     }
 }
 
-static void mesh_answers(app::Context& ctx, std::optional<Kind> kind, const std::string& name, const state::State& st,
+static void mesh_answers(mesh::Client& mesh, std::optional<Kind> kind, const std::string& name, const state::State& st,
                          std::vector<std::pair<Kind, Answer>>& out) {
-    mesh::Client mesh(ctx.domain);
     mesh.settle();
     std::vector<mesh::Peer> peers = mesh.peers();    /* outlives the views that point into it */
     if (!kind || *kind == Kind::Node)
@@ -290,7 +289,9 @@ static int run(app::Context& ctx) {
     state::State st = run::snapshot(ctx);
     std::vector<std::pair<Kind, Answer>> answers;
     if (!kind || !on_mesh(*kind)) workspace_answers(ctx, kind, name, st, answers);
-    if (!kind || on_mesh(*kind)) mesh_answers(ctx, kind, name, st, answers);
+    /* the answers' schemas live in the client's node, so it outlives their printing */
+    std::optional<mesh::Client> mesh;
+    if (!kind || on_mesh(*kind)) mesh_answers(mesh.emplace(ctx.domain), kind, name, st, answers);
     if (answers.empty())
         throw app::Failure(kind ? "no " + std::string(kind_word(*kind)) + " named `" + name + "`, see `rant ls`"
                                 : "nothing named `" + name + "`, see `rant ls`");
