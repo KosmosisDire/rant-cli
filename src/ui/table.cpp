@@ -29,6 +29,7 @@ std::vector<std::string> Table::lines(const std::string& indent) const {
             line += r[i];
             if (i + 1 < r.size()) line += std::string(widths[i] - visible_width(r[i]) + 2, ' ');
         }
+        while (!line.empty() && line.back() == ' ') line.pop_back();
         out.push_back(line);
     }
     return out;

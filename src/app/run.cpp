@@ -47,8 +47,9 @@ static std::string main_help() {
         for (auto& c : commands::all()) {
             if (c.section != section) continue;
             std::string left = std::string(c.name) + " " + std::string(c.usage);
-            if (left.size() < 30) left.resize(30, ' ');
-            s += "  " + left + " " + std::string(c.summary) + "\n";
+            if (left.size() > 30) left += "\n" + std::string(33, ' ');    /* a long usage takes its own line */
+            else left.resize(31, ' ');
+            s += "  " + left + std::string(c.summary) + "\n";
         }
     }
     s += "\nOptions:\n" + option_lines(global_options());
