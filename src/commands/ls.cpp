@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <set>
 
 #include "app/failure.hpp"
 #include "commands/commands.hpp"
@@ -11,20 +12,31 @@ namespace commands {
 
 using mesh::json;
 
+/* One node as ls lists it. A node rant started that is not on the mesh is still joining,
+ * or never joins since it does not use Rant. */
+struct Row {
+    std::string name;
+    bool        on_mesh = true;
+};
+
 /* The running nodes as ls shows them: each group root with its nodes, then every node
  * outside a group, started by rant or not. A node two roots share shows under both. */
 struct Listing {
     struct Group {
-        std::string              header;    /* "nav" or "nav target=red_bin" */
-        std::vector<std::string> nodes;
+        std::string      header;    /* "nav" or "nav target=red_bin" */
+        std::vector<Row> nodes;
     };
-    std::vector<Group>       groups;
-    std::vector<std::string> loose;
+    std::vector<Group> groups;
+    std::vector<Row>   loose;
 };
 
 static Listing list_nodes(app::Context& ctx, mesh::Client& mesh, const std::string& pattern) {
     state::State st = run::snapshot(ctx);
     auto managed = run::managed_peers(mesh, st);
+    std::set<std::string> on_mesh;
+    for (auto& [_, name] : managed) on_mesh.insert(name);
+    auto row = [&](const state::Instance& i) { return Row{ i.name, on_mesh.count(i.name) > 0 }; };
+
     Listing out;
     for (auto& r : st.roots) {
         if (r.kind != "group") continue;
@@ -33,16 +45,33 @@ static Listing list_nodes(app::Context& ctx, mesh::Client& mesh, const std::stri
         Listing::Group g{ runs > 1 ? r.key().substr(6) : r.name, {} };
         for (auto& i : st.instances)
             if (std::count(i.roots.begin(), i.roots.end(), r.key()) && util::name_matches(pattern, i.name))
-                g.nodes.push_back(i.name);
+                g.nodes.push_back(row(i));
         if (!g.nodes.empty()) out.groups.push_back(g);
     }
     for (auto& i : st.instances) {
         bool in_group = std::any_of(i.roots.begin(), i.roots.end(), [](const std::string& k) { return k.rfind("group ", 0) == 0; });
-        if (!in_group && util::name_matches(pattern, i.name)) out.loose.push_back(i.name);
+        if (!in_group && util::name_matches(pattern, i.name)) out.loose.push_back(row(i));
     }
     for (auto& p : mesh.peers())
-        if (!managed.count(p.id) && util::name_matches(pattern, p.name)) out.loose.push_back(p.name);
+        if (!managed.count(p.id) && util::name_matches(pattern, p.name)) out.loose.push_back({ p.name, true });
     return out;
+}
+
+/* The explorer's colors: a node's dot green on the mesh and amber while joining, and each
+ * entity kind in the color the explorer's mesh view draws it. */
+static std::string node_line(app::Context& ctx, const Row& r, const std::string& indent) {
+    if (!ctx.out.color()) return indent + r.name;
+    return indent + ctx.out.paint(r.on_mesh ? ui::Style::Green : ui::Style::Amber, "\xe2\x97\x8f") + " " + r.name;
+}
+
+static ui::Style kind_style(rant::EntityKind k) {
+    switch (k) {
+    case rant::EntityKind::Function: return ui::Style::Accent;
+    case rant::EntityKind::Variable: return ui::Style::Amber;
+    case rant::EntityKind::Task:     return ui::Style::Green;
+    case rant::EntityKind::Topic:    return ui::Style::Dim;
+    }
+    return ui::Style::Dim;
 }
 
 static int run(app::Context& ctx) {
@@ -68,10 +97,15 @@ static int run(app::Context& ctx) {
 
     if (ctx.json) {
         json out = json::object();
+        auto rows = [](const std::vector<Row>& v) {
+            json a = json::array();
+            for (auto& r : v) a.push_back({ { "name", r.name }, { "on_mesh", r.on_mesh } });
+            return a;
+        };
         if (show_nodes) {
             out["groups"] = json::array();
-            for (auto& g : nodes.groups) out["groups"].push_back({ { "group", g.header }, { "nodes", g.nodes } });
-            out["nodes"] = nodes.loose;
+            for (auto& g : nodes.groups) out["groups"].push_back({ { "group", g.header }, { "nodes", rows(g.nodes) } });
+            out["nodes"] = rows(nodes.loose);
         }
         if (show_entities) {
             out["entities"] = json::array();
@@ -81,14 +115,14 @@ static int run(app::Context& ctx) {
         return 0;
     }
 
-    auto none = ctx.out.paint(ui::Style::Dim, "  (none)");
+    auto none = ctx.out.paint(ui::Style::Faint, "  (none)");
     if (show_nodes) {
         ctx.out.line(ctx.out.paint(ui::Style::Bold, "NODES"));
         for (auto& g : nodes.groups) {
-            ctx.out.line("  " + ctx.out.paint(ui::Style::Cyan, g.header + ":"));
-            for (auto& n : g.nodes) ctx.out.line("    " + n);
+            ctx.out.line("  " + ctx.out.paint(ui::Style::Faint, g.header + ":"));
+            for (auto& r : g.nodes) ctx.out.line(node_line(ctx, r, "    "));
         }
-        for (auto& n : nodes.loose) ctx.out.line("  " + n);
+        for (auto& r : nodes.loose) ctx.out.line(node_line(ctx, r, "  "));
         if (nodes.groups.empty() && nodes.loose.empty()) ctx.out.line(none);
     }
     if (show_nodes && show_entities) ctx.out.line();
@@ -99,7 +133,7 @@ static int run(app::Context& ctx) {
         for (auto& e : entities) {
             std::string name = e.name;
             name.resize(width + 3, ' ');
-            ctx.out.line("  " + name + ctx.out.paint(ui::Style::Dim, mesh::kind_name(e.kind)));
+            ctx.out.line("  " + name + ctx.out.paint(kind_style(e.kind), mesh::kind_name(e.kind)));
         }
         if (entities.empty()) ctx.out.line(none);
     }

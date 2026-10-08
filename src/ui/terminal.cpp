@@ -7,6 +7,7 @@
 #include <io.h>
 #include <shellapi.h>
 #else
+#include <sys/ioctl.h>
 #include <unistd.h>
 #endif
 
@@ -20,7 +21,7 @@ bool is_terminal(std::FILE* f) {
 #endif
 }
 
-bool enable_colors(std::FILE* f) {
+bool enable_vt(std::FILE* f) {
     if (!is_terminal(f)) return false;
 #ifdef _WIN32
     SetConsoleOutputCP(CP_UTF8);
@@ -31,6 +32,24 @@ bool enable_colors(std::FILE* f) {
 #else
     return true;
 #endif
+}
+
+Size terminal_size() {
+    Size s;
+#ifdef _WIN32
+    CONSOLE_SCREEN_BUFFER_INFO info;
+    if (GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &info)) {
+        s.rows = info.srWindow.Bottom - info.srWindow.Top + 1;
+        s.cols = info.srWindow.Right - info.srWindow.Left + 1;
+    }
+#else
+    struct winsize w;
+    if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &w) == 0) {
+        s.rows = w.ws_row;
+        s.cols = w.ws_col;
+    }
+#endif
+    return s;
 }
 
 #ifdef _WIN32
