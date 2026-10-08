@@ -1,0 +1,75 @@
+# Builds rant on every platform. A pushed tag v<VERSION> also cuts a GitHub Release with the
+# binaries attached. Run by hand it only builds, to check a release would.
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: build ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest,  preset: linux,   name: linux-x64 }
+          - { os: windows-latest, preset: windows, name: win-x64 }
+          - { os: macos-latest,   preset: macos,   name: osx-arm64 }
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: The tag matches VERSION
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: test "v$(cat VERSION)" = "$GITHUB_REF_NAME"
+
+      - name: Ninja
+        if: runner.os == 'Linux'
+        run: sudo apt-get install -y ninja-build
+
+      - name: Ninja
+        if: runner.os == 'macOS'
+        run: brew install ninja
+
+      - name: Build
+        run: |
+          cmake --preset ${{ matrix.preset }}
+          cmake --build --preset ${{ matrix.preset }}
+
+      # The end to end tests need a Rant mesh, which a runner's network may not carry.
+      - name: Unit tests
+        run: ctest --preset ${{ matrix.preset }} -R "^(unit|config)[.]"
+
+      - name: Stage
+        shell: bash
+        run: |
+          mkdir -p out
+          ext=""
+          if [ -f bin/rant.exe ]; then ext=".exe"; fi
+          cp "bin/rant$ext" "out/rant-$(cat VERSION)-${{ matrix.name }}$ext"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: rant-${{ matrix.name }}
+          path: out/*
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: release
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v3
+        with:
+          files: release/*
+          generate_release_notes: true
