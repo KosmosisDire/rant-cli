@@ -5,7 +5,7 @@ use_fixture(build)
 # The dry run shows every edge with where it came from, the order and the exact commands.
 rant(build --dry-run)
 expect_match("${OUT}" "DEPENDENCIES\n  app -> driver +depend in app/rant.hcl\n  driver -> sdk +find_package[(]sdk[)] in driver/CMakeLists.txt\n")
-expect_match("${OUT}" "BUILD ORDER\n  1. sdk\n +cmake -E echo building-sdk\n +cmake -E touch sdk.built\n  2. driver\n +cmake -S .* -B .*/driver/build +[(]asks first[)]\n +cmake --build .*/driver/build\n  3. app\n")
+expect_match("${OUT}" "BUILD ORDER\n  1. sdk\n +cmake -E echo building-sdk\n +cmake -E touch sdk.built\n  2. driver\n +cmake -S [.] -B build +[(]asks first[)]\n +cmake --build build\n  3. app\n")
 
 # Building app builds what it needs first, in the order the dry run showed. The configure
 # question is answered yes, since stdin is not a terminal.

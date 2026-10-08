@@ -48,11 +48,11 @@ fn step(pkg: &Package) -> Step {
         s.commands.push(vec!["dotnet".into(), "build".into(), slash(&m.path)]);
     }
     if pkg.manifests.iter().any(|m| m.kind == ManifestKind::CMake) {
-        let tree = pkg.dir.join("build");
-        if !tree.join("CMakeCache.txt").is_file() {
-            s.configure = Some(vec!["cmake".into(), "-S".into(), slash(&pkg.dir), "-B".into(), slash(&tree)]);
+        // Commands run in the package directory, so the short relative form is exact.
+        if !pkg.dir.join("build").join("CMakeCache.txt").is_file() {
+            s.configure = Some(vec!["cmake".into(), "-S".into(), ".".into(), "-B".into(), "build".into()]);
         }
-        s.commands.push(vec!["cmake".into(), "--build".into(), slash(&tree)]);
+        s.commands.push(vec!["cmake".into(), "--build".into(), "build".into()]);
     }
     s
 }
