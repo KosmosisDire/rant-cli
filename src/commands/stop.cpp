@@ -25,6 +25,36 @@ static void report(app::Context& ctx, const std::string& name, process::Stopped 
     }
 }
 
+/* Stops everything rant started in this workspace, last started first, once the list has
+ * been shown and the question answered. */
+static int stop_all(app::Context& ctx) {
+    run::Session s(ctx.require_workspace());
+    state::State& st = s.state();
+    if (st.instances.empty()) {
+        st.roots.clear();
+        s.save();
+        ctx.out.line("nothing rant started is running");
+        return 0;
+    }
+    std::vector<std::string> names, groups;
+    for (auto& i : st.instances) names.push_back(i.name);
+    for (auto& r : st.roots) {
+        if (r.kind != "group") continue;
+        /* params tell runs of one group apart, as ls shows them */
+        auto runs = std::count_if(st.roots.begin(), st.roots.end(), [&](const state::Root& o) { return o.kind == "group" && o.name == r.name; });
+        groups.push_back(runs > 1 ? r.key().substr(6) : r.name);
+    }
+    if (!groups.empty()) ctx.out.line("groups: " + list(groups));
+    ctx.out.line("nodes:  " + list(names));
+    std::string n = std::to_string(names.size());
+    if (!ui::confirm("Stop all " + n + (names.size() == 1 ? " node?" : " nodes?"), ctx.yes)) return 1;
+    for (auto it = st.instances.rbegin(); it != st.instances.rend(); ++it) report(ctx, it->name, run::halt(*it));
+    st.instances.clear();
+    st.roots.clear();
+    s.save();
+    return 0;
+}
+
 /* Stops one node rant started, whichever root asked for it. */
 static int stop_node(app::Context& ctx, const std::string& name) {
     run::Session s(ctx.require_workspace());
@@ -108,6 +138,7 @@ static std::string guess(app::Context& ctx, const std::string& name) {
 
 static int run(app::Context& ctx) {
     auto& w = ctx.args.words;
+    if (w.empty()) return stop_all(ctx);
     if (w.size() < 2 || (w[0] != "node" && w[0] != "group")) {
         std::string hint = w.size() == 1 && w[0] != "node" && w[0] != "group" ? guess(ctx, w[0]) : "";
         throw app::UsageError("say what to stop: " + (hint.empty() ? std::string("`rant stop node <name>` or `rant stop group <name>`") : hint));
@@ -127,7 +158,7 @@ static complete::Candidates complete_words(complete::Request& r) {
 }
 
 app::Command stop() {
-    app::Command c{ "stop", "node <name> | group <name> [key=value...]", "stop what start started",
+    app::Command c{ "stop", "[node <name> | group <name> [key=value...]]", "stop what start started, all of it when nothing is named",
                     app::Section::Workspace, {}, run };
     c.complete = complete_words;
     return c;

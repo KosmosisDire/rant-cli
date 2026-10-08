@@ -65,3 +65,13 @@ rant(stop group pick)
 expect_match("${OUT}" "stopped arm\nstopped odom\nstopped lidar\n")
 rant(ls nodes)
 expect_match("${OUT}" "NODES\n  [(]none[)]")
+
+# A bare stop lists everything rant started and stops it all after a question.
+rant(start group nav)
+rant(start group pick)
+rant(stop)
+expect_match("${OUT}" "groups: nav, pick\nnodes:  lidar, odom, planner, arm\n")
+expect_match("${ERR}" "Stop all 4 nodes[?] [[]y/N[]] y")
+expect_match("${OUT}" "stopped arm\nstopped planner\nstopped odom\nstopped lidar\n")
+rant(stop)
+expect_match("${OUT}" "nothing rant started is running")
