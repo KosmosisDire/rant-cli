@@ -15,7 +15,9 @@ namespace ui {
 
 bool is_terminal(std::FILE* f) {
 #ifdef _WIN32
-    return _isatty(_fileno(f)) != 0;
+    /* _isatty is true for the NUL device too, a console mode only a real console has */
+    DWORD mode = 0;
+    return GetConsoleMode((HANDLE)_get_osfhandle(_fileno(f)), &mode) != 0;
 #else
     return isatty(fileno(f)) != 0;
 #endif
