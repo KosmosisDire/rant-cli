@@ -1,8 +1,11 @@
+#include <algorithm>
+
 #include "app/failure.hpp"
 #include "commands/commands.hpp"
 #include "mesh/access.hpp"
-#include "process/command.hpp"
+#include "mesh/schema_text.hpp"
 #include "run/nodes.hpp"
+#include "ui/yaml.hpp"
 
 namespace commands {
 
@@ -17,19 +20,12 @@ static std::vector<std::string> roles(const rant::Entity& e) {
     return out;
 }
 
-static std::string joined(const std::vector<std::string>& v) {
-    std::string s;
-    for (auto& x : v) s += (s.empty() ? "" : ", ") + x;
-    return s.empty() ? "-" : s;
-}
-
-static void row(app::Context& ctx, json& j, const std::string& key, const json& value, const std::string& shown) {
-    j[key] = value;
-    if (ctx.json) return;
-    std::string k = key;
-    k.resize(12, ' ');
-    ctx.out.line("  " + ctx.out.paint(ui::Style::Dim, k) + shown);
-}
+/* One answer of info: its fields in order, and the schemas among them, which print as
+ * schema text rather than as a value. */
+struct Answer {
+    json                                     fields = json::object();
+    std::vector<std::pair<std::string, rant::Schema>> schemas;
+};
 
 /* A node rant started, a node on the mesh, or both when the mesh node is the instance. */
 struct NodeView {
@@ -37,58 +33,46 @@ struct NodeView {
     const mesh::Peer*      peer = nullptr;
 };
 
-static json node_info(app::Context& ctx, mesh::Client& mesh, const NodeView& v) {
-    json j = json::object();
-    std::string name = v.instance ? v.instance->name : v.peer->name;
-    if (!ctx.json) ctx.out.line(ctx.out.paint(ui::Style::Bold, "node " + name));
+static Answer node_answer(mesh::Client& mesh, const NodeView& v) {
+    Answer a;
+    json& j = a.fields;
+    j["node"] = v.instance ? v.instance->name : v.peer->name;
     if (v.instance) {
-        row(ctx, j, "type", v.instance->type, v.instance->type);
-        row(ctx, j, "run", v.instance->argv, process::shown(v.instance->argv));
-        row(ctx, j, "log", v.instance->log, v.instance->log);
-        std::vector<std::string> roots;
-        for (auto& k : v.instance->roots) roots.push_back(k);
-        row(ctx, j, "roots", roots, joined(roots));
+        j["type"] = v.instance->type;
+        j["run"] = v.instance->argv;
+        j["log"] = v.instance->log;
+        j["roots"] = v.instance->roots;
     }
     if (!v.peer) {
-        row(ctx, j, "pid", v.instance->tracking.pid, std::to_string(v.instance->tracking.pid));
-        if (!ctx.json) ctx.out.line(ctx.out.paint(ui::Style::Dim, "  not on the mesh"));
-        return j;
+        j["pid"] = v.instance->tracking.pid;
+        j["mesh"] = "not on the mesh";
+        return a;
     }
-    row(ctx, j, "address", v.peer->address, v.peer->address);
+    j["address"] = v.peer->address;
     auto pids = mesh.pids({ v.peer->id });
-    if (pids.count(v.peer->id)) row(ctx, j, "pid", pids[v.peer->id], std::to_string(pids[v.peer->id]));
-    json uses = json::array();
-    std::vector<std::string> lines;
-    for (auto& e : mesh.entities_of(v.peer->id)) {
+    if (pids.count(v.peer->id)) j["pid"] = pids[v.peer->id];
+    for (auto& e : mesh.entities_of(v.peer->id))
         for (auto& r : roles(e)) {
-            uses.push_back({ { "name", e.name }, { "kind", mesh::kind_name(e.kind) }, { "role", r } });
-            std::string role = r;
-            role.resize(11, ' ');
-            lines.push_back(role + e.name + " " + ctx.out.paint(ui::Style::Dim, mesh::kind_name(e.kind)));
+            if (!j.contains(r)) j[r] = json::array();
+            j[r].push_back(e.name);
         }
-    }
-    j["entities"] = uses;
-    if (!ctx.json)
-        for (size_t i = 0; i < lines.size(); i++)
-            ctx.out.line("  " + ctx.out.paint(ui::Style::Dim, i ? "            " : "entities    ") + lines[i]);
-    return j;
+    return a;
 }
 
-static json entity_info(app::Context& ctx, mesh::Client& mesh, const rant::Entity& e) {
-    json j = json::object();
-    if (!ctx.json) ctx.out.line(ctx.out.paint(ui::Style::Bold, std::string(mesh::kind_name(e.kind)) + " " + e.name));
-    j["kind"] = mesh::kind_name(e.kind);
-    bool call = e.kind == rant::EntityKind::Function || e.kind == rant::EntityKind::Task;
-    if (call) {
-        row(ctx, j, "request", mesh::type_text(e.schema), mesh::type_text(e.schema));
-        row(ctx, j, "response", mesh::type_text(e.rsp_schema), mesh::type_text(e.rsp_schema));
-        if (e.kind == rant::EntityKind::Task)
-            row(ctx, j, "progress", mesh::type_text(e.progress_schema), mesh::type_text(e.progress_schema));
+static Answer entity_answer(mesh::Client& mesh, const rant::Entity& e) {
+    Answer a;
+    json& j = a.fields;
+    j[mesh::kind_name(e.kind)] = e.name;
+    if (e.kind == rant::EntityKind::Function || e.kind == rant::EntityKind::Task) {
+        a.schemas.emplace_back("request", e.schema);
+        a.schemas.emplace_back("response", e.rsp_schema);
+        if (e.kind == rant::EntityKind::Task) a.schemas.emplace_back("progress", e.progress_schema);
     } else {
-        row(ctx, j, "type", mesh::type_text(e.schema), mesh::type_text(e.schema));
+        a.schemas.emplace_back("type", e.schema);
     }
+    for (auto& [k, s] : a.schemas) j[k] = mesh::schema_text(s, nullptr);
 
-    std::vector<std::string> providers, consumers;
+    json providers = json::array(), consumers = json::array();
     for (auto& p : mesh.peers())
         for (auto& pe : mesh.entities_of(p.id))
             if (pe.kind == e.kind && pe.name == e.name) {
@@ -96,15 +80,42 @@ static json entity_info(app::Context& ctx, mesh::Client& mesh, const rant::Entit
                 if (pe.consumes) consumers.push_back(p.name);
             }
     bool topic = e.kind == rant::EntityKind::Topic, var = e.kind == rant::EntityKind::Variable;
-    row(ctx, j, topic ? "publishers" : var ? "owner" : "providers", providers, joined(providers));
-    row(ctx, j, topic ? "subscribers" : var ? "readers" : "callers", consumers, joined(consumers));
-
+    j[topic ? "publishers" : var ? "owner" : "providers"] = providers;
+    j[topic ? "subscribers" : var ? "readers" : "callers"] = consumers;
     if (var) {
         auto value = mesh::read_variable(mesh, e.name);
-        row(ctx, j, "value", value ? *value : json(nullptr),
-            value ? value->dump(-1, ' ', false, json::error_handler_t::replace) : "(no value)");
+        j["value"] = value ? *value : json(nullptr);
     }
-    return j;
+    return a;
+}
+
+/* An answer as YAML, keys lined up. A schema of one line sits after its key, a longer one
+ * goes below it as a block. */
+static void print_answer(app::Context& ctx, const Answer& a) {
+    ui::Yaml yaml(&ctx.out, false);
+    size_t width = 0;
+    for (auto& [k, _] : a.fields.items()) width = std::max(width, k.size());
+    for (auto& [k, v] : a.fields.items()) {
+        auto schema = std::find_if(a.schemas.begin(), a.schemas.end(), [&](auto& s) { return s.first == k; });
+        if (schema == a.schemas.end()) {
+            ctx.out.line(yaml.entry(k, v, width));
+            continue;
+        }
+        std::string text = mesh::schema_text(schema->second, &ctx.out);
+        if (text.find('\n') == std::string::npos) {
+            ctx.out.line(yaml.key(k, width) + " " + text);
+            continue;
+        }
+        ctx.out.line(yaml.key(k, width) + " " + ctx.out.paint(ui::Style::Faint, "|"));
+        size_t start = 0;
+        while (start <= text.size()) {
+            size_t end = text.find('\n', start);
+            if (end == std::string::npos) end = text.size();
+            std::string line = text.substr(start, end - start);
+            ctx.out.line(line.empty() ? "" : "  " + line);
+            start = end + 1;
+        }
+    }
 }
 
 /* Every node by that name: rant's instances first, each with its mesh node when it is on
@@ -144,22 +155,22 @@ static int run(app::Context& ctx) {
     mesh.settle();
     std::vector<mesh::Peer> peers = mesh.peers();
 
-    json out = json::array();
-    for (auto& v : find_nodes(mesh, st, peers, name)) {
-        if (!ctx.json && !out.empty()) ctx.out.line();
-        json j = node_info(ctx, mesh, v);
-        j["node"] = name;
-        out.push_back(j);
+    std::vector<Answer> answers;
+    for (auto& v : find_nodes(mesh, st, peers, name)) answers.push_back(node_answer(mesh, v));
+    for (auto& e : mesh.entities())
+        if (e.name == name) answers.push_back(entity_answer(mesh, e));
+    if (answers.empty()) throw app::Failure("nothing named `" + name + "` is running, see `rant ls`");
+
+    if (ctx.json) {
+        json out = json::array();
+        for (auto& a : answers) out.push_back(a.fields);
+        ctx.out.line(out.dump(2, ' ', false, json::error_handler_t::replace));
+        return 0;
     }
-    for (auto& e : mesh.entities()) {
-        if (e.name != name) continue;
-        if (!ctx.json && !out.empty()) ctx.out.line();
-        json j = entity_info(ctx, mesh, e);
-        j["entity"] = e.name;
-        out.push_back(j);
+    for (size_t i = 0; i < answers.size(); i++) {
+        if (i) ctx.out.line();
+        print_answer(ctx, answers[i]);
     }
-    if (out.empty()) throw app::Failure("nothing named `" + name + "` is running, see `rant ls`");
-    if (ctx.json) ctx.out.line(out.dump(2));
     return 0;
 }
 

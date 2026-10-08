@@ -34,7 +34,7 @@ expect_match("${OUT}" "NODES\n  nav:\n    lidar\n    odom\n    planner\n  pick:\
 rant(ls entities)
 expect_match("${OUT}" "scan +topic")
 rant(info lidar)
-expect_match("${OUT}" "roots +group nav range=30 speed=1, group pick\n")
+expect_match("${OUT}" "roots: +[[]group nav range=30 speed=1, group pick[]]\n")
 
 # Stopping one group leaves the shared nodes up.
 rant(stop group nav)

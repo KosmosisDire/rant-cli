@@ -1,23 +1,8 @@
 #include "mesh/access.hpp"
 
-#include <cctype>
-
 #include "app/failure.hpp"
 
 namespace mesh {
-
-std::string type_text(const rant::Schema& s) {
-    if (s.empty()) return "untyped";
-    std::string text = s.to_dsl(), out;
-    bool space = false;
-    for (char c : text) {
-        if (std::isspace((unsigned char)c)) { space = !out.empty(); continue; }
-        if (space) out += ' ';
-        space = false;
-        out += c;
-    }
-    return out;
-}
 
 rant::Entity require_entity(Client& c, const std::vector<rant::EntityKind>& kinds, const std::string& name) {
     std::string other;

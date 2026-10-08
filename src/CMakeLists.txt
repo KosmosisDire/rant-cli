@@ -11,6 +11,7 @@ add_library(rant_cli_core STATIC
   commands/build.cpp
   commands/call.cpp
   commands/commands.cpp
+  commands/format.cpp
   commands/get.cpp
   commands/info.cpp
   commands/init.cpp
@@ -25,16 +26,20 @@ add_library(rant_cli_core STATIC
   mesh/access.cpp
   mesh/client.cpp
   mesh/encode.cpp
+  mesh/schema_text.cpp
   mesh/text.cpp
   mesh/values.cpp
   process/command.cpp
   process/quote.cpp
   run/nodes.cpp
   state/state.cpp
+  ui/csv.cpp
+  ui/live.cpp
   ui/output.cpp
   ui/prompt.cpp
   ui/table.cpp
   ui/terminal.cpp
+  ui/yaml.cpp
   util/interrupt.cpp
   util/match.cpp)
 
