@@ -24,12 +24,12 @@ endforeach()
 
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/get_cpm.cmake")
 
-# 0.0.18 is the first release with the binary magic that finds native nodes and the
-# RANT_NODE_NAME a started node takes its name from. The local presets set
-# CPM_rant_SOURCE to ../rant to build against the working tree instead.
+# 0.0.19 is the first release whose nodes take RANT_DOMAIN and RANT_PREFIX, which the
+# placement in the configs sets. The local presets set CPM_rant_SOURCE to ../rant to build
+# against the working tree instead.
 CPMAddPackage(NAME rant
   GITHUB_REPOSITORY KosmosisDire/Rant
-  VERSION 0.0.18
+  VERSION 0.0.19
   EXCLUDE_FROM_ALL YES
   SYSTEM YES)
 
