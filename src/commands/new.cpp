@@ -19,7 +19,7 @@ static const std::vector<std::string> kinds = { "workspace", "package", "node", 
 /* The language of the package around the working directory, from its build files. */
 static std::string language_here(app::Context& ctx) {
     const config::Workspace* ws = ctx.workspace();
-    for (fs::path dir = ctx.cwd;; dir = dir.parent_path()) {
+    for (fs::path dir = ctx.cwd();; dir = dir.parent_path()) {
         if (fs::exists(dir / "CMakeLists.txt")) return "cpp";
         if (fs::exists(dir / "pyproject.toml")) return "python";
         std::error_code ec;
@@ -35,7 +35,7 @@ static std::string language_here(app::Context& ctx) {
  * workspace. */
 static fs::path cmake_project(app::Context& ctx, const std::string& name) {
     const config::Workspace* ws = ctx.workspace();
-    for (fs::path dir = ctx.cwd;; dir = dir.parent_path()) {
+    for (fs::path dir = ctx.cwd();; dir = dir.parent_path()) {
         if (fs::is_regular_file(dir / "CMakeLists.txt")) return dir / "CMakeLists.txt";
         if ((ws && dir == ws->root) || dir == dir.parent_path())
             throw app::Failure("no CMakeLists.txt here or above to add `" + name + "` to, make a package with `rant new package --lang cpp`");
@@ -65,8 +65,8 @@ static int run(app::Context& ctx) {
     if (w.size() > 2) throw app::UsageError("new " + kind + " takes one folder or name");
     std::string preset = chosen(ctx, kind);
     bool folder = kind == "workspace" || kind == "package" || preset == "package-csharp";
-    fs::path dest = ctx.cwd;
-    if (folder && w.size() == 2) dest = (ctx.cwd / config::from_utf8(w[1])).lexically_normal();
+    fs::path dest = ctx.cwd();
+    if (folder && w.size() == 2) dest = (ctx.cwd() / config::from_utf8(w[1])).lexically_normal();
     if (!dest.has_filename()) dest = dest.parent_path();
     std::string name = !folder && w.size() == 2 ? w[1] : config::to_utf8(dest.filename());
     scaffold::Files files = scaffold::plan(preset, dest, name);

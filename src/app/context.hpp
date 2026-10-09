@@ -19,7 +19,9 @@ public:
     bool       yes = false;     /* -y: answer every question yes */
     bool       json = false;    /* --json: print JSON on stdout */
     std::optional<uint16_t> domain_option;    /* --domain */
-    std::filesystem::path cwd = std::filesystem::current_path();
+
+    /* The working directory, or a failure when it was deleted under this shell. */
+    const std::filesystem::path& cwd() const;
 
     /* A path for messages: relative to the working directory, "." for it. */
     std::string shown(const std::filesystem::path& p) const;
@@ -38,6 +40,8 @@ public:
 
 private:
     void open(bool packages);
+    static std::filesystem::path here();
+    std::filesystem::path cwd_ = here();
     std::optional<config::Opened> opened_;
     bool with_packages_ = false;
 };

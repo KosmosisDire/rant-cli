@@ -22,7 +22,7 @@ Request::Request(app::Context& ctx, std::vector<std::string> w, std::string p)
     : words(std::move(w)), partial(std::move(p)), ctx_(ctx) {}
 
 const config::Workspace* Request::workspace() {
-    if (!opened_) opened_ = config::open(ctx_.cwd, true);
+    if (!opened_) opened_ = config::open(ctx_.cwd(), true);
     return opened_->workspace ? &*opened_->workspace : nullptr;
 }
 
@@ -56,7 +56,7 @@ std::vector<std::string> Request::packages() {
     return out;
 }
 
-config::GroupInfo Request::group(const std::string& name) { return config::describe_group(ctx_.cwd, name); }
+config::GroupInfo Request::group(const std::string& name) { return config::describe_group(ctx_.cwd(), name); }
 
 std::vector<std::string> Request::running_nodes() {
     std::vector<std::string> out;

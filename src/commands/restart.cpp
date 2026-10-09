@@ -20,8 +20,8 @@ static std::vector<std::string> param_words(const state::Root& r) {
 /* The plan a root runs now, from the config as it stands, so a restart takes in edits and
  * new builds. Planned before anything stops, so a broken config stops nothing. */
 static config::Plan replan(app::Context& ctx, const state::Root& root, const state::Instance* node) {
-    config::Plan plan = root.kind == "group" ? config::plan_group(ctx.cwd, root.name, param_words(root))
-                                             : config::plan_node(ctx.cwd, node ? node->type : root.name);
+    config::Plan plan = root.kind == "group" ? config::plan_group(ctx.cwd(), root.name, param_words(root))
+                                             : config::plan_node(ctx.cwd(), node ? node->type : root.name);
     require_plan(ctx, plan);
     return plan;
 }
@@ -117,14 +117,14 @@ static std::vector<state::Root> group_roots(app::Context& ctx, const state::Stat
                                             const std::vector<std::string>& params) {
     std::vector<state::Root> out;
     if (!params.empty()) {
-        config::Plan plan = config::plan_group(ctx.cwd, group, params);
+        config::Plan plan = config::plan_group(ctx.cwd(), group, params);
         require_plan(ctx, plan);
         state::Root root{ "group", plan.group, plan.params };
         for (auto& r : st.roots)
             if (r.key() == root.key()) out.push_back(r);
         return out;
     }
-    config::GroupInfo info = config::describe_group(ctx.cwd, group);
+    config::GroupInfo info = config::describe_group(ctx.cwd(), group);
     std::string name = info.diagnostics.empty() ? info.name : group;
     for (auto& r : st.roots)
         if (r.kind == "group" && r.name == name) out.push_back(r);

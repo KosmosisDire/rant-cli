@@ -13,7 +13,7 @@ namespace fs = std::filesystem;
 using json = nlohmann::ordered_json;
 
 static fs::path folder(const app::Context& ctx, const std::string& word) {
-    fs::path dir = ctx.cwd / config::from_utf8(word);
+    fs::path dir = ctx.cwd() / config::from_utf8(word);
     if (!fs::is_directory(dir)) throw app::Failure("no folder `" + word + "`");
     return fs::weakly_canonical(dir);
 }
@@ -22,7 +22,7 @@ static int show(app::Context& ctx) {
     auto& w = ctx.args.words;
     if (w.size() > 1) throw app::UsageError("lib takes at most one folder");
     bool one = w.size() == 1;
-    fs::path dir = one ? folder(ctx, w[0]) : ctx.cwd;
+    fs::path dir = one ? folder(ctx, w[0]) : ctx.cwd();
     std::vector<library::Use> uses = one ? library::in_folder(dir) : library::under(dir);
     if (ctx.json) {
         json out = json::array();
@@ -55,7 +55,7 @@ static int install(app::Context& ctx) {
     auto& w = ctx.args.words;
     if (w.size() > 2) throw app::UsageError("lib install takes at most one folder");
     bool one = w.size() == 2;
-    fs::path dir = one ? folder(ctx, w[1]) : ctx.cwd;
+    fs::path dir = one ? folder(ctx, w[1]) : ctx.cwd();
     net::Release r = library::release(ctx.args.get("version").value_or(""));
     return library::install(ctx, dir, !one, r) ? 0 : 1;
 }

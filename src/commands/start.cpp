@@ -55,7 +55,7 @@ static void report(app::Context& ctx, const config::Workspace& ws, const std::ve
 /* One node of a node type, named after it. Starting the same type again gives the copy a
  * free name, talker_1, then talker_2, since two nodes of one name collide on the mesh. */
 int start_node(app::Context& ctx, const std::string& ref) {
-    config::Plan plan = config::plan_node(ctx.cwd, ref);
+    config::Plan plan = config::plan_node(ctx.cwd(), ref);
     require_plan(ctx, plan);
     if (ctx.args.has("dry-run")) {
         print_plan(ctx, plan);
@@ -84,7 +84,7 @@ int start_node(app::Context& ctx, const std::string& ref) {
 }
 
 static void group_help(app::Context& ctx, const std::string& group) {
-    config::GroupInfo g = config::describe_group(ctx.cwd, group);
+    config::GroupInfo g = config::describe_group(ctx.cwd(), group);
     if (!g.diagnostics.empty()) {
         for (auto& d : g.diagnostics) ctx.out.error(d.str());
         throw app::Failure("");
@@ -102,7 +102,7 @@ int start_group(app::Context& ctx, const std::string& group, const std::vector<s
         group_help(ctx, group);
         return 0;
     }
-    config::Plan plan = config::plan_group(ctx.cwd, group, params);
+    config::Plan plan = config::plan_group(ctx.cwd(), group, params);
     require_plan(ctx, plan);
     if (ctx.args.has("dry-run")) {
         print_plan(ctx, plan);
@@ -167,8 +167,8 @@ int start_group(app::Context& ctx, const std::string& group, const std::vector<s
 
 /* The start command line a name alone was most likely meant as. */
 static std::string guess(app::Context& ctx, const std::string& name) {
-    if (config::describe_group(ctx.cwd, name).diagnostics.empty()) return "did you mean `rant start group " + name + "`?";
-    if (config::plan_node(ctx.cwd, name).diagnostics.empty()) return "did you mean `rant start node " + name + "`?";
+    if (config::describe_group(ctx.cwd(), name).diagnostics.empty()) return "did you mean `rant start group " + name + "`?";
+    if (config::plan_node(ctx.cwd(), name).diagnostics.empty()) return "did you mean `rant start node " + name + "`?";
     return "";
 }
 

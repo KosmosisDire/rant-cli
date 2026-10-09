@@ -39,7 +39,7 @@ static std::optional<fs::path> locate(const app::Context& ctx) {
     if (fs::is_regular_file(beside)) return beside;
     if (fs::is_regular_file(installed())) return installed();
     for (const char* name : { "rant-explorer", "rant_explorer" })
-        if (auto p = process::find_program(name, ctx.cwd)) return *p;
+        if (auto p = process::find_program(name, ctx.cwd())) return *p;
     return std::nullopt;
 }
 
@@ -78,7 +78,7 @@ static int run(app::Context& ctx) {
     if (uint16_t d = ctx.domain()) argv.insert(argv.end(), { "--domain", std::to_string(d) });
     /* a job name of its own each time, since several explorers may run at once */
     std::string job = "Local\\rant-explorer-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
-    process::start_detached({ argv, ctx.cwd, {} }, util::rant_home() / "explorer.log", job);
+    process::start_detached({ argv, ctx.cwd(), {} }, util::rant_home() / "explorer.log", job);
     ctx.out.note("started " + config::to_utf8(*exe));
     return 0;
 }

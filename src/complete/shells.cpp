@@ -92,7 +92,7 @@ std::vector<const Shell*> detected() {
     const char* names[] = { "bash", "zsh", "fish" };
 #endif
     for (const char* n : names)
-        if (process::find_program(n, fs::current_path())) out.push_back(find_shell(n));
+        if (process::find_program(n, fs::temp_directory_path())) out.push_back(find_shell(n));
     return out;
 }
 
@@ -180,9 +180,9 @@ static std::string install_powershell(const Shell& shell, const fs::path& hook) 
         "}\n"
         "exit 0\n";
     std::string exe(shell.name);
-    if (!process::find_program(exe, fs::current_path())) throw app::Failure(exe + " is not on PATH");
+    if (!process::find_program(exe, fs::temp_directory_path())) throw app::Failure(exe + " is not on PATH");
     int code = process::run({ { exe, "-NoProfile", "-NoLogo", "-NonInteractive", "-EncodedCommand", encoded_command(script) },
-                              fs::current_path(), {} });
+                              fs::temp_directory_path(), {} });
     if (code == 3)
         throw app::Failure("it may not run scripts here, allow that with `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` "
                            "in " + exe + " and run `rant setup " + exe + "` again");

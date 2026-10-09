@@ -50,7 +50,7 @@ int update_self(app::Context& ctx) {
     net::download(a->url, self, true);
     ctx.out.line("updated to rant-cli " + r.version);
     /* the new binary holds the new skill */
-    if (!names.empty() && process::run({ { config::to_utf8(self), "setup", "skill" }, ctx.cwd, {} }) != 0)
+    if (!names.empty() && process::run({ { config::to_utf8(self), "setup", "skill" }, config::fs::temp_directory_path(), {} }) != 0)
         ctx.out.warn("the rant skill was not updated, run `rant setup skill`");
     return 0;
 }

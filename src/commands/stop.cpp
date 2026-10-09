@@ -94,13 +94,13 @@ static int stop_node(app::Context& ctx, const std::string& name) {
 static std::vector<state::Root> targets(app::Context& ctx, run::Session& s, const std::string& group,
                                         const std::vector<std::string>& params) {
     if (!params.empty()) {
-        config::Plan plan = config::plan_group(ctx.cwd, group, params);
+        config::Plan plan = config::plan_group(ctx.cwd(), group, params);
         require_plan(ctx, plan);
         state::Root root{ "group", plan.group, plan.params };
         if (!s.state().root(root.key())) throw app::Failure("`" + root.key().substr(6) + "` is not running, see `rant ls`");
         return { root };
     }
-    config::GroupInfo info = config::describe_group(ctx.cwd, group);
+    config::GroupInfo info = config::describe_group(ctx.cwd(), group);
     std::string name = info.diagnostics.empty() ? info.name : group;
     std::vector<state::Root> out;
     for (auto& r : s.state().roots)
@@ -131,7 +131,7 @@ static int stop_group(app::Context& ctx, const std::string& group, const std::ve
 
 /* The stop command line a name alone was most likely meant as. */
 static std::string guess(app::Context& ctx, const std::string& name) {
-    if (config::describe_group(ctx.cwd, name).diagnostics.empty()) return "did you mean `rant stop group " + name + "`?";
+    if (config::describe_group(ctx.cwd(), name).diagnostics.empty()) return "did you mean `rant stop group " + name + "`?";
     if (run::snapshot(ctx).instance(name)) return "did you mean `rant stop node " + name + "`?";
     return "";
 }

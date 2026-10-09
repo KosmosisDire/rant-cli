@@ -43,7 +43,7 @@ struct Scratch {
 };
 
 static void need_curl() {
-    if (!process::find_program("curl", fs::current_path())) throw app::Failure("downloading needs curl, which is not on PATH");
+    if (!process::find_program("curl", fs::temp_directory_path())) throw app::Failure("downloading needs curl, which is not on PATH");
 }
 
 static std::string host(const std::string& url) {
@@ -105,7 +105,7 @@ Release release(const std::string& repo, const std::string& tag) {
         argv.insert(argv.end(), { "-H", "@" + config::to_utf8(headers.path) });
     }
     argv.push_back(url);
-    int code = process::run({ argv, fs::current_path(), {} }, status.path);
+    int code = process::run({ argv, fs::temp_directory_path(), {} }, status.path);
     if (code != 0) throw app::Failure(curl_failure(url, code));
     std::string http = read_file(status.path);
     if (http == "200") return parse_release(read_file(body.path));
@@ -120,7 +120,7 @@ void download(const std::string& url, const fs::path& dest, bool program) {
     fs::create_directories(dest.parent_path(), ec);
     fs::path part = dest;
     part += ".part";
-    int code = process::run({ { "curl", "-fsSL", "--retry", "2", "-A", "rant-cli", "-o", config::to_utf8(part), url }, fs::current_path(), {} });
+    int code = process::run({ { "curl", "-fsSL", "--retry", "2", "-A", "rant-cli", "-o", config::to_utf8(part), url }, fs::temp_directory_path(), {} });
     if (code != 0) {
         fs::remove(part, ec);
         throw app::Failure(curl_failure(url, code));

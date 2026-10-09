@@ -84,9 +84,9 @@ static void install_nupkg(const app::Context& ctx, const net::Release& r) {
         text.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
     }
     if (text.find(feed.u8string()) != std::string::npos || text.find(config::to_utf8(feed)) != std::string::npos) return;
-    if (!process::find_program("dotnet", ctx.cwd)) throw app::Failure("adding the Rant NuGet feed needs the .NET SDK");
+    if (!process::find_program("dotnet", ctx.cwd())) throw app::Failure("adding the Rant NuGet feed needs the .NET SDK");
     ctx.out.note("adding the NuGet feed " + config::to_utf8(feed));
-    if (process::run({ { "dotnet", "nuget", "add", "source", feed.u8string(), "--name", "rant" }, ctx.cwd, {} }) != 0)
+    if (process::run({ { "dotnet", "nuget", "add", "source", feed.u8string(), "--name", "rant" }, ctx.cwd(), {} }) != 0)
         throw app::Failure("dotnet could not add the feed " + config::to_utf8(feed));
 }
 

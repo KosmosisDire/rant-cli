@@ -115,7 +115,7 @@ static void run_command(const config::BuildStep& s, const std::vector<std::strin
 
 static int run(app::Context& ctx) {
     const config::Workspace& ws = ctx.require_workspace(true);
-    config::Build b = config::plan_build(ctx.cwd, ctx.args.words);
+    config::Build b = config::plan_build(ctx.cwd(), ctx.args.words);
     require(ctx, b.diagnostics);
     if (ctx.args.has("dry-run")) {
         dry_run(ctx, ws, b);

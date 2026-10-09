@@ -170,7 +170,7 @@ static Answer package_answer(app::Context& ctx, const state::State& st, const co
     for (auto& u : library::in_folder(p.dir))
         rant.push_back((u.version ? *u.version : "none") + " through " + u.how + " in " + ctx.shown(u.file));
     j["rant"] = rant;
-    config::Build b = config::plan_build(ctx.cwd, { p.name });
+    config::Build b = config::plan_build(ctx.cwd(), { p.name });
     json depends = json::array(), build = json::array();
     for (auto& e : b.edges)
         if (e.from == p.name) depends.push_back(e.to + " (" + e.source + ")");
@@ -202,7 +202,7 @@ static Answer type_answer(app::Context& ctx, const config::Workspace& ws, const 
     j["cwd"] = ctx.shown(n.cwd);
     json groups = json::array(), running = json::array();
     for (auto& g : ws.groups) {
-        config::Plan plan = config::plan_group(ctx.cwd, g.name, {});
+        config::Plan plan = config::plan_group(ctx.cwd(), g.name, {});
         if (std::any_of(plan.instances.begin(), plan.instances.end(), [&](const config::Instance& i) { return i.type == n.planned(); }))
             groups.push_back(g.name);
     }
@@ -229,7 +229,7 @@ static Answer group_answer(app::Context& ctx, const state::State& st, const conf
         params[p.name] = about;
     }
     j["params"] = params;
-    config::Plan plan = config::plan_group(ctx.cwd, g.name, {});
+    config::Plan plan = config::plan_group(ctx.cwd(), g.name, {});
     if (plan.diagnostics.empty()) {
         json nodes = json::object();
         for (auto& i : plan.instances) nodes[i.name] = i.type;
@@ -254,7 +254,7 @@ static void workspace_answers(app::Context& ctx, std::optional<Kind> kind, const
     auto want = [&](Kind k) { return !kind || *kind == k; };
     if (want(Kind::Package)) {
         std::error_code ec;
-        fs::path folder = fs::weakly_canonical(ctx.cwd / config::from_utf8(name), ec);
+        fs::path folder = fs::weakly_canonical(ctx.cwd() / config::from_utf8(name), ec);
         for (auto& p : full.packages)
             if (p.name == name || (!ec && fs::equivalent(p.dir, folder, ec))) out.push_back({ Kind::Package, package_answer(ctx, st, p) });
     }
@@ -262,7 +262,7 @@ static void workspace_answers(app::Context& ctx, std::optional<Kind> kind, const
         for (auto* n : all_types(full))
             if (n->ref() == name || n->name == name) out.push_back({ Kind::Node, type_answer(ctx, full, st, *n) });
     if (want(Kind::Group)) {
-        config::GroupInfo g = config::describe_group(ctx.cwd, name);
+        config::GroupInfo g = config::describe_group(ctx.cwd(), name);
         if (g.diagnostics.empty()) out.push_back({ Kind::Group, group_answer(ctx, st, g) });
     }
 }

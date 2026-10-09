@@ -232,7 +232,7 @@ static int list_workspace(app::Context& ctx, Kind kind, const std::string& patte
         title = "GROUPS";
         for (auto& g : ws.groups) {
             if (!util::name_matches(pattern, g.name)) continue;
-            config::GroupInfo info = config::describe_group(ctx.cwd, g.name);
+            config::GroupInfo info = config::describe_group(ctx.cwd(), g.name);
             out.push_back({ { "name", g.name }, { "file", config::to_utf8(g.file) }, { "description", info.description },
                             { "params", params_short(info) } });
             t.row({ g.name, dim(params_short(info)), info.description });

@@ -6,15 +6,26 @@
 
 namespace app {
 
+std::filesystem::path Context::here() {
+    std::error_code ec;
+    auto p = std::filesystem::current_path(ec);
+    return ec ? std::filesystem::path() : p;
+}
+
+const std::filesystem::path& Context::cwd() const {
+    if (cwd_.empty()) throw Failure("this folder no longer exists, cd into one that does");
+    return cwd_;
+}
+
 void Context::open(bool packages) {
     if (opened_ && (with_packages_ || !packages)) return;
-    opened_ = config::open(cwd, packages);
+    opened_ = config::open(cwd(), packages);
     with_packages_ = packages;
 }
 
 std::string Context::shown(const std::filesystem::path& p) const {
     std::error_code ec;
-    std::filesystem::path rel = std::filesystem::relative(p, cwd, ec);
+    std::filesystem::path rel = std::filesystem::relative(p, cwd_, ec);
     if (ec || rel.empty()) return config::to_utf8(p);
     return config::to_utf8(rel);
 }
