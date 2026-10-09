@@ -38,8 +38,8 @@ static bool install_skill(app::Context& ctx, const std::vector<agents::Agent>& f
     return ok;
 }
 
-/* With no words, every shell and agent found. Otherwise the shells named, and the skill
- * when `skill` is one of the words. */
+/* The shells named, every one found when none is, and the skill only when `skill` is one
+ * of the words, since it goes into the agents' own folders. */
 static int run(app::Context& ctx) {
     auto& w = ctx.args.words;
     if (ctx.args.has("print")) {
@@ -47,15 +47,14 @@ static int run(app::Context& ctx) {
         ctx.out.line(std::string(named(w[0]).hook));
         return 0;
     }
-    bool skill = w.empty() || std::find(w.begin(), w.end(), "skill") != w.end();
+    bool skill = std::find(w.begin(), w.end(), "skill") != w.end();
     std::vector<const complete::Shell*> chosen;
     for (auto& name : w)
         if (name != "skill") chosen.push_back(&named(name));
     if (w.empty()) chosen = complete::detected();
-    std::vector<agents::Agent> found = skill ? agents::detected() : std::vector<agents::Agent>{};
-    if (chosen.empty() && found.empty())
-        throw app::Failure(w.empty() ? "found no shell or AI coding agent to set up, name a shell, one of " + shell_names()
-                                     : "found no AI coding agent to give the rant skill");
+    std::vector<agents::Agent> found = agents::detected();
+    if (skill && found.empty()) throw app::Failure("found no AI coding agent to give the rant skill");
+    if (!skill && chosen.empty()) throw app::Failure("found no shell to set up, name one of " + shell_names());
 
     bool failed = false;
     for (auto* sh : chosen) {
@@ -66,8 +65,14 @@ static int run(app::Context& ctx) {
             failed = true;
         }
     }
-    failed |= !install_skill(ctx, found);
     if (!chosen.empty()) ctx.out.note("open a new shell to use it");
+    if (skill) {
+        failed |= !install_skill(ctx, found);
+    } else if (!found.empty()) {
+        std::string names;
+        for (auto& a : found) names += (names.empty() ? "" : ", ") + a.name;
+        ctx.out.note("`rant setup skill` teaches " + names + " to use Rant");
+    }
     return failed ? 1 : 0;
 }
 
@@ -79,7 +84,7 @@ static complete::Candidates complete_words(complete::Request&) {
 
 app::Command setup() {
     app::Command c{ "setup", "[shell...] [skill]",
-                    "set up tab completion for your shells and the rant skill for your AI coding agents, or only those named",
+                    "set up tab completion for your shells, or the named ones, and with skill the rant skill for your AI coding agents",
                     app::Section::Setup,
                     { { "print", 0, "", "print the hook for one shell instead of installing it" } }, run };
     c.complete = complete_words;

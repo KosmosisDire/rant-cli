@@ -15,11 +15,14 @@ struct Agent {
     fs::path    skills;    /* the folder of skills it reads */
 };
 
-/* The agents whose folder is in the home folder. The installers check the same folders. */
+/* The agents whose folder is in the home folder. */
 std::vector<Agent> detected();
 
 /* Writes the skill as rant/ in skills, replacing what an older one left. Returns where.
  * Throws app::Failure. */
 fs::path install(const fs::path& skills);
+
+/* Whether the skill is in skills, put there by `rant setup skill`. */
+bool installed(const fs::path& skills);
 
 }

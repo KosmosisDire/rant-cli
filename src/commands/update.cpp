@@ -41,8 +41,10 @@ int update_self(app::Context& ctx) {
     ctx.out.line("This updates rant-cli " RANT_CLI_VERSION " to " + r.version + ":");
     ctx.out.line("  download " + a->url);
     ctx.out.line("    over " + config::to_utf8(self));
+    /* the skill moves along only where someone installed it */
     std::string names;
-    for (auto& agent : agents::detected()) names += (names.empty() ? "" : ", ") + agent.name;
+    for (auto& agent : agents::detected())
+        if (agents::installed(agent.skills)) names += (names.empty() ? "" : ", ") + agent.name;
     if (!names.empty()) ctx.out.line("  update the rant skill for " + names);
     if (!ui::confirm("Update?", ctx.yes)) return 1;
     net::download(a->url, self, true);

@@ -29,6 +29,11 @@ std::vector<Agent> detected() {
     return out;
 }
 
+bool installed(const fs::path& skills) {
+    std::error_code ec;
+    return fs::is_regular_file(skills / "rant" / "SKILL.md", ec);
+}
+
 fs::path install(const fs::path& skills) {
     fs::path dir = skills / "rant";
     std::error_code ec;
