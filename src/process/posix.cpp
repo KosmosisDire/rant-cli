@@ -236,7 +236,7 @@ Stopped stop_pid(uint64_t pid, std::chrono::milliseconds grace) {
     if (pid <= 1 || pid > (uint64_t)INT32_MAX || (pid_t)pid == getpid()) return Stopped::AlreadyGone;
     pid_t p = (pid_t)pid;
     if (kill(p, SIGTERM) != 0) {
-        if (errno == EPERM) throw app::Failure("process " + std::to_string(pid) + " belongs to another user, so rant may not stop it");
+        if (errno == EPERM) throw app::Failure("process " + std::to_string(pid) + " belongs to another user");
         return Stopped::AlreadyGone;
     }
     auto deadline = std::chrono::steady_clock::now() + grace;

@@ -36,7 +36,7 @@ int update_self(app::Context& ctx) {
     }
     std::string asset = "rant-" + r.version + "-" + net::platform();
     const net::Asset* a = r.asset(asset);
-    if (!a) throw app::Failure("rant-cli " + r.version + " has no download for this platform, its release lacks " + asset);
+    if (!a) throw app::Failure("the rant-cli " + r.version + " release has no " + asset);
     config::fs::path self = process::self_path();
     ctx.out.line("This updates rant-cli " RANT_CLI_VERSION " to " + r.version + ":");
     ctx.out.line("  download " + a->url);

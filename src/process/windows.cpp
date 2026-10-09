@@ -315,7 +315,7 @@ Stopped stop_pid(uint64_t pid, std::chrono::milliseconds) {
     if (pid == 0 || pid == GetCurrentProcessId()) return Stopped::AlreadyGone;
     Handle h(OpenProcess(PROCESS_TERMINATE | SYNCHRONIZE, FALSE, (DWORD)pid));
     if (!h && GetLastError() == ERROR_ACCESS_DENIED)
-        throw app::Failure("process " + std::to_string(pid) + " belongs to another user, so rant may not stop it");
+        throw app::Failure("process " + std::to_string(pid) + " belongs to another user");
     if (!h || !TerminateProcess(h.get(), 1)) return Stopped::AlreadyGone;
     WaitForSingleObject(h.get(), 2000);
     return Stopped::KilledAtOnce;

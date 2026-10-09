@@ -7,7 +7,7 @@
 namespace commands {
 
 static int run(app::Context& ctx) {
-    if (ctx.args.words.size() != 1) throw app::UsageError("say one variable to read, such as `rant get speed`");
+    if (ctx.args.words.size() != 1) throw app::UsageError("say which variable to get");
     const std::string& name = ctx.args.words[0];
     format_of(ctx);
     mesh::Client mesh(ctx.domain());

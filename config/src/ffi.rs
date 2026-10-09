@@ -392,7 +392,7 @@ fn plan_handle(loaded: &Loaded, planned: Result<Planned, Diag>) -> *mut RantConf
 }
 
 fn no_workspace() -> Diag {
-    Diag::plain("not in a workspace: no rant.hcl with workspace {} here or above, `rant init` makes one")
+    Diag::plain("no workspace here, `rant init` makes one")
 }
 
 /// Finds the workspace enclosing start_dir (NULL = the current directory) and loads what

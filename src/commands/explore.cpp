@@ -47,7 +47,7 @@ static std::optional<fs::path> locate(const app::Context& ctx) {
 static void install(const app::Context& ctx, const net::Release& r) {
     std::string asset = "rant-explorer-" + r.version + "-" + net::platform();
     const net::Asset* a = r.asset(asset);
-    if (!a) throw app::Failure("the explorer " + r.version + " has no download for this platform, its release lacks " + asset);
+    if (!a) throw app::Failure("the explorer " + r.version + " release has no " + asset);
     ctx.out.note("downloading " + asset);
     net::download(a->url, installed(), true);
     std::ofstream(version_file()) << r.version << "\n";

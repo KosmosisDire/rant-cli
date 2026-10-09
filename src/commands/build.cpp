@@ -128,7 +128,7 @@ static int run(app::Context& ctx) {
         std::fflush(stdout);
         if (!s.configure.empty()) {
             if (!ui::confirm(s.package + " has no build directory yet. Configure it with `" + process::shown(s.configure) + "`?", ctx.yes))
-                throw app::Failure(s.package + " was not built, it must be configured first. Answer yes or pass -y");
+                throw app::Failure(s.package + " was not configured, so not built");
             run_command(s, s.configure);
         }
         for (auto& c : s.commands) run_command(s, c);

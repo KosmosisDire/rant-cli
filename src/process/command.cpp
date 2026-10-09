@@ -104,7 +104,7 @@ std::optional<fs::path> find_program(const std::string& program, const fs::path&
 }
 
 fs::path require_program(const Command& c) {
-    if (c.argv.empty() || c.argv[0].empty()) throw app::Failure("nothing to run, the command is empty");
+    if (c.argv.empty() || c.argv[0].empty()) throw app::Failure("the command is empty");
     if (auto p = find_program(c.argv[0], c.cwd)) return *p;
     const std::string& name = c.argv[0];
     if (!has_separator(name) && !fs::u8path(name).is_absolute()) throw app::Failure("`" + name + "` was not found on PATH");

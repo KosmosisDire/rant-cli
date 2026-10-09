@@ -75,7 +75,7 @@ pub fn edges(model: &Model) -> Result<Vec<Edge>, Diag> {
         if let Some(b) = &pkg.block {
             for d in &b.depend {
                 if model.package(d).is_none() {
-                    return Err(Diag::file(&b.file, format!("`depend` names `{d}`, which is not a package in this workspace, see `rant ls packages`")));
+                    return Err(Diag::file(&b.file, format!("`depend` names `{d}`, which is not a package here")));
                 }
                 add(&mut out, pkg, d, format!("depend in {}", shown(&b.file, root)));
             }

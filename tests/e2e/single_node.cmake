@@ -35,7 +35,7 @@ execute_process(COMMAND "${CMAKE_COMMAND}" -E sleep 3)
 rant(ls nodes)
 expect_no_match("${OUT}" "brief")
 rant(stop node brief FAILS)
-expect_match("${ERR}" "no node named `brief` is running")
+expect_match("${ERR}" "no node `brief` on domain")
 
 # Mistakes are named.
 rant(start node nope FAILS)

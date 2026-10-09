@@ -488,7 +488,7 @@ std::string add(Kind kind, const fs::path& file, const std::string& version) {
     std::string text = read_file(file), hint;
     if (kind == Kind::CMake) edit(file, cmake_add(text, version, &hint), text);
     else if (kind == Kind::CSharp) edit(file, csharp_add(text, version), text);
-    else throw app::Failure("a Python package gets Rant in its venv, its files are not edited");
+    else throw app::Failure("Python gets Rant in its venv, not its files");
     return hint;
 }
 

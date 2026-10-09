@@ -84,7 +84,7 @@ fn known(nodes: &[NodeType]) -> String {
 }
 
 fn in_package_dir(model: &Model, dir: &Path, name: &str, reference: &str) -> Result<NodeType, String> {
-    let p = model.package_at(dir).ok_or_else(|| format!("`{reference}` points at {}, which is not a package", paths::normalize(dir).display()))?;
+    let p = model.package_at(dir).ok_or_else(|| format!("`{reference}`: {} is not a package", paths::normalize(dir).display()))?;
     p.nodes
         .iter()
         .find(|n| n.name == name)
@@ -105,7 +105,7 @@ fn by_path(model: &Model, path: &Path, reference: &str) -> Result<NodeType, Stri
         }
     }
     if !path.is_file() {
-        return Err(format!("`{reference}` points at {}, which does not exist", path.display()));
+        return Err(format!("`{reference}`: {} does not exist", path.display()));
     }
     let owner = model.package_holding(&path);
     let python = path.extension().is_some_and(|e| e.eq_ignore_ascii_case("py"));

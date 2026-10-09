@@ -57,7 +57,7 @@ static void install_python(const app::Context& ctx, const Use& u, const net::Rel
     }
     std::vector<std::string> pip = { config::to_utf8(u.venv_python), "-m", "pip", "install", "--upgrade",
                                      "--disable-pip-version-check", "--quiet", w->url };
-    if (process::run({ pip, u.dir, {} }) != 0) throw app::Failure("pip could not install Rant " + r.version + ", see its output above");
+    if (process::run({ pip, u.dir, {} }) != 0) throw app::Failure("pip could not install Rant " + r.version);
 }
 
 /* The user's NuGet config, where dotnet keeps its package sources. */
@@ -74,7 +74,7 @@ static fs::path nuget_config() {
 static void install_nupkg(const app::Context& ctx, const net::Release& r) {
     std::string name = "Rant." + r.version + ".nupkg";
     const net::Asset* a = r.asset(name);
-    if (!a) throw app::Failure("the Rant " + r.version + " release has no " + name);
+    if (!a) throw app::Failure("Rant " + r.version + " has no " + name);
     fs::path feed = (util::rant_home() / "nuget").make_preferred();
     if (!fs::exists(feed / name)) net::download(a->url, feed / name);
 
@@ -84,7 +84,7 @@ static void install_nupkg(const app::Context& ctx, const net::Release& r) {
         text.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
     }
     if (text.find(feed.u8string()) != std::string::npos || text.find(config::to_utf8(feed)) != std::string::npos) return;
-    if (!process::find_program("dotnet", ctx.cwd())) throw app::Failure("C# packages need the .NET SDK, and dotnet is not on PATH");
+    if (!process::find_program("dotnet", ctx.cwd())) throw app::Failure("dotnet not found, install the .NET SDK");
     ctx.out.note("adding the NuGet feed " + config::to_utf8(feed));
     if (process::run({ { "dotnet", "nuget", "add", "source", feed.u8string(), "--name", "rant" }, ctx.cwd(), {} }) != 0)
         throw app::Failure("dotnet could not add the feed " + config::to_utf8(feed));

@@ -134,7 +134,7 @@ fn exposed_params_reach_the_included_group() {
 fn values_are_checked_before_anything_runs() {
     let t = workspace_with(&[]);
     let m = model(&t);
-    assert!(plan(&m, "drivers/cameras", &[]).unwrap_err().message.contains("param `side` has no default"));
+    assert!(plan(&m, "drivers/cameras", &[]).unwrap_err().message.contains("param `side` needs a value"));
     let groups = Groups::new(&m);
     let def = groups.load(groups.find("drivers/cameras", None).unwrap()).unwrap();
     let iface = groups.interface(&def).unwrap();
@@ -182,8 +182,8 @@ fn a_node_label_names_what_runs() {
 #[test]
 fn semantic_errors_point_at_their_place() {
     let cases: &[(&str, &str, &str, u32)] = &[
-        ("undeclared.group.hcl", "  node \"drivers/lidar\" {\n    args = [param.nope]\n  }\n", "no param `nope` is declared", 2),
-        ("unbound.group.hcl", "  include \"drivers/cameras\" {}\n", "param `side` has no default, so it must be given, bind it here or expose it", 1),
+        ("undeclared.group.hcl", "  node \"drivers/lidar\" {\n    args = [param.nope]\n  }\n", "param `nope` is not declared", 2),
+        ("unbound.group.hcl", "  include \"drivers/cameras\" {}\n", "param `side` needs a value, bind it here or expose it", 1),
         ("unknown.group.hcl", "  include \"base\" {\n    colour = \"red\"\n  }\n", "group `base` has no param `colour`", 2),
         ("missing.group.hcl", "  include \"nowhere\" {}\n", "no group named `nowhere`", 1),
         ("badtype.group.hcl", "  node \"drivers/nothing\" {}\n", "has no node `nothing`", 1),
@@ -235,7 +235,7 @@ fn placement_follows_workspace_package_groups_and_node() {
     assert_eq!(p.instances[0].env["RANT_DOMAIN"], "9", "the node is innermost");
     assert_eq!(p.instances[1].env["RANT_PREFIX"], "plant/left");
     assert_eq!(p.instances[1].env["RANT_DOMAIN"], "7", "the include is inside the workspace");
-    assert!(plan(&m, "bad", &[]).unwrap_err().message.contains("that name sets placement"));
+    assert!(plan(&m, "bad", &[]).unwrap_err().message.contains("a param cannot be named"));
     let err = plan(&m, "long", &[]).unwrap_err();
     assert!(err.message.contains("longer than Rant's 32 bytes"), "{err}");
     assert_eq!(err.line, 1);

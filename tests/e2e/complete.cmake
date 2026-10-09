@@ -99,7 +99,7 @@ expect_match("${ERR}" "unknown shell `tcsh`")
 # The skill goes where each agent found reads skills, and named shells leave it alone.
 set(ENV{XDG_CONFIG_HOME} "${SCRATCH}/home/.config")
 rant(setup skill FAILS)
-expect_match("${ERR}" "found no AI coding agent")
+expect_match("${ERR}" "no AI coding agent found")
 file(MAKE_DIRECTORY "${SCRATCH}/home/.claude" "${SCRATCH}/home/.cursor")
 rant(setup skill)
 expect_match("${OUT}" "Cursor: the rant skill in [^

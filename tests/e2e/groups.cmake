@@ -74,7 +74,7 @@ expect_match("${OUT}" "groups: nav, pick\nnodes:  lidar, odom, planner, arm\n")
 expect_match("${ERR}" "Stop all 4 nodes[?] [[]y/N[]] y")
 expect_match("${OUT}" "stopped arm\nstopped planner\nstopped odom\nstopped lidar\n")
 rant(stop)
-expect_match("${OUT}" "nothing rant started in this workspace is running")
+expect_match("${OUT}" "nothing started here is running")
 
 # Placement: prefixes join from the workspace in, and the node prefix is part of the name.
 file(WRITE "${SCRATCH}/rant.hcl" "workspace {\n  prefix = \"plant\"\n}\n")

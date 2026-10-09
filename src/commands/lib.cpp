@@ -14,7 +14,7 @@ using json = nlohmann::ordered_json;
 
 static fs::path folder(const app::Context& ctx, const std::string& word) {
     fs::path dir = ctx.cwd() / config::from_utf8(word);
-    if (!fs::is_directory(dir)) throw app::Failure("there is no folder `" + word + "`");
+    if (!fs::is_directory(dir)) throw app::Failure("no folder `" + word + "`");
     return fs::weakly_canonical(dir);
 }
 

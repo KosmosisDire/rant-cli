@@ -24,7 +24,7 @@ static void report(app::Context& ctx, const std::string& name, process::Stopped 
         ctx.out.line("stopped " + name + ", killed after " + std::to_string(run::grace.count()) + " s");
         break;
     case process::Stopped::KilledAtOnce:
-        ctx.out.line("killed " + name + ", Windows cannot ask a node rant did not start to stop");
+        ctx.out.line("killed " + name + " (Windows cannot ask it to stop)");
         break;
     case process::Stopped::AlreadyGone: ctx.out.line(name + " had already exited"); break;
     }
@@ -56,7 +56,7 @@ static int stop_workspace(app::Context& ctx, const config::Workspace& ws) {
     if (st.instances.empty()) {
         st.roots.clear();
         s.save();
-        ctx.out.line("nothing rant started in this workspace is running");
+        ctx.out.line("nothing started here is running");
         return 0;
     }
     std::vector<std::string> names, groups;
@@ -125,7 +125,7 @@ static std::vector<Loose> loose_here(app::Context& ctx, mesh::Client& mesh, std:
     for (auto& [id, name] : names) {
         auto it = pids.find(id);
         if (it == pids.end()) {
-            ctx.out.warn("`" + name + "` did not report its process id, so rant cannot stop it");
+            ctx.out.warn("`" + name + "` did not report its pid, cannot stop it");
             continue;
         }
         bool started = false;
@@ -214,8 +214,8 @@ static int stop_node(app::Context& ctx, const std::string& name) {
     if (!loose.empty()) return 0;
     for (auto& p : mesh.peers())
         if (p.name == name && !p.here)
-            throw app::Failure("`" + name + "` runs on another machine, " + p.host() + ", and rant stops only nodes on this one");
-    throw app::Failure("no node named `" + name + "` is running on domain " + std::to_string(ctx.domain()) + ", see `rant ls nodes`");
+            throw app::Failure("`" + name + "` runs on " + p.host() + ", rant only stops nodes on this machine");
+    throw app::Failure("no node `" + name + "` on domain " + std::to_string(ctx.domain()) + ", see `rant ls nodes`");
 }
 
 /* The group roots to stop: the one root params name, else every root of the group, which
@@ -270,7 +270,7 @@ static std::string guess(app::Context& ctx, const std::string& name) {
 static int run(app::Context& ctx) {
     auto& w = ctx.args.words;
     if (ctx.args.has("all")) {
-        if (!w.empty()) throw app::UsageError("--all stops every node, so it takes no node or group");
+        if (!w.empty()) throw app::UsageError("--all takes no node or group");
         return stop_everything(ctx);
     }
     if (w.empty()) {

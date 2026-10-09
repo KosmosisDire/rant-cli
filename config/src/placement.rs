@@ -51,7 +51,7 @@ impl Placement {
                 key @ ("prefix" | "node_prefix") => {
                     let p = eval::string(src, a, scope)?;
                     if p.is_empty() || p.contains('@') || p.starts_with('/') || p.ends_with('/') {
-                        return Err(src.diag_at(&a.value, format!("`{key}` must not be empty, contain @, or start or end with /")));
+                        return Err(src.diag_at(&a.value, format!("`{key}` cannot be empty, contain @, or start or end with /")));
                     }
                     if key == "prefix" {
                         out.prefix.push(p);
