@@ -233,6 +233,25 @@ Stopped stop(const Tracking& t, std::chrono::milliseconds grace) {
     return Stopped::Killed;
 }
 
+Stopped stop_pid(uint64_t pid, std::chrono::milliseconds grace) {
+    /* 0 and -1 would signal a whole group, and this process must not stop itself */
+    if (pid <= 1 || pid > (uint64_t)INT32_MAX || (pid_t)pid == getpid()) return Stopped::AlreadyGone;
+    pid_t p = (pid_t)pid;
+    if (kill(p, SIGTERM) != 0) {
+        if (errno == EPERM) throw app::Failure("process " + std::to_string(pid) + " belongs to another user, so rant may not stop it");
+        return Stopped::AlreadyGone;
+    }
+    auto deadline = std::chrono::steady_clock::now() + grace;
+    while (kill(p, 0) == 0) {
+        if (std::chrono::steady_clock::now() >= deadline) {
+            kill(p, SIGKILL);
+            return Stopped::Killed;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+    return Stopped::Gracefully;
+}
+
 std::optional<int> helper_main(int, char**) { return std::nullopt; }
 
 }

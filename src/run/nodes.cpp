@@ -1,8 +1,8 @@
 #include "run/nodes.hpp"
 
 #include <algorithm>
-#include <cctype>
-#include <cstdio>
+
+#include "util/home.hpp"
 
 namespace run {
 
@@ -19,20 +19,12 @@ state::State snapshot(app::Context& ctx) {
 }
 
 /* A job name unique per workspace and node: the same name in another workspace is another
- * job. FNV-1a of the root path, which never changes for a workspace. */
+ * job. The root path never changes for a workspace. */
 static std::string job_name(const config::fs::path& root, const std::string& name) {
-    std::string key = config::to_utf8(root);
-#ifdef _WIN32
-    for (auto& c : key) c = (char)std::tolower((unsigned char)c);
-#endif
-    uint64_t h = 1469598103934665603ull;
-    for (unsigned char c : key) h = (h ^ c) * 1099511628211ull;
-    char hex[17];
-    std::snprintf(hex, sizeof hex, "%016llx", (unsigned long long)h);
     std::string safe = name;
     for (auto& c : safe)
         if (c == '\\') c = '_';
-    return std::string("Local\\rant-") + std::string(hex, 12) + "-" + safe;
+    return "Local\\rant-" + util::path_key(root).substr(0, 12) + "-" + safe;
 }
 
 state::Instance spawn(const config::Workspace& ws, const config::Instance& inst, const std::string& name) {
@@ -61,6 +53,7 @@ state::Instance spawn(const config::Workspace& ws, const config::Instance& inst,
     rec.cwd = config::to_utf8(inst.cwd);
     rec.log = config::to_utf8(log);
     rec.tracking = process::start_detached(c, log, job_name(ws.root, name));
+    state::remember(ws.data);
     return rec;
 }
 

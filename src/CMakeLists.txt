@@ -43,6 +43,7 @@ add_library(rant_cli_core STATIC
   mesh/text.cpp
   mesh/values.cpp
   net/github.cpp
+  net/interfaces.cpp
   process/command.cpp
   process/quote.cpp
   run/nodes.cpp
@@ -62,6 +63,7 @@ add_library(rant_cli_core STATIC
 # One process backend per OS behind process/supervisor.hpp.
 if(WIN32)
   target_sources(rant_cli_core PRIVATE process/windows.cpp)
+  target_link_libraries(rant_cli_core PUBLIC iphlpapi ws2_32)
 else()
   target_sources(rant_cli_core PRIVATE process/posix.cpp)
 endif()

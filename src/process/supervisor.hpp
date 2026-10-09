@@ -34,11 +34,15 @@ bool alive(const Tracking& t);
 /* pid belongs to the tracked group or job, such as a node a wrapper started. */
 bool owns(const Tracking& t, uint64_t pid);
 
-enum class Stopped { Gracefully, Killed, AlreadyGone };
+enum class Stopped { Gracefully, Killed, KilledAtOnce, AlreadyGone };
 
 /* Asks the whole group or job to stop (SIGTERM, or Ctrl-Break on Windows), waits up to
  * grace, then kills what is left. */
 Stopped stop(const Tracking& t, std::chrono::milliseconds grace);
+
+/* Stops a process rant did not start, by its id alone: SIGTERM, then SIGKILL after grace.
+ * Windows offers no way to ask such a process, so there it is killed at once. */
+Stopped stop_pid(uint64_t pid, std::chrono::milliseconds grace);
 
 /* Every main() that stops processes calls this first. On Windows, stop() runs this same
  * executable as a helper that joins the node's console to send Ctrl-Break, so the caller

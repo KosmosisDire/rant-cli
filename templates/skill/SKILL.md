@@ -42,7 +42,7 @@ only to override something. A CMake folder inside a CMake package belongs to it.
 | new package or node | `rant new package [folder] --lang L`, `rant new node [name]`, `rant new group [name]` |
 | build | `rant build [package...]`, `--dry-run` shows order and commands |
 | run | `rant start node <node>`, `rant start group <group> key=value...`, `--dry-run` first |
-| stop, restart | `rant stop [node X \| group X]`, `rant restart ...` (nothing named means all) |
+| stop, restart | `rant stop [node X \| group X]` (nothing named: all this workspace started), `rant stop --all` (every node on this machine), `rant restart ...` |
 | see the mesh | `rant ls [nodes\|entities\|topics\|variables\|functions\|tasks\|packages\|groups]`, `rant ls nodes -a` |
 | explain one thing | `rant info [kind] <name>` |
 | read and write | `rant sub <topic> -n 1`, `rant pub <topic> <value>`, `rant get <var>`, `rant set <var> <value>`, `rant call <fn> [value]` |

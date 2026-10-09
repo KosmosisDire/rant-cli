@@ -45,3 +45,33 @@ expect_match("${ERR}" "rant start node")
 
 file(READ "${SCRATCH}/.rant/state" st)
 expect_match("${st}" "\"instances\": \\[\\]")
+
+# A node another workspace started stops from here too.
+file(MAKE_DIRECTORY "${OTHER}")
+file(COPY "${SCRATCH}/demo" DESTINATION "${OTHER}")
+file(WRITE "${OTHER}/rant.hcl" "workspace {}\n")
+rant(start node chatty IN "${OTHER}")
+rant(stop node chatty)
+expect_match("${OUT}" "^stopped chatty\n")
+rant(ls nodes IN "${OTHER}")
+expect_no_match("${OUT}" "chatty")
+
+# So does a node rant did not start, found on the mesh. Windows can only kill it.
+rant_beside_node("--name;handmade" stop node handmade)
+expect_match("${OUT}" "(stopped|killed) handmade")
+
+# --all stops every node on the machine, whichever workspace started it, and so does a
+# bare stop outside any workspace.
+rant(start node chatty IN "${OTHER}")
+rant(start node chatty)
+rant(stop --all)
+expect_match("${OUT}" "-other: +chatty\n")
+expect_match("${ERR}" "Stop all 2 nodes")
+rant(start node chatty IN "${OTHER}")
+set(outside "${SCRATCH}-outside")
+file(MAKE_DIRECTORY "${outside}")
+rant(stop IN "${outside}")
+expect_match("${ERR}" "Stop all 1 node[?]")
+file(REMOVE_RECURSE "${outside}")
+rant(stop --all)
+expect_match("${OUT}" "no node is running on this machine")

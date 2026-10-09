@@ -2,10 +2,12 @@
 
 #include <algorithm>
 #include <fstream>
+#include <iterator>
 
 #include <nlohmann/json.hpp>
 
 #include "app/failure.hpp"
+#include "util/home.hpp"
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -157,6 +159,32 @@ std::vector<std::string> prune(State& s) {
                                  [&](const Root& r) { return r.kind == "node" && !s.instance(r.name); }),
                   s.roots.end());
     return dropped;
+}
+
+static fs::path registry() { return util::rant_home() / "workspaces"; }
+
+void remember(const fs::path& data_dir) {
+    fs::path entry = registry() / util::path_key(data_dir);
+    std::error_code ec;
+    if (fs::exists(entry, ec)) return;
+    fs::create_directories(entry.parent_path(), ec);
+    std::ofstream(entry, std::ios::binary) << data_dir.u8string();
+}
+
+std::vector<fs::path> remembered() {
+    std::vector<fs::path> out;
+    std::error_code ec;
+    for (auto& e : fs::directory_iterator(registry(), ec)) {
+        std::string text;
+        {
+            std::ifstream f(e.path(), std::ios::binary);
+            text.assign(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
+        }
+        fs::path dir = fs::u8path(text);
+        if (text.empty() || !fs::exists(dir / "state", ec)) fs::remove(e.path(), ec);
+        else out.push_back(dir);
+    }
+    return out;
 }
 
 }

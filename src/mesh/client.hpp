@@ -16,6 +16,9 @@ struct Peer {
     uint32_t    id = 0;
     std::string name;
     std::string address;    /* "ip:port" */
+    bool        here = false;    /* on this machine: its ip is one of ours */
+
+    std::string host() const;    /* the ip alone */
 };
 
 /* Names under @rant/ are Rant's own: the builtin entities and the CLI's nodes. */

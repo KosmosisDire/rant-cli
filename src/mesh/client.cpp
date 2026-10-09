@@ -6,8 +6,14 @@
 #include <thread>
 
 #include "mesh/snapshot.hpp"
+#include "net/interfaces.hpp"
 
 namespace mesh {
+
+std::string Peer::host() const {
+    if (!address.empty() && address[0] == '[') return address.substr(1, address.find(']') - 1);
+    return address.substr(0, address.rfind(':'));
+}
 
 bool is_internal(std::string_view name) { return name.rfind("@rant/", 0) == 0; }
 
@@ -58,8 +64,13 @@ void Client::settle(std::chrono::milliseconds limit) {
 
 std::vector<Peer> Client::peers() const {
     std::vector<Peer> out;
-    for (auto& p : node_.reflection().peers())
-        if (p.active && !is_internal(p.name)) out.push_back({ p.id, p.name, p.address });
+    auto ours = net::local_addresses();
+    for (auto& p : node_.reflection().peers()) {
+        if (!p.active || is_internal(p.name)) continue;
+        Peer peer{ p.id, p.name, p.address };
+        peer.here = std::find(ours.begin(), ours.end(), peer.host()) != ours.end();
+        out.push_back(peer);
+    }
     std::sort(out.begin(), out.end(), [](const Peer& a, const Peer& b) { return a.name < b.name; });
     return out;
 }

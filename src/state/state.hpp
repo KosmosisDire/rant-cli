@@ -76,4 +76,9 @@ private:
  * brings back what crashed. Returns the names dropped. */
 std::vector<std::string> prune(State& s);
 
+/* Every workspace's data folder rant started a node from, kept in ~/.rant/workspaces so a
+ * stop anywhere on the machine finds them. A folder with no state left drops out. */
+void remember(const fs::path& data_dir);
+std::vector<fs::path> remembered();
+
 }
