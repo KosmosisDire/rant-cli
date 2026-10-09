@@ -50,13 +50,6 @@ command -v zsh > /dev/null 2>&1 && rcs="$rcs ${ZDOTDIR:-$HOME}/.zshrc"
 [ -z "$rcs" ] && rcs="$HOME/.profile"
 fish_conf=""
 command -v fish > /dev/null 2>&1 && fish_conf="${XDG_CONFIG_HOME:-$HOME/.config}/fish/conf.d/rant.fish"
-Claude Code|$HOME/.claude
-Codex|$HOME/.codex
-Cursor|$HOME/.cursor
-Gemini CLI|$HOME/.gemini
-GitHub Copilot|$HOME/.copilot
-OpenCode|${XDG_CONFIG_HOME:-$HOME/.config}/opencode
-EOF
 
 echo "This installs rant-cli $version for $platform:"
 echo "  download $url"
