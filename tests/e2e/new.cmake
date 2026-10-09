@@ -46,9 +46,9 @@ expect_match("${ERR}" "target `arm` already, nothing was written")
 # nodes once built.
 rant(new workspace demo --lang cpp MAY_FAIL)
 expect_match("${OUT}" "created demo/CMakeLists[.]txt
-created demo/listener[.]cpp
 created demo/rant[.]hcl
-created demo/talker[.]cpp
+created demo/src/listener[.]cpp
+created demo/src/talker[.]cpp
 created demo/demo[.]group[.]hcl
 ")
 rant(start group demo --dry-run IN "${SCRATCH}/demo" FAILS)
