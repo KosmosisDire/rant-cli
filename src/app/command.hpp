@@ -27,6 +27,7 @@ struct Command {
     int                   (*run)(Context&);
     bool                    own_help = false;
     complete::Candidates  (*complete)(complete::Request&) = nullptr;
+    std::vector<std::string_view> aliases;    /* other names that run it, left out of help */
 };
 
 const std::vector<OptionSpec>& global_options();

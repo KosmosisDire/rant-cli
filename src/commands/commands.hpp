@@ -9,6 +9,9 @@ namespace commands {
 
 const std::vector<app::Command>& all();
 
+/* The command a word names, by its name or an alias. nullptr when none. */
+const app::Command* find(std::string_view word);
+
 app::Command init();
 app::Command new_();
 app::Command build();

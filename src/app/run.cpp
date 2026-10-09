@@ -61,12 +61,6 @@ static std::string main_help() {
     return s;
 }
 
-static const Command* find(std::string_view name) {
-    for (auto& c : commands::all())
-        if (c.name == name) return &c;
-    return nullptr;
-}
-
 static uint16_t parse_domain(const std::string& s) {
     char* end = nullptr;
     unsigned long v = std::strtoul(s.c_str(), &end, 10);
@@ -91,7 +85,7 @@ int run(Context& ctx, const std::vector<std::string>& tokens) {
         return 0;
     }
     const std::string& name = tokens[consumed];
-    const Command* cmd = find(name);
+    const Command* cmd = commands::find(name);
     if (!cmd) throw UsageError("unknown command `" + name + "`, run `rant --help` for the list");
 
     /* a command's own option wins over a global one of the same name, as lib install --version */

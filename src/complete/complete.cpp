@@ -132,12 +132,6 @@ std::vector<std::string> narrow(const Candidates& c, const std::string& partial)
     return { out.begin(), out.end() };
 }
 
-static const app::Command* find_command(const std::string& name) {
-    for (auto& c : commands::all())
-        if (c.name == name) return &c;
-    return nullptr;
-}
-
 static const app::OptionSpec* find_option(const std::vector<app::OptionSpec>& specs, const std::string& t) {
     if (t.rfind("--", 0) == 0) {
         std::string name = t.substr(2, t.find('=') == std::string::npos ? std::string::npos : t.find('=') - 2);
@@ -175,7 +169,7 @@ static Line read_line(app::Context& ctx, const std::vector<std::string>& before)
         if (!option) {
             if (l.command || l.unknown) {
                 l.words.push_back(t);
-            } else if ((l.command = find_command(t))) {
+            } else if ((l.command = commands::find(t))) {
                 l.specs.insert(l.specs.begin(), l.command->options.begin(), l.command->options.end());
             } else {
                 l.unknown = true;

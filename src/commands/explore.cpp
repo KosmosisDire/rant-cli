@@ -84,8 +84,10 @@ static int run(app::Context& ctx) {
 }
 
 app::Command explore() {
-    return { "explore", "", "open the explorer, installing it first when it is missing", app::Section::Setup,
-             { { "update", 0, "", "download the newest explorer before opening it" } }, run };
+    app::Command c{ "explore", "", "open the explorer, installing it first when it is missing", app::Section::Setup,
+                    { { "update", 0, "", "download the newest explorer before opening it" } }, run };
+    c.aliases = { "explorer" };
+    return c;
 }
 
 }
