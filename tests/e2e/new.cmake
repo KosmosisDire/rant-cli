@@ -27,6 +27,8 @@ rant(new node arm --lang rust FAILS)
 expect_match("${ERR}" "unknown language `rust`")
 rant(new thing x FAILS)
 expect_match("${ERR}" "say what to make")
+rant(new workspace demo FAILS)
+expect_match("${ERR}" "say which language with --lang")
 
 # A C++ node joins the CMake project around it, and needs one.
 rant(new node arm --lang cpp FAILS)
@@ -39,6 +41,18 @@ file(READ "${SCRATCH}/robot/CMakeLists.txt" robot)
 expect_match("${robot}" "add_executable[(]base base[.]cpp[)]\nadd_executable[(]arm nodes/arm[.]cpp[)]\ntarget_link_libraries[(]arm PRIVATE rant::rant_host[)]\n")
 rant(new node arm --lang cpp IN "${SCRATCH}/robot" FAILS)
 expect_match("${ERR}" "target `arm` already, nothing was written")
+
+# A workspace holds a talker, a listener and a group of both. Its CMake package knows its
+# nodes once built.
+rant(new workspace demo --lang cpp MAY_FAIL)
+expect_match("${OUT}" "created demo/CMakeLists[.]txt
+created demo/listener[.]cpp
+created demo/rant[.]hcl
+created demo/talker[.]cpp
+created demo/demo[.]group[.]hcl
+")
+rant(start group demo --dry-run IN "${SCRATCH}/demo" FAILS)
+expect_match("${ERR}" "no node named `talker`, `demo` is not built yet, run `rant build` first")
 
 # A package gets Rant through the same routine as rant lib install, which asks GitHub.
 rant(new package cam --lang cpp MAY_FAIL)

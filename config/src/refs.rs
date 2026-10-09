@@ -9,6 +9,7 @@
 use std::path::Path;
 
 use crate::model::{Model, NodeType};
+use crate::manifest::ManifestKind;
 use crate::paths;
 use crate::scan::NodeKind;
 
@@ -48,11 +49,21 @@ pub fn resolve(model: &Model, reference: &str, from_dir: &Path) -> Result<NodeTy
     let matches: Vec<&NodeType> = model.node_types().filter(|n| n.name == reference).collect();
     match matches.as_slice() {
         [one] => Ok((*one).clone()),
-        [] => Err(format!("no node named `{reference}`, see `rant ls nodes --all`")),
+        [] => Err(format!("no node named `{reference}`, {}", unbuilt(model))),
         many => Err(format!(
             "`{reference}` is a node in several packages, name one: {}",
             many.iter().map(|n| shown(n)).collect::<Vec<_>>().join(", ")
         )),
+    }
+}
+
+/// Where to look for a node that is missing: a CMake package with no nodes yet only knows
+/// them once built.
+fn unbuilt(model: &Model) -> String {
+    let cmake = |p: &&crate::model::Package| p.nodes.is_empty() && p.manifests.iter().any(|m| m.kind == ManifestKind::CMake);
+    match model.packages.iter().find(cmake) {
+        Some(p) => format!("`{}` is not built yet, run `rant build` first", p.name),
+        None => "see `rant ls nodes --all`".into(),
     }
 }
 

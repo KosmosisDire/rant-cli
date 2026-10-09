@@ -21,6 +21,9 @@ static const std::vector<Preset> presets = {
     { "package-python", { "package-python", "node-python" } },
     { "package-csharp", { "package-csharp" } },
     { "group", { "group" } },
+    { "workspace-cpp", { "workspace-cpp" } },
+    { "workspace-python", { "workspace-python" } },
+    { "workspace-csharp", { "workspace-csharp" } },
 };
 
 static std::string with_name(std::string text, const std::string& name) {

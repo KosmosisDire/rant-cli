@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <optional>
+#include <set>
 
 #include "app/failure.hpp"
 #include "commands/commands.hpp"
@@ -13,6 +14,7 @@ namespace commands {
 namespace fs = std::filesystem;
 
 static const std::vector<std::string> languages = { "cpp", "python", "csharp" };
+static const std::vector<std::string> kinds = { "workspace", "package", "node", "group" };
 
 /* The language of the package around the working directory, from its build files. */
 static std::string language_here(app::Context& ctx) {
@@ -41,30 +43,32 @@ static fs::path cmake_project(app::Context& ctx, const std::string& name) {
 }
 
 /* The preset a command line asks for. A C# node is a project of its own, so it is the
- * package preset. */
+ * package preset. A workspace holds a talker, a listener and a group that runs both. */
 static std::string chosen(app::Context& ctx, const std::string& kind) {
     if (kind == "group") return "group";
     std::string lang = ctx.args.get("lang").value_or(kind == "node" ? language_here(ctx) : "");
     if (lang.empty()) throw app::UsageError("say which language with --lang cpp, python or csharp");
     if (std::find(languages.begin(), languages.end(), lang) == languages.end())
         throw app::UsageError("unknown language `" + lang + "`, use cpp, python or csharp");
+    if (kind == "workspace") return "workspace-" + lang;
     return (kind == "node" && lang != "csharp" ? "node-" : "package-") + lang;
 }
 
-/* Like dotnet new: a package goes in the folder named, here by default, and takes that
- * folder's name. A node or a group is a file here, named as asked or after this folder. */
+/* Like dotnet new: a workspace or a package goes in the folder named, here by default, and
+ * takes that folder's name. A node or a group is a file here, named as asked or after this
+ * folder. */
 static int run(app::Context& ctx) {
     auto& w = ctx.args.words;
-    if (w.empty() || (w[0] != "package" && w[0] != "node" && w[0] != "group"))
-        throw app::UsageError("say what to make: `rant new package`, `rant new node` or `rant new group`");
+    if (w.empty() || std::find(kinds.begin(), kinds.end(), w[0]) == kinds.end())
+        throw app::UsageError("say what to make: `rant new workspace`, `rant new package`, `rant new node` or `rant new group`");
     const std::string& kind = w[0];
     if (w.size() > 2) throw app::UsageError("new " + kind + " takes one folder or name");
     std::string preset = chosen(ctx, kind);
-    bool package = kind == "package" || preset == "package-csharp";
+    bool folder = kind == "workspace" || kind == "package" || preset == "package-csharp";
     fs::path dest = ctx.cwd;
-    if (package && w.size() == 2) dest = (ctx.cwd / config::from_utf8(w[1])).lexically_normal();
+    if (folder && w.size() == 2) dest = (ctx.cwd / config::from_utf8(w[1])).lexically_normal();
     if (!dest.has_filename()) dest = dest.parent_path();
-    std::string name = !package && w.size() == 2 ? w[1] : config::to_utf8(dest.filename());
+    std::string name = !folder && w.size() == 2 ? w[1] : config::to_utf8(dest.filename());
     scaffold::Files files = scaffold::plan(preset, dest, name);
 
     /* a C++ node joins the CMake project around it, which refuses a second target of its name */
@@ -78,29 +82,38 @@ static int run(app::Context& ctx) {
     for (auto& [f, _] : files) ctx.out.line("created " + ctx.shown(f));
     if (project) ctx.out.line("added " + name + " to " + ctx.shown(*project));
 
-    /* a new package, or a CMake project that lacks it, takes the newest Rant the same way
-     * `rant lib install` adds it, since the presets name no version */
-    if (!package && !project) return 0;
-    fs::path needs = project ? project->parent_path() : dest;
-    auto uses = library::in_folder(needs);
-    auto cmake = [](const library::Use& u) { return u.kind == library::Kind::CMake; };
-    if (project && std::any_of(uses.begin(), uses.end(), cmake)) return 0;
+    /* every folder given a build file, or a CMake project that lacks it, takes the newest
+     * Rant the same way `rant lib install` adds it, since the presets name no version */
+    std::set<fs::path> needs;
+    for (auto& [f, _] : files)
+        if (f.filename() == "CMakeLists.txt" || f.filename() == "pyproject.toml" || f.extension() == ".csproj")
+            needs.insert(f.parent_path());
+    if (project) {
+        auto uses = library::in_folder(project->parent_path());
+        auto cmake = [](const library::Use& u) { return u.kind == library::Kind::CMake; };
+        if (!std::any_of(uses.begin(), uses.end(), cmake)) needs.insert(project->parent_path());
+    }
+    if (needs.empty()) return 0;
+    bool ok = true;
     try {
-        return library::install(ctx, needs, false, library::release("")) ? 0 : 1;
+        net::Release r = library::release("");
+        for (auto& dir : needs) ok &= library::install(ctx, dir, false, r);
     } catch (const app::Failure& e) {
         ctx.out.warn(std::string("Rant was not added: ") + e.what());
-        ctx.out.note("add it later with `rant lib install " + ctx.shown(needs) + "`");
-        return 1;
+        ok = false;
     }
+    if (!ok) ctx.out.note("add it later with `rant lib install " + ctx.shown(dest) + "`");
+    return ok ? 0 : 1;
 }
 
 static complete::Candidates complete_words(complete::Request& r) {
-    if (r.words.empty()) return { { "package", "node", "group" } };
+    if (r.words.empty()) return { kinds };
     return {};
 }
 
 app::Command new_() {
-    app::Command c{ "new", "package [folder] | node|group [name]", "make a package here or in a folder, or a node or group here",
+    app::Command c{ "new", "workspace|package [folder] | node|group [name]",
+                    "make a workspace or package here or in a folder, or a node or group here",
                     app::Section::Workspace,
                     { { "lang", 0, "L", "cpp, python or csharp, for a node the package's own by default" } },
                     run };

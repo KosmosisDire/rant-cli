@@ -18,7 +18,8 @@ newest release.
 ## Use
 
 ```
-rant init                      # make this folder a workspace
+rant new workspace demo --lang python  # a workspace with a talker, a listener and a group of both
+rant init                      # or make this folder an empty workspace
 rant new package cam --lang cpp  # a package with one node, Rant added (or python, csharp)
 rant build                     # build every package, dependencies first
 rant start group nav speed=2   # start a group of nodes, rant start group nav --help lists its params
