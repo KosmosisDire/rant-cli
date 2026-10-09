@@ -110,7 +110,7 @@ static int call_task(app::Context& ctx, mesh::Client& mesh, const std::string& n
 
 static int run(app::Context& ctx) {
     auto& w = ctx.args.words;
-    if (w.empty()) throw app::UsageError("call takes a function or task and its arguments");
+    if (w.empty()) throw app::UsageError("say which function or task to call, such as `rant call reset`");
     const std::string& name = w[0];
     mesh::Assignments values;
     if (w.size() > 1) values = mesh::parse_words({ w.begin() + 1, w.end() });

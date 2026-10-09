@@ -13,6 +13,8 @@
 extern char** environ;
 #endif
 
+#include "app/failure.hpp"
+
 namespace process {
 
 static bool has_separator(const std::string& s) {
@@ -99,6 +101,14 @@ std::optional<fs::path> find_program(const std::string& program, const fs::path&
     }
 #endif
     return std::nullopt;
+}
+
+fs::path require_program(const Command& c) {
+    if (c.argv.empty() || c.argv[0].empty()) throw app::Failure("nothing to run, the command is empty");
+    if (auto p = find_program(c.argv[0], c.cwd)) return *p;
+    const std::string& name = c.argv[0];
+    if (!has_separator(name) && !fs::u8path(name).is_absolute()) throw app::Failure("`" + name + "` was not found on PATH");
+    throw app::Failure("`" + name + "` was not found" + (fs::u8path(name).is_relative() ? " in " + c.cwd.u8string() : std::string()));
 }
 
 static std::string env_key(const std::string& name) {

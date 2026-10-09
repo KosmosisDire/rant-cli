@@ -136,7 +136,7 @@ impl RefCheck<'_> {
             ("param", None) | ("path", None) => self.fail(span, format!("`{root}` needs a name, such as `{root}.x`")),
             ("param", Some(name)) => match self.scope.params {
                 None => self.fail(span, "`param` exists only in group files".to_string()),
-                Some(p) if !p.contains_key(name) => self.fail(span, format!("undeclared param `{name}`")),
+                Some(p) if !p.contains_key(name) => self.fail(span, format!("no param `{name}` is declared in this group")),
                 Some(_) => {}
             },
             ("path", Some(name)) => {
@@ -203,7 +203,7 @@ mod tests {
         let p = BTreeMap::new();
         let err = eval_attr("b {\n  v = [\"--x\", param.nope]\n}\n", Some(&p), None).err().unwrap();
         assert_eq!((err.line, err.column), (2, 15));
-        assert!(err.message.contains("undeclared param `nope`"));
+        assert!(err.message.contains("no param `nope` is declared"));
     }
 
     #[test]

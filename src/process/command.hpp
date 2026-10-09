@@ -23,6 +23,9 @@ struct Command {
  * for a bare name. nullopt when nothing is found. */
 std::optional<fs::path> find_program(const std::string& program, const fs::path& cwd);
 
+/* find_program for a command's argv[0], or a failure saying where it was looked for. */
+fs::path require_program(const Command& c);
+
 /* Runs a command to its end with this process's stdin, stdout and stderr, stdout to the
  * file out when given, and returns its exit code. Throws app::Failure when it cannot start. */
 int run(const Command& c, const fs::path& out = {});

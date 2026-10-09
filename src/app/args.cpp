@@ -67,11 +67,11 @@ Args parse_args(const std::vector<std::string>& tokens, const std::vector<Option
                 body = body.substr(0, eq);
             }
             spec = find_long(specs, body);
-            if (!spec) throw UsageError("unknown option --" + std::string(body));
+            if (!spec) throw UsageError("unknown option `--" + std::string(body) + "`");
         } else {
-            if (t.size() != 2) throw UsageError("unknown option " + t);
+            if (t.size() != 2) throw UsageError("unknown option `" + t + "`");
             spec = find_short(specs, t[1]);
-            if (!spec) throw UsageError("unknown option " + t);
+            if (!spec) throw UsageError("unknown option `" + t + "`");
         }
 
         if (spec->value_name.empty()) {

@@ -6,4 +6,4 @@ file(READ "${SCRATCH}/rant.hcl" text)
 expect_match("${text}" "workspace {")
 
 rant(init FAILS)
-expect_match("${ERR}" "already exists")
+expect_match("${ERR}" "exists already")

@@ -55,24 +55,22 @@ struct Launch {
 };
 
 static Launch launch_for(const Command& c) {
-    if (c.argv.empty()) throw app::Failure("empty command");
-    auto program = find_program(c.argv[0], c.cwd);
-    if (!program) throw app::Failure("`" + c.argv[0] + "` was not found on PATH");
-    std::string ext = program->extension().u8string();
+    fs::path program = require_program(c);
+    std::string ext = program.extension().u8string();
     std::transform(ext.begin(), ext.end(), ext.begin(), [](char ch) { return (char)tolower((unsigned char)ch); });
     std::vector<std::string> args(c.argv.begin() + 1, c.argv.end());
     if (ext == ".bat" || ext == ".cmd") {
         wchar_t sys[MAX_PATH];
         UINT n = GetSystemDirectoryW(sys, MAX_PATH);
         try {
-            return { std::wstring(sys, n) + L"\\cmd.exe", wide(batch_command_line(program->u8string(), args)) };
+            return { std::wstring(sys, n) + L"\\cmd.exe", wide(batch_command_line(program.u8string(), args)) };
         } catch (const std::invalid_argument& e) {
-            throw app::Failure(std::string("cannot run ") + program->u8string() + ": " + e.what());
+            throw app::Failure(std::string("cannot run ") + program.u8string() + ": " + e.what());
         }
     }
     std::vector<std::string> argv = c.argv;
-    argv[0] = program->u8string();
-    return { program->wstring(), wide(windows_command_line(argv)) };
+    argv[0] = program.u8string();
+    return { program.wstring(), wide(windows_command_line(argv)) };
 }
 
 /* A double NUL terminated UTF-16 block, sorted as CreateProcess expects. */

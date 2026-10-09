@@ -79,7 +79,7 @@ static std::vector<uint8_t> map_body(const json& obj) {
             return buf;
         }
     }
-    throw app::Failure("the map value is too big");
+    throw app::Failure("the value is too big to send");
 }
 
 /* Builds one message field by field, through the paths the schema resolves. */

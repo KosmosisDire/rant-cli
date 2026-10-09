@@ -67,7 +67,7 @@ fn top_blocks<'a>(src: &Source, body: &'a Body) -> Result<Vec<&'a Block>, Diag> 
         match s {
             Structure::Block(b) => blocks.push(b),
             Structure::Attribute(a) => {
-                return Err(src.diag_at(a, format!("unexpected attribute `{}` at the top level", a.key.as_str())))
+                return Err(src.diag_at(a, format!("`{}` must go inside a workspace or package block", a.key.as_str())))
             }
         }
     }

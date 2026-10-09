@@ -75,7 +75,7 @@ pub fn edges(model: &Model) -> Result<Vec<Edge>, Diag> {
         if let Some(b) = &pkg.block {
             for d in &b.depend {
                 if model.package(d).is_none() {
-                    return Err(Diag::file(&b.file, format!("`depend` names `{d}`, which is no package in this workspace")));
+                    return Err(Diag::file(&b.file, format!("`depend` names `{d}`, which is not a package in this workspace, see `rant ls packages`")));
                 }
                 add(&mut out, pkg, d, format!("depend in {}", shown(&b.file, root)));
             }
@@ -109,7 +109,7 @@ pub fn plan(model: &Model, wanted: &[String]) -> Result<BuildPlan, Diag> {
     let edges = edges(model)?;
     for w in wanted {
         if model.package(w).is_none() {
-            return Err(Diag::plain(format!("no package named `{w}`, see `rant build --dry-run`")));
+            return Err(Diag::plain(format!("no package named `{w}`, see `rant ls packages`")));
         }
     }
 

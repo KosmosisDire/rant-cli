@@ -53,7 +53,7 @@ static int run(app::Context& ctx) {
         if (name != "skill") chosen.push_back(&named(name));
     if (w.empty()) chosen = complete::detected();
     std::vector<agents::Agent> found = agents::detected();
-    if (skill && found.empty()) throw app::Failure("found no AI coding agent to give the rant skill");
+    if (skill && found.empty()) throw app::Failure("found no AI coding agent on this machine to give the skill to");
     if (!skill && chosen.empty()) throw app::Failure("found no shell to set up, name one of " + shell_names());
 
     bool failed = false;

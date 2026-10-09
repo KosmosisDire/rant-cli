@@ -47,7 +47,7 @@ static std::optional<fs::path> locate(const app::Context& ctx) {
 static void install(const app::Context& ctx, const net::Release& r) {
     std::string asset = "rant-explorer-" + r.version + "-" + net::platform();
     const net::Asset* a = r.asset(asset);
-    if (!a) throw app::Failure("the explorer " + r.version + " has no build for this platform, there is no " + asset);
+    if (!a) throw app::Failure("the explorer " + r.version + " has no download for this platform, its release lacks " + asset);
     ctx.out.note("downloading " + asset);
     net::download(a->url, installed(), true);
     std::ofstream(version_file()) << r.version << "\n";
@@ -57,7 +57,7 @@ static void install(const app::Context& ctx, const net::Release& r) {
 static net::Release latest() { return net::release(explorer_repo); }
 
 static int run(app::Context& ctx) {
-    if (!ctx.args.words.empty()) throw app::UsageError("explore takes no words");
+    if (!ctx.args.words.empty()) throw app::UsageError("explore takes no arguments");
     std::optional<fs::path> exe = locate(ctx);
     if (!exe) {
         net::Release r = latest();

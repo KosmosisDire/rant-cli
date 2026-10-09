@@ -82,7 +82,7 @@ std::string platform() {
 
 Release parse_release(const std::string& body) {
     json j = json::parse(body, nullptr, false);
-    if (!j.is_object() || !j.value("tag_name", json()).is_string()) throw app::Failure("GitHub answered a release that cannot be read");
+    if (!j.is_object() || !j.value("tag_name", json()).is_string()) throw app::Failure("could not read the release GitHub sent");
     Release r;
     r.tag = j["tag_name"].get<std::string>();
     r.version = r.tag.rfind('v', 0) == 0 ? r.tag.substr(1) : r.tag;

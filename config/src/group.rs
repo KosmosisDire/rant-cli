@@ -105,7 +105,7 @@ fn parse(file: GroupFile, root: &Path) -> Result<GroupDef, Diag> {
 
     let params = param::parse_all(&src, &fields, &scope)?;
     if let Some(p) = params.iter().find(|p| placement::KEYS.contains(&p.name.as_str())) {
-        return Err(p.at.diag(format!("`{}` places what an include runs, a param cannot take it", p.name)));
+        return Err(p.at.diag(format!("a param cannot be named `{}`, that name sets placement", p.name)));
     }
 
     let mut items = Vec::new();
@@ -227,7 +227,7 @@ impl<'m> Groups<'m> {
                     for n in names {
                         match unbound.iter().find(|p| p.name == *n) {
                             Some(p) => v.push(*p),
-                            None => return Err(inc.at.diag(format!("`{}` exposes `{n}`, which is not an unbound param of it", inc.group))),
+                            None => return Err(inc.at.diag(format!("`{}` has no param `{n}` left to expose: it has none of that name, or gives it a value", inc.group))),
                         }
                     }
                     v

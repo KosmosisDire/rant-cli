@@ -45,14 +45,14 @@ static void restart_instance(app::Context& ctx, run::Session& s, const std::stri
 static int restart_node(app::Context& ctx, const std::string& name) {
     run::Session s(ctx.require_workspace());
     state::Instance* inst = s.state().instance(name);
-    if (!inst) throw app::Failure("rant runs no node named `" + name + "` here, see `rant ls`");
+    if (!inst) throw app::Failure("no node named `" + name + "` that this workspace started is running, see `rant ls nodes`");
     const state::Root* root = s.state().root(inst->roots.front());
-    if (!root) throw app::Failure("`" + name + "` has lost its root, stop it and start it again");
+    if (!root) throw app::Failure("rant no longer knows what started `" + name + "`, stop it and start it again");
     config::Plan plan = replan(ctx, *root, inst);
     const config::Instance* planned = nullptr;
     for (auto& i : plan.instances)
         if (root->kind == "node" || i.name == name) planned = &i;
-    if (!planned) throw app::Failure("`" + name + "` is no longer part of " + root->key().substr(6) + ", stop it instead");
+    if (!planned) throw app::Failure("`" + name + "` is no longer in " + root->key().substr(6) + ", stop it with `rant stop node " + name + "`");
     restart_instance(ctx, s, name, *planned);
     return 0;
 }

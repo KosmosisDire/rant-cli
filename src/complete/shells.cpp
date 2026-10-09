@@ -186,7 +186,7 @@ static std::string install_powershell(const Shell& shell, const fs::path& hook) 
     if (code == 3)
         throw app::Failure("it may not run scripts here, allow that with `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` "
                            "in " + exe + " and run `rant setup " + exe + "` again");
-    if (code != 0) throw app::Failure("could not edit its profile, " + exe + " exited " + std::to_string(code));
+    if (code != 0) throw app::Failure("could not edit the " + exe + " profile, " + exe + " exited " + std::to_string(code));
     return "loads from its profile";
 }
 

@@ -26,7 +26,7 @@ endforeach()
 expect_match("${text}" "rant: build, run and inspect Rant nodes")
 
 rant(explore extra FAILS)
-expect_match("${ERR}" "explore takes no words")
+expect_match("${ERR}" "explore takes no arguments")
 
 # explorer is another name for explore.
 rant(explorer --help)

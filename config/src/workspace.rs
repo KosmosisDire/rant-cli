@@ -69,7 +69,7 @@ pub fn check_kinds(src: &Source, blocks: &[&hcl_edit::structure::Block]) -> Resu
         match ident {
             "workspace" | "package" => {
                 if seen.contains(&ident) {
-                    return Err(src.diag_at(*b, format!("a rant.hcl holds one `{ident}` block")));
+                    return Err(src.diag_at(*b, format!("a rant.hcl may hold only one `{ident}` block")));
                 }
                 seen.push(ident);
             }
@@ -98,7 +98,7 @@ pub fn init(dir: &Path) -> Result<PathBuf, Diag> {
     let dir = std::path::absolute(dir).map_err(|e| Diag::file(dir, format!("bad directory: {e}")))?;
     let manifest = dir.join(MANIFEST);
     if manifest.exists() {
-        return Err(Diag::file(&manifest, "already exists"));
+        return Err(Diag::file(&manifest, "exists already, nothing was written"));
     }
     std::fs::write(&manifest, TEMPLATE).map_err(|e| Diag::file(&manifest, format!("cannot write: {e}")))?;
     Ok(dir)

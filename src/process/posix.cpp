@@ -50,11 +50,9 @@ struct Prepared {
 };
 
 static Prepared prepare(const Command& c) {
-    if (c.argv.empty()) throw app::Failure("empty command");
-    auto program = find_program(c.argv[0], c.cwd);
-    if (!program) throw app::Failure("`" + c.argv[0] + "` was not found on PATH");
+    fs::path program = require_program(c);
     Prepared p;
-    p.program = program->string();
+    p.program = program.string();
     p.cwd = c.cwd.string();
     p.args = c.argv;
     p.env = environment(c.env);

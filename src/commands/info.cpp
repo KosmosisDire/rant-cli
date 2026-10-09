@@ -282,7 +282,7 @@ static int run(app::Context& ctx) {
     auto& w = ctx.args.words;
     std::optional<Kind> kind;
     if (w.size() == 2 && !(kind = kind_named(w[0])))
-        throw app::UsageError("`" + w[0] + "` is no kind, use node, entity, topic, var, fn, task, package, type or group");
+        throw app::UsageError("`" + w[0] + "` is not a kind, use node, entity, topic, var, fn, task, package, type or group");
     if (w.empty() || w.size() > 2) throw app::UsageError("info takes a name, or a kind and a name such as `rant info package cam`");
     const std::string& name = w.back();
 

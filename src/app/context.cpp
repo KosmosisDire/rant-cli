@@ -39,7 +39,7 @@ uint16_t Context::domain() {
     if (!env || !*env) return 0;
     char* end = nullptr;
     unsigned long d = std::strtoul(env, &end, 10);
-    if (*end || d > 65535) throw Failure("RANT_DOMAIN is not a number from 0 to 65535");
+    if (*end || d > 65535) throw Failure("RANT_DOMAIN is `" + std::string(env) + "`, it must be a number from 0 to 65535");
     return static_cast<uint16_t>(d);
 }
 
@@ -59,7 +59,7 @@ const config::Workspace& Context::require_workspace(bool packages) {
         throw Failure("");
     }
     if (!opened_->workspace)
-        throw Failure("no rant.hcl with a workspace block here or above, run `rant init` to make one");
+        throw Failure("not in a workspace: no rant.hcl with workspace {} here or above, `rant init` makes one");
     return *opened_->workspace;
 }
 

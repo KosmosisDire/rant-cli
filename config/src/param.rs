@@ -134,7 +134,7 @@ pub fn bind(iface: &[Param], given: BTreeMap<String, Value>, at: &dyn Fn(String)
             Some(v) => checked(p, v.clone()).map_err(|e| at(e))?,
             None => match &p.default {
                 Some(d) => d.clone(),
-                None => return Err(at(format!("required param `{}` is not set{hint}", p.name))),
+                None => return Err(at(format!("param `{}` has no default, so it must be given{hint}", p.name))),
             },
         };
         out.insert(p.name.clone(), v);
