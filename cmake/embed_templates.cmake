@@ -1,5 +1,5 @@
-# Writes OUTPUT, a C++ file holding every file under SOURCE as bytes, so the built in
-# templates of rant new are part of the binary. Run with cmake -P.
+# Writes OUTPUT, a C++ file holding every file under SOURCE as bytes, so the presets of
+# rant new and the agent skill are part of the binary. Run with cmake -P.
 
 file(GLOB_RECURSE files RELATIVE "${SOURCE}" "${SOURCE}/*")
 list(SORT files)

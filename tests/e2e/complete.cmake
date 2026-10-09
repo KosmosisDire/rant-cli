@@ -95,3 +95,22 @@ if(NOT EXISTS "${SCRATCH}/home/.rant/completions/rant.bash")
 endif()
 rant(setup tcsh FAILS)
 expect_match("${ERR}" "unknown shell `tcsh`")
+
+# The skill goes where each agent found reads skills, and named shells leave it alone.
+set(ENV{XDG_CONFIG_HOME} "${SCRATCH}/home/.config")
+rant(setup skill FAILS)
+expect_match("${ERR}" "found no AI coding agent")
+file(MAKE_DIRECTORY "${SCRATCH}/home/.claude" "${SCRATCH}/home/.cursor")
+rant(setup skill)
+expect_match("${OUT}" "Cursor: the rant skill in [^
+]*rant
+Claude Code: the rant skill in ")
+file(READ "${SCRATCH}/home/.claude/skills/rant/SKILL.md" skill)
+expect_match("${skill}" "^---
+name: rant
+")
+if(NOT EXISTS "${SCRATCH}/home/.agents/skills/rant/SKILL.md")
+  message(FATAL_ERROR "setup wrote no skill for Cursor")
+endif()
+rant(setup bash)
+expect_no_match("${OUT}" "skill")

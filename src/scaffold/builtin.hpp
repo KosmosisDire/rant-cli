@@ -5,7 +5,7 @@
 
 namespace scaffold {
 
-/* One file of a built in template, its path starting with the template's name. */
+/* One file under templates/, a preset's or the agent skill's, its path starting with the folder. */
 struct BuiltinFile {
     const char*          path;    /* "package-cpp/CMakeLists.txt" */
     const unsigned char* data;

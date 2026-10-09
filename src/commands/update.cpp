@@ -2,10 +2,12 @@
 #include <string>
 #include <vector>
 
+#include "agents/skill.hpp"
 #include "app/failure.hpp"
 #include "commands/commands.hpp"
 #include "config/config.hpp"
 #include "net/github.hpp"
+#include "process/command.hpp"
 #include "process/supervisor.hpp"
 #include "ui/prompt.hpp"
 
@@ -39,9 +41,15 @@ int update_self(app::Context& ctx) {
     ctx.out.line("This updates rant-cli " RANT_CLI_VERSION " to " + r.version + ":");
     ctx.out.line("  download " + a->url);
     ctx.out.line("    over " + config::to_utf8(self));
+    std::string names;
+    for (auto& agent : agents::detected()) names += (names.empty() ? "" : ", ") + agent.name;
+    if (!names.empty()) ctx.out.line("  update the rant skill for " + names);
     if (!ui::confirm("Update?", ctx.yes)) return 1;
     net::download(a->url, self, true);
     ctx.out.line("updated to rant-cli " + r.version);
+    /* the new binary holds the new skill */
+    if (!names.empty() && process::run({ { config::to_utf8(self), "setup", "skill" }, ctx.cwd, {} }) != 0)
+        ctx.out.warn("the rant skill was not updated, run `rant setup skill`");
     return 0;
 }
 

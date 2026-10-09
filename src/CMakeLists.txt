@@ -5,6 +5,7 @@ add_library(rant_impl STATIC "${rant_SOURCE_DIR}/dist/rant.cpp")
 target_link_libraries(rant_impl PUBLIC rant::rant rant::rant_platform)
 
 add_library(rant_cli_core STATIC
+  agents/skill.cpp
   app/args.cpp
   app/context.cpp
   app/run.cpp
@@ -67,7 +68,7 @@ endif()
 
 target_include_directories(rant_cli_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 
-# The presets of rant new, compiled in as bytes.
+# The presets of rant new and the agent skill, compiled in as bytes.
 file(GLOB_RECURSE template_files CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/templates/*")
 set(builtin_templates "${CMAKE_CURRENT_BINARY_DIR}/builtin_templates.cpp")
 add_custom_command(OUTPUT "${builtin_templates}"

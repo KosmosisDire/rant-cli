@@ -12,8 +12,9 @@ irm https://raw.githubusercontent.com/KosmosisDire/rant-cli/main/install.ps1 | i
 ```
 
 Each lists what it will do and asks first: the `rant` command goes to `~/.rant/bin`, that
-folder onto PATH, then `rant setup` adds tab completion. Later, `rant --update` moves to the
-newest release.
+folder onto PATH, then `rant setup` adds tab completion and, for any AI coding agent found
+(Claude Code, Codex, Cursor, Gemini CLI, GitHub Copilot, OpenCode), the rant skill. Later,
+`rant --update` moves to the newest release.
 
 ## Use
 
@@ -27,7 +28,7 @@ rant ls                        # the running nodes and what they talk through
 rant sub odom                  # print a topic
 rant stop group nav
 rant lib install               # move every package here to the newest Rant
-rant setup                     # tab completion for your shells
+rant setup                     # tab completion for your shells, the rant skill for your AI agents
 ```
 
 `rant --help` lists every command.

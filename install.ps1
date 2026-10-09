@@ -32,6 +32,17 @@
     if ($version -notmatch '^[0-9.]+$') { Fail 'found no rant-cli release' }
     $url = "https://github.com/$repo/releases/download/v$version/rant-$version-win-x64.exe"
 
+    # The AI coding agents rant setup gives the rant skill, each found by its folder.
+    $config = if ($env:XDG_CONFIG_HOME) { $env:XDG_CONFIG_HOME } else { Join-Path $env:USERPROFILE '.config' }
+    $agents = @(
+        @('Claude Code', (Join-Path $env:USERPROFILE '.claude')),
+        @('Codex', (Join-Path $env:USERPROFILE '.codex')),
+        @('Cursor', (Join-Path $env:USERPROFILE '.cursor')),
+        @('Gemini CLI', (Join-Path $env:USERPROFILE '.gemini')),
+        @('GitHub Copilot', (Join-Path $env:USERPROFILE '.copilot')),
+        @('OpenCode', (Join-Path $config 'opencode'))
+    ) | Where-Object { Test-Path -PathType Container $_[1] } | ForEach-Object { $_[0] }
+
     $user_path = [Environment]::GetEnvironmentVariable('Path', 'User')
     $on_path = ($user_path -split ';') -contains $bin
 
@@ -40,6 +51,7 @@
     Write-Host "    to $exe"
     if (-not $on_path) { Write-Host "  add $bin to your user PATH" }
     Write-Host '  run rant setup, which sets up tab completion for PowerShell'
+    if ($agents) { Write-Host "    and the rant skill for $($agents -join ', ')" }
 
     if (-not $env:RANT_YES) {
         $answer = Read-Host 'Install? [y/N]'

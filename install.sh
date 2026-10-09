@@ -51,12 +51,26 @@ command -v zsh > /dev/null 2>&1 && rcs="$rcs ${ZDOTDIR:-$HOME}/.zshrc"
 fish_conf=""
 command -v fish > /dev/null 2>&1 && fish_conf="${XDG_CONFIG_HOME:-$HOME/.config}/fish/conf.d/rant.fish"
 
+# The AI coding agents rant setup gives the rant skill, each found by its folder.
+agents=""
+while IFS='|' read -r name folder; do
+    [ -d "$folder" ] && agents="${agents:+$agents, }$name"
+done << EOF
+Claude Code|$HOME/.claude
+Codex|$HOME/.codex
+Cursor|$HOME/.cursor
+Gemini CLI|$HOME/.gemini
+GitHub Copilot|$HOME/.copilot
+OpenCode|${XDG_CONFIG_HOME:-$HOME/.config}/opencode
+EOF
+
 echo "This installs rant-cli $version for $platform:"
 echo "  download $url"
 echo "    to $bin/rant"
 for rc in $rcs; do echo "  add $bin to PATH in $rc"; done
 [ -n "$fish_conf" ] && echo "  add $bin to PATH for fish in $fish_conf"
 echo "  run rant setup, which sets up tab completion for your shells"
+[ -n "$agents" ] && echo "    and the rant skill for $agents"
 
 if [ -z "$yes" ]; then
     # stdin is the script itself when it comes through a pipe, so the answer comes from the terminal

@@ -1,4 +1,4 @@
-//! Params, as group and template files declare them: a name, a type, options, a default
+//! Params, as group files declare them: a name, a type, options, a default
 //! and a description. Values from a file or the command line are checked against them.
 
 use std::collections::BTreeMap;
