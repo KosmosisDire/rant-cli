@@ -207,8 +207,12 @@ rant_queue_dispatch(q, 0, 100);              /* on the thread that runs them */
     must spell them so.
 - Units are SI: meters, seconds, m/s, N, radians. Time is a `Timestamp`, microseconds since
   the Unix epoch.
-- Coordinates: 3D is right handed with z up. 2D is x right, y up, and an image is the same
-  with its origin at the bottom left. A 2D angle turns from +x toward +y, counterclockwise.
+- Frames are right handed, and an angle turns from +x toward +y. Two kinds of 2D differ:
+  - Physical 3D: z up.
+  - Physical 2D, such as a robot on the floor: the top view of 3D, so x right, y up, angles
+    counterclockwise seen from above.
+  - Image or screen: origin at the top left, x right, y down, angles clockwise on screen.
+    Raw image rows start at the top.
 - One program per node. Keep domain, prefixes and node names out of the code: rant.hcl and
   groups place them, and the name in the code is only a default.
 - Add Rant with `rant lib install`, never by hand, and keep packages current with it.
