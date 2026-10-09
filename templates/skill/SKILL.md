@@ -8,7 +8,7 @@ description: Rant robotics middleware and the rant CLI. Use when a project uses 
 Rant connects programs ("nodes") on one machine or a network ("the mesh"). Nodes find each
 other on their own and share four kinds of entity: topics, variables, functions and tasks.
 The `rant` command makes projects, builds them, starts and stops nodes, and reads and
-writes the mesh. Full docs: https://docs.rantlib.dev/ (fetch the page you need).
+writes the mesh. Full docs: https://docs.rantlib.dev/llms.txt (fetch the page you need).
 
 ## First
 
@@ -132,7 +132,7 @@ with `take`.
 
 - Use a standard type whenever one fits: `Pose`, `Pose2D`, `Transform`, `Twist`, `Wrench`,
   `Double2/3`, `Quaternion`, `JointState`, `Image`, `Color`, `Timestamp`, `Duration`,
-  `Empty` and the rest at https://docs.rantlib.dev/. Never define your own pose or vector.
+  `Empty` and the rest at https://docs.rantlib.dev/llms.txt. Never define your own pose or vector.
 - Pick the entity by shape: a topic for a stream, a variable for state or a setting with
   one owner, a function for a quick question, a task for a long job with progress or cancel.
 - Names are lower snake_case, `/` between levels: `arm/joint_state`, `line1/conveyor`.
