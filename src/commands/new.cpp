@@ -1,12 +1,14 @@
 #include <algorithm>
 #include <optional>
 #include <set>
+#include <sstream>
 
 #include "app/failure.hpp"
 #include "commands/commands.hpp"
 #include "complete/complete.hpp"
 #include "library/library.hpp"
 #include "library/uses.hpp"
+#include "process/command.hpp"
 #include "scaffold/scaffold.hpp"
 
 namespace commands {
@@ -42,6 +44,56 @@ static fs::path cmake_project(app::Context& ctx, const std::string& name) {
     }
 }
 
+static bool have(const char* program) { return process::find_program(program, fs::temp_directory_path()).has_value(); }
+
+/* "a", "a and b", "a, b and c" */
+static std::string spoken(const std::vector<std::string>& v) {
+    std::string s;
+    for (size_t i = 0; i < v.size(); i++) s += (i == 0 ? "" : i + 1 == v.size() ? " and " : ", ") + v[i];
+    return s;
+}
+
+/* Refuses a preset whose language cannot build or run here, before any file is written. A
+ * venv is only made for a Python package or workspace, so a Python node needs no venv module. */
+static void require_tools(app::Context& ctx, const std::string& lang, bool venv) {
+    std::vector<std::string> missing;
+    std::string shown, apt;
+    if (lang == "cpp") {
+        shown = "C++", apt = "build-essential cmake git";
+        if (!have("cmake")) missing.push_back("cmake");
+        if (!have("git")) missing.push_back("git");
+#ifndef _WIN32
+        if (!have("c++") && !have("g++") && !have("clang++")) missing.push_back("a C++ compiler");
+#endif
+    } else if (lang == "python") {
+        shown = "Python", apt = "python3 python3-venv";
+        std::vector<std::string> python = config::python_of(ctx.cwd()).interpreter;
+        if (python.empty() || !process::find_program(python[0], fs::temp_directory_path())) missing.push_back("Python");
+        else if (venv) {
+            python.insert(python.end(), { "-c", "import importlib.util as u, sys; sys.exit(u.find_spec('ensurepip') is None)" });
+            if (!process::output({ python, fs::temp_directory_path(), {} })) missing.push_back("its venv module");
+        }
+    } else {
+        shown = "C#", apt = "dotnet-sdk-10.0";
+        if (!have("dotnet") || process::output({ { "dotnet", "--list-sdks" }, fs::temp_directory_path(), {} }).value_or("").empty())
+            missing.push_back("the .NET SDK");
+    }
+    if (missing.empty()) return;
+    std::string message = shown + " needs " + spoken(missing) + ", nothing was made";
+#ifdef __linux__
+    message += ". On Ubuntu: `sudo apt install " + apt + "`";
+#endif
+    throw app::Failure(message);
+}
+
+/* The newest target framework the installed .NET SDKs build, such as net10.0. */
+static std::string dotnet_framework() {
+    std::istringstream sdks(process::output({ { "dotnet", "--list-sdks" }, fs::temp_directory_path(), {} }).value_or(""));
+    int newest = 0;
+    for (std::string line; std::getline(sdks, line);) newest = std::max(newest, std::atoi(line.c_str()));    /* "10.0.300 [path]" */
+    return "net" + std::to_string(newest) + ".0";
+}
+
 /* The preset a command line asks for. A C# node is a project of its own, so it is the
  * package preset. A workspace holds a talker, a listener and a group that runs both. */
 static std::string chosen(app::Context& ctx, const std::string& kind) {
@@ -50,6 +102,7 @@ static std::string chosen(app::Context& ctx, const std::string& kind) {
     if (lang.empty()) throw app::UsageError("say which language with --lang cpp, python or csharp");
     if (std::find(languages.begin(), languages.end(), lang) == languages.end())
         throw app::UsageError("unknown language `" + lang + "`, use cpp, python or csharp");
+    require_tools(ctx, lang, kind != "node");
     if (kind == "workspace") return "workspace-" + lang;
     return (kind == "node" && lang != "csharp" ? "node-" : "package-") + lang;
 }
@@ -69,7 +122,9 @@ static int run(app::Context& ctx) {
     if (folder && w.size() == 2) dest = (ctx.cwd() / config::from_utf8(w[1])).lexically_normal();
     if (!dest.has_filename()) dest = dest.parent_path();
     std::string name = !folder && w.size() == 2 ? w[1] : config::to_utf8(dest.filename());
-    scaffold::Files files = scaffold::plan(preset, dest, name);
+    scaffold::Values values{ { "name", name } };
+    if (preset.find("csharp") != std::string::npos) values["framework"] = dotnet_framework();
+    scaffold::Files files = scaffold::plan(preset, dest, values);
 
     /* a C++ node joins the CMake project around it, which refuses a second target of its name */
     std::optional<fs::path> project;

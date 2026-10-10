@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
+#include <fstream>
+#include <iterator>
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -101,6 +103,22 @@ std::optional<fs::path> find_program(const std::string& program, const fs::path&
     }
 #endif
     return std::nullopt;
+}
+
+std::optional<std::string> output(const Command& c) {
+    static int count = 0;
+    fs::path file = fs::temp_directory_path() / ("rant-output-" + std::to_string(rand()) + "-" + std::to_string(count++));
+    std::optional<std::string> text;
+    try {
+        if (run(c, file) == 0) {
+            std::ifstream in(file, std::ios::binary);
+            text = std::string(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+        }
+    } catch (const app::Failure&) {
+    }
+    std::error_code ec;
+    fs::remove(file, ec);
+    return text;
 }
 
 fs::path require_program(const Command& c) {

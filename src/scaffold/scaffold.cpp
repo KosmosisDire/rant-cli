@@ -26,14 +26,16 @@ static const std::vector<Preset> presets = {
     { "workspace-csharp", { "workspace-csharp" } },
 };
 
-static std::string with_name(std::string text, const std::string& name) {
-    static const std::string token = "{{name}}";
-    for (size_t at = text.find(token); at != std::string::npos; at = text.find(token, at + name.size()))
-        text.replace(at, token.size(), name);
+static std::string filled(std::string text, const Values& values) {
+    for (auto& [key, value] : values) {
+        const std::string token = "{{" + key + "}}";
+        for (size_t at = text.find(token); at != std::string::npos; at = text.find(token, at + value.size()))
+            text.replace(at, token.size(), value);
+    }
     return text;
 }
 
-Files plan(const std::string& preset, const fs::path& dest, const std::string& name) {
+Files plan(const std::string& preset, const fs::path& dest, const Values& values) {
     const Preset* p = nullptr;
     for (auto& candidate : presets)
         if (candidate.name == preset) p = &candidate;
@@ -45,8 +47,8 @@ Files plan(const std::string& preset, const fs::path& dest, const std::string& n
         for (auto& f : builtin_files()) {
             std::string path = f.path;
             if (path.rfind(prefix, 0) != 0) continue;
-            fs::path to = dest / fs::u8path(with_name(path.substr(prefix.size()), name));
-            files.push_back({ to, with_name(std::string((const char*)f.data, f.size), name) });
+            fs::path to = dest / fs::u8path(filled(path.substr(prefix.size()), values));
+            files.push_back({ to, filled(std::string((const char*)f.data, f.size), values) });
         }
     }
     for (auto& [path, _] : files)

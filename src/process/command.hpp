@@ -30,6 +30,9 @@ fs::path require_program(const Command& c);
  * file out when given, and returns its exit code. Throws app::Failure when it cannot start. */
 int run(const Command& c, const fs::path& out = {});
 
+/* What a command printed on stdout, nullopt when it cannot start or exits nonzero. */
+std::optional<std::string> output(const Command& c);
+
 /* The inherited environment with env applied, as sorted "NAME=value" entries. Names match
  * without case on Windows. */
 std::vector<std::string> environment(const std::map<std::string, std::string>& env);
