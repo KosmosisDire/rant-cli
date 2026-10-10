@@ -43,7 +43,7 @@ only to override something. A CMake folder inside a CMake package belongs to it.
 | build | `rant build [package...]`, `--dry-run` shows order and commands |
 | run | `rant start node <node>`, `rant start group <group> key=value...`, `--dry-run` first |
 | stop, restart | `rant stop [node X \| group X]` (nothing named: all this workspace started), `rant stop --all` (every node on this machine), `rant restart ...` |
-| see the mesh | `rant ls [nodes\|entities\|topics\|variables\|functions\|tasks\|packages\|groups]`, `rant ls nodes -a` |
+| see the mesh | `rant ls [nodes\|entities\|topics\|variables\|functions\|tasks\|packages\|groups]` |
 | explain one thing | `rant info [kind] <name>` |
 | read and write | `rant sub <topic> -n 1`, `rant pub <topic> <value>`, `rant get <var>`, `rant set <var> <value>`, `rant call <fn> [value]` |
 | Rant version in packages | `rant lib [folder]`, `rant lib install [folder] [--version V]` |
@@ -101,7 +101,7 @@ hard coded in the program.
 
 ```cpp
 #include "rant.hpp"   // CMake: target_link_libraries(x PRIVATE rant::rant_host)
-rant::Node node("Talker");
+rant::Node node("talker");
 auto pose = node.publisher<rant::types::Pose2D>("pose");
 pose.send({ { 1.0, 2.0 }, 0.5 });
 auto sub = node.subscriber<rant::types::Pose2D>("pose", [](const rant::types::Pose2D& p) { /* ... */ });
@@ -110,7 +110,7 @@ auto sub = node.subscriber<rant::types::Pose2D>("pose", [](const rant::types::Po
 ```python
 import rant
 from rant.types import Double2, Pose2D
-node = rant.Node("Talker")
+node = rant.Node("talker")
 pose = node.publisher("pose", Pose2D)
 pose.send(Pose2D(position=Double2(x=1.0, y=2.0), angle=0.5))
 node.subscriber("pose", Pose2D, lambda p: print(p.angle))
@@ -118,7 +118,7 @@ node.subscriber("pose", Pose2D, lambda p: print(p.angle))
 
 ```csharp
 using Rant; using Rant.Types;
-using var node = new RantNode("Talker");
+using var node = new RantNode("talker");
 var pose = node.Publisher<Pose2D>("pose");
 node.Subscriber<Pose2D>("pose", p => Console.WriteLine(p.Angle));
 ```
@@ -131,7 +131,7 @@ static void on_message(const RantMsg *m) {    /* every topic of the node lands h
     memcpy(&p, m->data.data, sizeof p);
 }
 RantAllocator mem = rant_allocator_heap(0);
-RantNode *n = rant_node_open(&mem, "Talker", on_message, NULL, NULL);
+RantNode *n = rant_node_open(&mem, "talker", on_message, NULL, NULL);
 RantTopic *pose = rant_node_create_topic(n, "pose", RANT_PUBSUB, rant_node_schema(n, "Pose2D"), NULL);
 RantPose2D p = { { 1.0, 2.0 }, 0.5 };
 rant_topic_send(pose, rant_bytes(&p, sizeof p));
@@ -160,7 +160,7 @@ refused there, except from a dispatch, which has the whole API.
 rant::NodeOptions o;
 o.threading = rant::Threading::Manual;      // while (running) node.poll(10ms);
 o.threading = rant::Threading::Dispatch;    // each frame: node.dispatch();
-rant::Node node("Talker", o);
+rant::Node node("talker", o);
 rant::Queue q = node.create_queue();
 rant::Qos qos; qos.queue = &q;
 auto sub = node.subscriber<rant::types::Pose2D>("pose", handler, qos);
@@ -168,15 +168,15 @@ std::thread worker([&] { while (running) q.dispatch(0, 100ms); });
 ```
 
 ```python
-node = rant.Node("Talker", threading=rant.Threading.MANUAL)     # while True: node.poll(0.01)
-node = rant.Node("Talker", threading=rant.Threading.DISPATCH)   # each frame: node.dispatch()
+node = rant.Node("talker", threading=rant.Threading.MANUAL)     # while True: node.poll(0.01)
+node = rant.Node("talker", threading=rant.Threading.DISPATCH)   # each frame: node.dispatch()
 q = node.create_queue()
 node.subscriber("pose", Pose2D, handler, queue=q)               # a thread runs q.dispatch(timeout=0.1)
 ```
 
 ```csharp
-var node = new RantNode("Talker", new NodeOptions { Threading = Threading.Manual });    // node.Poll(10)
-var node = new RantNode("Talker", new NodeOptions { Threading = Threading.Dispatch });  // node.Dispatch()
+var node = new RantNode("talker", new NodeOptions { Threading = Threading.Manual });    // node.Poll(10)
+var node = new RantNode("talker", new NodeOptions { Threading = Threading.Dispatch });  // node.Dispatch()
 var q = node.CreateQueue();
 node.Subscriber<Pose2D>("pose", handler, new Qos { Queue = q });                        // q.Dispatch(0, 100)
 ```
@@ -196,15 +196,9 @@ rant_queue_dispatch(q, 0, 100);              /* on the thread that runs them */
   `Empty` and the rest at https://docs.rantlib.dev/llms.txt. Never define your own pose or vector.
 - Pick the entity by shape: a topic for a stream, a variable for state or a setting with
   one owner, a function for a quick question, a task for a long job with progress or cancel.
-- Names:
-  - Entities are camelCase at every level, `/` between levels: `arm/jointState`,
-    `line1/conveyorSpeed`.
-  - Nodes are PascalCase, named for what they are: `Lidar`, `ArmController`, never
-    `LidarNode`.
-  - Types are PascalCase, fields camelCase: `Waypoint { at: Transform, holdTime: Duration }`.
-  - A type written in the language gets these on the wire by itself (`frame_id` in Python
-    and `FrameId` in C# both go as `frameId`). Schema text, as in C's `rant_node_schema`,
-    must spell them so.
+- Names are lower snake_case, `/` between levels: `arm/joint_state`, `line1/conveyor`.
+  A node is named for what it is (`lidar`, not `lidar_node`). Types are PascalCase. Fields
+  follow the language (`frame_id` in Python, `FrameId` in C#), the wire matches them.
 - Units are SI: meters, seconds, m/s, N, radians. Time is a `Timestamp`, microseconds since
   the Unix epoch.
 - Frames are right handed, and an angle turns from +x toward +y. Two kinds of 2D differ:
@@ -219,7 +213,7 @@ rant_queue_dispatch(q, 0, 100);              /* on the thread that runs them */
 
 ## Debugging
 
-1. `rant ls` and `rant ls nodes -a`: what runs, and what could.
+1. `rant ls` shows what runs, `rant ls nodes` also what could.
 2. Not seeing a node: check the domain on both sides (`--domain`, `domain`, `RANT_DOMAIN`).
 3. A node that died: read `logs/<node>.log`.
 4. Wrong config: `rant start group X --dry-run`, `rant build --dry-run`, `rant info group X`.
