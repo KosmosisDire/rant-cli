@@ -14,7 +14,7 @@ if(NOT CMAKE_MATCH_1 OR CMAKE_MATCH_1 STREQUAL first_pid)
   message(FATAL_ERROR "lidar was not restarted as a new process:\n${OUT}")
 endif()
 rant(ls nodes)
-expect_match("${OUT}" "NODES\n  nav:\n    lidar\n    odom\n    planner\n$")
+expect_match("${OUT}" "NODES\n  nav:\n    lidar\n    odom\n    planner\n\nNOT RUNNING")
 
 # A group restarts as it is configured now: an edit is picked up, a dropped node stops.
 file(READ "${SCRATCH}/nav.group.hcl" nav)

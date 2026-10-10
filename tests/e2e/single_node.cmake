@@ -32,7 +32,7 @@ expect_match("${OUT}" "killed after")
 # A node that exits on its own is pruned at the next command.
 rant(start node brief)
 execute_process(COMMAND "${CMAKE_COMMAND}" -E sleep 3)
-rant(ls nodes)
+rant(ls)
 expect_no_match("${OUT}" "brief")
 rant(stop node brief FAILS)
 expect_match("${ERR}" "no node `brief` on domain")
@@ -53,7 +53,7 @@ file(WRITE "${OTHER}/rant.hcl" "workspace {}\n")
 rant(start node chatty IN "${OTHER}")
 rant(stop node chatty)
 expect_match("${OUT}" "^stopped chatty\n")
-rant(ls nodes IN "${OTHER}")
+rant(ls IN "${OTHER}")
 expect_no_match("${OUT}" "chatty")
 
 # So does a node rant did not start, found on the mesh. Windows can only kill it.

@@ -106,10 +106,10 @@ static std::vector<const config::NodeType*> not_running(app::Context& ctx, const
 }
 
 /* The running nodes and entities, the default. kind narrows to nodes or one entity kind, and
- * with all the nodes that could start follow. */
+ * nodes alone also list the ones that could start. */
 static int list_mesh(app::Context& ctx, std::optional<Kind> kind, const std::string& pattern) {
     bool show_nodes = !kind || *kind == Kind::Node, show_entities = !kind || *kind != Kind::Node;
-    bool all = show_nodes && ctx.args.has("all");
+    bool all = kind && *kind == Kind::Node;
     mesh::Client mesh(ctx.domain());
     mesh.settle();
     Listing nodes;
@@ -262,7 +262,7 @@ static complete::Candidates complete_words(complete::Request& r) {
 app::Command ls() {
     app::Command c{ "ls", "[kind] [pattern]",
                     "list the running nodes and entities, or packages or groups",
-                    app::Section::Mesh, { { "all", 'a', "", "with the nodes, also those that could start" } }, run };
+                    app::Section::Mesh, {}, run };
     c.complete = complete_words;
     return c;
 }

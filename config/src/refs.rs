@@ -63,7 +63,7 @@ fn unbuilt(model: &Model) -> String {
     let cmake = |p: &&crate::model::Package| p.nodes.is_empty() && p.manifests.iter().any(|m| m.kind == ManifestKind::CMake);
     match model.packages.iter().find(cmake) {
         Some(p) => format!("`{}` is not built yet, run `rant build` first", p.name),
-        None => "see `rant ls nodes --all`".into(),
+        None => "see `rant ls nodes`".into(),
     }
 }
 
