@@ -24,12 +24,12 @@ endforeach()
 
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/get_cpm.cmake")
 
-# 0.0.19 is the first release whose nodes take RANT_DOMAIN and RANT_PREFIX, which the
-# placement in the configs sets. The local presets set CPM_rant_SOURCE to ../rant to build
-# against the working tree instead.
+# Placement needs 0.0.19 or newer, whose nodes take RANT_DOMAIN and RANT_PREFIX. A release
+# pins the newest Rant. The local presets set CPM_rant_SOURCE to ../rant to build against
+# the working tree instead.
 CPMAddPackage(NAME rant
   GITHUB_REPOSITORY KosmosisDire/Rant
-  VERSION 0.0.19
+  VERSION 0.0.20
   EXCLUDE_FROM_ALL YES
   SYSTEM YES)
 
