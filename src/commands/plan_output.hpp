@@ -11,6 +11,9 @@ void require_plan(app::Context& ctx, const config::Plan& plan);
 /* The params a group takes, as --help lists them. Nothing when there are none. */
 void print_params(app::Context& ctx, const std::vector<config::Param>& params);
 
+/* A note for each group named against the convention, such as nav for NavGroup. */
+void note_group_names(app::Context& ctx, const std::vector<std::string>& groups);
+
 /* A resolved plan for --dry-run: each instance with exactly how it would run, or with
  * --json only absolute paths, so no other tool needs to resolve anything again. */
 void print_plan(app::Context& ctx, const config::Plan& plan);

@@ -23,7 +23,7 @@ writes the mesh. Full docs: https://docs.rantlib.dev/llms.txt (fetch the page yo
 ```
 cell/                     workspace: the folder holding workspace.rant
   workspace.rant
-  cell.rungroup           a group: which nodes run together, and how
+  CellGroup.rungroup      a group: which nodes run together, and how
   drivers/                a package: CMakeLists.txt, pyproject.toml or a .csproj that uses Rant
     CMakeLists.txt
     lidar.cpp             a node: one program
@@ -68,7 +68,7 @@ package.rant in a package: `name`, `build` (commands replacing the default),
 `depend` (package names built first), `ignore`, `python` (the interpreter), and
 `node "name" { run = "./tool --flag" }` for programs rant cannot find itself.
 
-A group is `<name>.rungroup`:
+A group is `<Name>Group.rungroup`:
 
 ```hcl
 description = "Both arms"
@@ -76,7 +76,7 @@ param "speed" {
   type    = float              # string, int, float or bool
   default = 1
 }
-include "arm" {                # another group, with its param values
+include "ArmGroup" {           # another group, with its param values
   side        = "left"
   node_prefix = "left"
 }
@@ -101,25 +101,25 @@ hard coded in the program.
 ```cpp
 #include "rant.hpp"   // CMake: target_link_libraries(x PRIVATE rant::rant_host)
 rant::Node node("talker");
-auto pose = node.publisher<rant::types::Pose2D>("pose");
+auto pose = node.publisher<rant::types::Pose2D>("Pose");
 pose.send({ { 1.0, 2.0 }, 0.5 });
-auto sub = node.subscriber<rant::types::Pose2D>("pose", [](const rant::types::Pose2D& p) { /* ... */ });
+auto sub = node.subscriber<rant::types::Pose2D>("Pose", [](const rant::types::Pose2D& p) { /* ... */ });
 ```
 
 ```python
 import rant
 from rant.types import Double2, Pose2D
 node = rant.Node("talker")
-pose = node.publisher("pose", Pose2D)
+pose = node.publisher("Pose", Pose2D)
 pose.send(Pose2D(position=Double2(x=1.0, y=2.0), angle=0.5))
-node.subscriber("pose", Pose2D, lambda p: print(p.angle))
+node.subscriber("Pose", Pose2D, lambda p: print(p.angle))
 ```
 
 ```csharp
 using Rant; using Rant.Types;
 using var node = new RantNode("talker");
-var pose = node.Publisher<Pose2D>("pose");
-node.Subscriber<Pose2D>("pose", p => Console.WriteLine(p.Angle));
+var pose = node.Publisher<Pose2D>("Pose");
+node.Subscriber<Pose2D>("Pose", p => Console.WriteLine(p.Angle));
 ```
 
 ```c
@@ -131,7 +131,7 @@ static void on_message(const RantMsg *m) {    /* every topic of the node lands h
 }
 RantAllocator mem = rant_allocator_heap(0);
 RantNode *n = rant_node_open(&mem, "talker", on_message, NULL, NULL);
-RantTopic *pose = rant_node_create_topic(n, "pose", RANT_PUBSUB, rant_node_schema(n, "Pose2D"), NULL);
+RantTopic *pose = rant_node_create_topic(n, "Pose", RANT_PUBSUB, rant_node_schema(n, "Pose2D"), NULL);
 RantPose2D p = { { 1.0, 2.0 }, 0.5 };
 rant_topic_send(pose, rant_bytes(&p, sizeof p));
 ```
@@ -162,7 +162,7 @@ o.threading = rant::Threading::Dispatch;    // each frame: node.dispatch();
 rant::Node node("talker", o);
 rant::Queue q = node.create_queue();
 rant::Qos qos; qos.queue = &q;
-auto sub = node.subscriber<rant::types::Pose2D>("pose", handler, qos);
+auto sub = node.subscriber<rant::types::Pose2D>("Pose", handler, qos);
 std::thread worker([&] { while (running) q.dispatch(0, 100ms); });
 ```
 
@@ -170,21 +170,21 @@ std::thread worker([&] { while (running) q.dispatch(0, 100ms); });
 node = rant.Node("talker", threading=rant.Threading.MANUAL)     # while True: node.poll(0.01)
 node = rant.Node("talker", threading=rant.Threading.DISPATCH)   # each frame: node.dispatch()
 q = node.create_queue()
-node.subscriber("pose", Pose2D, handler, queue=q)               # a thread runs q.dispatch(timeout=0.1)
+node.subscriber("Pose", Pose2D, handler, queue=q)               # a thread runs q.dispatch(timeout=0.1)
 ```
 
 ```csharp
 var node = new RantNode("talker", new NodeOptions { Threading = Threading.Manual });    // node.Poll(10)
 var node = new RantNode("talker", new NodeOptions { Threading = Threading.Dispatch });  // node.Dispatch()
 var q = node.CreateQueue();
-node.Subscriber<Pose2D>("pose", handler, new Qos { Queue = q });                        // q.Dispatch(0, 100)
+node.Subscriber<Pose2D>("Pose", handler, new Qos { Queue = q });                        // q.Dispatch(0, 100)
 ```
 
 ```c
 rant_node_start(n);                          /* service thread, stop with rant_node_stop */
 while (running) rant_node_poll(n, 10);       /* or manual, without start */
 RantQueue *q = rant_node_create_queue(n);    /* a queue, given at creation: */
-rant_node_create_topic(n, "pose", RANT_SUB_ONLY, schema, &(RantTopicOpts){ .queue = q });
+rant_node_create_topic(n, "Pose", RANT_SUB_ONLY, schema, &(RantTopicOpts){ .queue = q });
 rant_queue_dispatch(q, 0, 100);              /* on the thread that runs them */
 ```
 
@@ -195,9 +195,16 @@ rant_queue_dispatch(q, 0, 100);              /* on the thread that runs them */
   `Empty` and the rest at https://docs.rantlib.dev/llms.txt. Never define your own pose or vector.
 - Pick the entity by shape: a topic for a stream, a variable for state or a setting with
   one owner, a function for a quick question, a task for a long job with progress or cancel.
-- Names are lower snake_case, `/` between levels: `arm/joint_state`, `line1/conveyor`.
-  A node is named for what it is (`lidar`, not `lidar_node`). Types are PascalCase. Fields
-  follow the language (`frame_id` in Python, `FrameId` in C#), the wire matches them.
+- Names are snake_case where they meet code and PascalCase everywhere else:
+  - Nodes are snake_case and named like their file: `arm_controller.py`, a C++ target
+    `arm_controller`, a C# `ArmController.csproj` with `<AssemblyName>arm_controller`. Name a
+    node for what it is (`lidar`, not `lidar_node`).
+  - Entities and namespaces are PascalCase, `/` between levels: `FrontLidar/JointState`,
+    `Line1/Conveyor`. So are types and enum options.
+  - Groups are PascalCase and end in Group: `NavGroup.rungroup`, run as `rant run NavGroup`.
+    `rant new group` names them so, and run and build note a name that breaks this.
+  - Fields follow the language (`frame_id` in Python, `FrameId` in C#), the wire matches
+    them.
 - Units are SI: meters, seconds, m/s, N, radians. Time is a `Timestamp`, microseconds since
   the Unix epoch.
 - Frames are right handed, and an angle turns from +x toward +y. Two kinds of 2D differ:

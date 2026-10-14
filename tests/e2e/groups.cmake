@@ -22,9 +22,10 @@ expect_match("${ERR}" "group `nav` has no param `colour`")
 rant(run nowhere FAILS)
 expect_match("${ERR}" "no group or node named `nowhere`")
 
-# Two groups share lidar and odom.
+# Two groups share lidar and odom. A group named against the convention is noted.
 rant(run nav)
 expect_match("${OUT}" "started lidar,.*started odom,.*started planner,")
+expect_match("${ERR}" "rename group `nav` to `NavGroup`")
 rant(run nav)
 expect_match("${OUT}" "lidar already runs\nodom already runs\nplanner already runs")
 rant(run pick)

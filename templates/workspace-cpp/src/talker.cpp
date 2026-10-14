@@ -11,7 +11,7 @@ constexpr double quarter_turn = 1.5707963267948966;
 /* Drives a point around the unit circle and publishes where it is. */
 int main() {
     rant::Node node("talker");
-    auto pose = node.publisher<rant::types::Pose2D>("pose");
+    auto pose = node.publisher<rant::types::Pose2D>("Pose");
     node.settle();
     for (double t = 0;; t += 0.1) {
         pose.send({ { std::cos(t), std::sin(t) }, t + quarter_turn });

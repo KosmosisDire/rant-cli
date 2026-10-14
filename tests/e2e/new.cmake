@@ -3,16 +3,16 @@ include("${CMAKE_CURRENT_LIST_DIR}/lib.cmake")
 rant(init)
 
 rant(new group nav)
-expect_match("${OUT}" "created nav[.]rungroup")
-file(READ "${SCRATCH}/nav.rungroup" nav)
-expect_match("${nav}" "description = \"What nav runs\"")
+expect_match("${OUT}" "created NavGroup[.]rungroup")
+file(READ "${SCRATCH}/NavGroup.rungroup" nav)
+expect_match("${nav}" "description = \"What NavGroup runs\"")
 rant(new group nav FAILS)
-expect_match("${ERR}" "nav[.]rungroup exists already, nothing was written")
+expect_match("${ERR}" "NavGroup[.]rungroup exists already, nothing was written")
 
 # With no name a node or group takes the name of the folder it is made in.
 file(MAKE_DIRECTORY "${SCRATCH}/lidar")
 rant(new group IN "${SCRATCH}/lidar")
-expect_match("${OUT}" "created lidar[.]rungroup")
+expect_match("${OUT}" "created LidarGroup[.]rungroup")
 
 # A node takes the language of the package it is made in.
 file(WRITE "${SCRATCH}/py/pyproject.toml" "[project]\nname = \"py\"\ndependencies = [\"rant-middleware\"]\n")
@@ -49,9 +49,9 @@ expect_match("${OUT}" "created demo/CMakeLists[.]txt
 created demo/src/listener[.]cpp
 created demo/src/talker[.]cpp
 created demo/workspace[.]rant
-created demo/demo[.]rungroup
+created demo/DemoGroup[.]rungroup
 ")
-rant(run demo --dry-run IN "${SCRATCH}/demo" FAILS)
+rant(run DemoGroup --dry-run IN "${SCRATCH}/demo" FAILS)
 expect_match("${ERR}" "no node named `talker`, `demo` is not built yet, run `rant build` first")
 
 # A package gets Rant through the same routine as rant lib install, which asks GitHub.

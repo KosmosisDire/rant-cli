@@ -58,7 +58,8 @@ add_library(rant_cli_core STATIC
   ui/yaml.cpp
   util/home.cpp
   util/interrupt.cpp
-  util/match.cpp)
+  util/match.cpp
+  util/naming.cpp)
 
 # One process backend per OS behind process/supervisor.hpp.
 if(WIN32)

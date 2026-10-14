@@ -43,11 +43,13 @@ TEST(a_preset_writes_its_folders_with_the_name_and_never_overwrites) {
     CHECK(failure_of([&] { scaffold::plan("package-cpp", t.root / "cam", { { "name", "cam" } }); }).find("exists already") != std::string::npos);
 }
 
-TEST(a_csharp_preset_targets_the_framework_given) {
+TEST(a_csharp_project_is_pascal_case_and_targets_the_framework_given) {
     Scratch t;
-    auto files = scaffold::plan("package-csharp", t.root / "panel", { { "name", "panel" }, { "framework", "net10.0" } });
+    auto files = scaffold::plan("package-csharp", t.root / "panel", { { "name", "panel" }, { "Name", "Panel" }, { "framework", "net10.0" } });
     scaffold::write(files);
-    CHECK(t.read("panel/panel.csproj").find("<TargetFramework>net10.0</TargetFramework>") != std::string::npos);
+    std::string project = t.read("panel/Panel.csproj");
+    CHECK(project.find("<TargetFramework>net10.0</TargetFramework>") != std::string::npos);
+    CHECK(project.find("<AssemblyName>panel</AssemblyName>") != std::string::npos);
 }
 
 TEST(a_preset_that_does_not_exist_is_an_error) {

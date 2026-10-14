@@ -15,7 +15,8 @@ namespace fs = std::filesystem;
 /* Files to write, each with its text. */
 using Files = std::vector<std::pair<fs::path, std::string>>;
 
-/* What fills each {{key}}: name always, framework for a C# preset. */
+/* What fills each {{key}}: name, Name in PascalCase and group, the name of a group made
+ * with it, always, framework for a C# preset. */
 using Values = std::map<std::string, std::string>;
 
 /* The files a preset makes in dest. Throws app::Failure when one exists already. */

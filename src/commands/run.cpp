@@ -105,6 +105,7 @@ int run_group(app::Context& ctx, const std::string& group, const std::vector<std
     }
     config::Plan plan = config::plan_group(ctx.cwd(), group, params);
     require_plan(ctx, plan);
+    note_group_names(ctx, { plan.group });
     if (ctx.args.has("dry-run")) {
         print_plan(ctx, plan);
         return 0;

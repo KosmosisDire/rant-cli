@@ -5,6 +5,7 @@
 #include "app/failure.hpp"
 #include "process/command.hpp"
 #include "ui/table.hpp"
+#include "util/naming.hpp"
 
 namespace commands {
 
@@ -14,6 +15,14 @@ void require_plan(app::Context& ctx, const config::Plan& plan) {
     if (plan.diagnostics.empty()) return;
     for (auto& d : plan.diagnostics) ctx.out.error(d.str());
     throw app::Failure("");
+}
+
+void note_group_names(app::Context& ctx, const std::vector<std::string>& groups) {
+    for (auto& g : groups) {
+        std::string stem = g.substr(g.rfind('/') + 1);    /* package/stem */
+        std::string want = util::group_name(stem);
+        if (want != stem) ctx.out.note("rename group `" + g + "` to `" + want + "`");
+    }
 }
 
 void print_params(app::Context& ctx, const std::vector<config::Param>& params) {

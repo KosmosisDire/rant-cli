@@ -5,6 +5,7 @@
 
 #include "app/failure.hpp"
 #include "commands/commands.hpp"
+#include "commands/plan_output.hpp"
 #include "complete/complete.hpp"
 #include "process/command.hpp"
 #include "ui/prompt.hpp"
@@ -136,6 +137,9 @@ static int run(app::Context& ctx) {
     }
     if (built == 0) ctx.out.line("nothing to build: no package here has a build step");
     else ctx.out.line("built " + std::to_string(built) + (built == 1 ? " package" : " packages"));
+    std::vector<std::string> groups;
+    for (auto& g : ws.groups) groups.push_back(g.name);
+    note_group_names(ctx, groups);
     return 0;
 }
 

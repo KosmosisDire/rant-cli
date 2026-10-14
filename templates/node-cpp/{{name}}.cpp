@@ -7,7 +7,7 @@ using namespace std::chrono_literals;
 
 int main() {
     rant::Node node("{{name}}");
-    auto count = node.publisher<double>("{{name}}/count");
+    auto count = node.publisher<double>("{{Name}}/Count");
     node.settle();
     for (double i = 0;; i++) {
         count.send(i);
