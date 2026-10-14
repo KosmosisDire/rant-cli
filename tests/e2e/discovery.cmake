@@ -20,10 +20,10 @@ if(NOT EXISTS "${SCRATCH}/.rant/cache/scan.json")
   message(FATAL_ERROR "no scan cache was written")
 endif()
 
-# A malformed rant.hcl is reported where the mistake is.
-file(WRITE "${SCRATCH}/tools/rant.hcl" "package {\n  name = \n}\n")
+# A malformed package.rant is reported where the mistake is.
+file(WRITE "${SCRATCH}/tools/package.rant" "name = \n")
 rant(build --dry-run FAILS)
-expect_match("${ERR}" "tools/rant.hcl:[23]:[0-9]+: syntax error")
+expect_match("${ERR}" "tools/package.rant:[12]:[0-9]+: syntax error")
 
 # Outside any workspace the command says how to make one.
 file(MAKE_DIRECTORY "${SCRATCH}/../outside-${DOMAIN}")

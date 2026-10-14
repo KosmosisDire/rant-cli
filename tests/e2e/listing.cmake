@@ -3,12 +3,12 @@ include("${CMAKE_CURRENT_LIST_DIR}/lib.cmake")
 use_fixture(groups)
 install_test_node("demo/bin")
 # a group named like a node, so one name means two things
-file(WRITE "${SCRATCH}/sensor.group.hcl" "node \"demo/sensor\" {\n  name = \"one\"\n}\n")
+file(WRITE "${SCRATCH}/sensor.rungroup" "node \"demo/sensor\" {\n  name = \"one\"\n}\n")
 
 # Every kind word works singular, plural or short.
 foreach(word package packages pkg pkgs)
   rant(ls ${word})
-  expect_match("${OUT}" "^PACKAGES\n  demo +rant[.]hcl +no Rant +demo\n$")
+  expect_match("${OUT}" "^PACKAGES\n  demo +package[.]rant +no Rant +demo\n$")
 endforeach()
 rant(ls nodes)
 expect_match("${OUT}" "NOT RUNNING\n  demo/sensor +declared +")

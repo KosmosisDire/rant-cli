@@ -11,21 +11,21 @@ const PY_NODE: &str = "import rant\n\nif __name__ == \"__main__\":\n    pass\n";
 
 fn mixed() -> TestDir {
     let t = TestDir::new();
-    t.write("rant.hcl", "workspace {\n  ignore = [\"skip/**\"]\n}\n");
+    t.write("workspace.rant", "ignore = [\"skip/**\"]\n");
     t.write(".gitignore", "out/\n");
     t.write("py/pyproject.toml", "[project]\nname = \"detector\"\ndependencies = [\"rant-middleware\"]\n");
     t.write("py/detector.py", PY_NODE);
     t.write("py/helper.py", "import rant\n");
     t.write("py/.venv/pyvenv.cfg", "home = x\n");
     t.write("py/.venv/lib/site.py", PY_NODE);
-    t.write("py/sub/rant.hcl", "package {\n  name = \"inner\"\n  node \"tool\" {\n    run = \"tool --fast\"\n  }\n}\n");
+    t.write("py/sub/package.rant", "name = \"inner\"\nnode \"tool\" {\n  run = \"tool --fast\"\n}\n");
     t.write("py/sub/inner_node.py", PY_NODE);
     t.write("cpp/CMakeLists.txt", "project(lidar_driver)\nfind_package(rant REQUIRED)\n");
     t.write("out/CMakeLists.txt", "find_package(rant)\n");
     t.write("skip/CMakeLists.txt", "find_package(rant)\n");
     t.write("cpp/build/CMakeCache.txt", "");
     t.write("cpp/build/_deps/rant-src/CMakeLists.txt", "add_library(rant::rant ALIAS rant)\n");
-    t.write("vendor/sdk/rant.hcl", "package {}\n");
+    t.write("vendor/sdk/package.rant", "");
     t
 }
 
@@ -66,9 +66,9 @@ fn node_types_stay_in_their_package() {
 #[test]
 fn duplicate_package_names_are_an_error() {
     let t = TestDir::new();
-    t.write("rant.hcl", "workspace {}\n");
-    t.write("a/rant.hcl", "package {\n  name = \"same\"\n}\n");
-    t.write("b/rant.hcl", "package {\n  name = \"same\"\n}\n");
+    t.write("workspace.rant", "");
+    t.write("a/package.rant", "name = \"same\"\n");
+    t.write("b/package.rant", "name = \"same\"\n");
     let (_, diags) = Model::load(workspace::open(t.root()).unwrap().unwrap());
     assert_eq!(diags.len(), 1);
     assert!(diags[0].message.contains("also used by"));
@@ -94,7 +94,7 @@ fn references_in_every_form() {
 #[test]
 fn a_csharp_program_runs_its_newest_build() {
     let t = TestDir::new();
-    t.write("rant.hcl", "workspace {}\n");
+    t.write("workspace.rant", "");
     t.write(
         "hmi/hmi.csproj",
         "<Project><PropertyGroup><OutputType>Exe</OutputType><AssemblyName>panel</AssemblyName></PropertyGroup><ItemGroup><PackageReference Include=\"Rant\" /></ItemGroup></Project>\n",
@@ -127,11 +127,11 @@ fn the_scan_cache_is_written_and_reused() {
 #[test]
 fn a_cmake_folder_inside_a_cmake_package_is_part_of_it() {
     let t = TestDir::new();
-    t.write("rant.hcl", "workspace {}\n");
+    t.write("workspace.rant", "");
     t.write("CMakeLists.txt", "project(arna_system)\nCPMAddPackage(NAME rant GIT_TAG v0.0.18)\nadd_subdirectory(src/ft)\n");
     t.write("src/ft/CMakeLists.txt", "add_executable(ft ft.cpp)\ntarget_link_libraries(ft PRIVATE rant::rant_host)\n");
     t.write("src/arm/CMakeLists.txt", "add_executable(arm arm.cpp)\ntarget_link_libraries(arm PRIVATE rant::rant_host)\n");
-    t.write("src/arm/rant.hcl", "package {\n  name = \"arm\"\n}\n");
+    t.write("src/arm/package.rant", "name = \"arm\"\n");
     t.write("tools/py/pyproject.toml", "[project]\nname = \"tool\"\ndependencies = [\"rant-middleware\"]\n");
     let m = load(&t);
     let mut names: Vec<&str> = m.packages.iter().map(|p| p.name.as_str()).collect();
@@ -142,7 +142,7 @@ fn a_cmake_folder_inside_a_cmake_package_is_part_of_it() {
 #[test]
 fn python_nodes_outside_packages_have_no_package() {
     let t = TestDir::new();
-    t.write("rant.hcl", "workspace {}\n");
+    t.write("workspace.rant", "");
     t.write("Services/pick/main.py", "import rant\n\ndef main():\n    pass\n");
     t.write("Services/pick/schemas.py", "import rant\n");
     t.write("IO/ft/ft.py", "import rant\nnode = rant.Node()\n");

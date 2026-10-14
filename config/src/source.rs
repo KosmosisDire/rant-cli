@@ -54,24 +54,6 @@ impl Source {
         let column = before[line_start..].chars().count() + 1;
         (line as u32, column as u32)
     }
-
-    /// The top level blocks. A top level attribute is refused, since no file kind has one.
-    pub fn top_blocks(&self) -> Result<Vec<&Block>, Diag> {
-        top_blocks(self, &self.body)
-    }
-}
-
-fn top_blocks<'a>(src: &Source, body: &'a Body) -> Result<Vec<&'a Block>, Diag> {
-    let mut blocks = Vec::new();
-    for s in body.iter() {
-        match s {
-            Structure::Block(b) => blocks.push(b),
-            Structure::Attribute(a) => {
-                return Err(src.diag_at(a, format!("`{}` belongs inside workspace {{}} or package {{}}", a.key.as_str())))
-            }
-        }
-    }
-    Ok(blocks)
 }
 
 /// The attributes and blocks of a block body, with every key checked against what the block
@@ -138,14 +120,6 @@ pub fn one_label<'a>(src: &Source, block: &'a Block) -> Result<&'a str, Diag> {
     }
 }
 
-pub fn no_labels(src: &Source, block: &Block) -> Result<(), Diag> {
-    if block.labels.is_empty() {
-        Ok(())
-    } else {
-        Err(src.diag_at(block, format!("`{}` takes no label", block.ident.as_str())))
-    }
-}
-
 /// The parser's messages name what it expected. A leading capital reads oddly after a location.
 fn syntax_message(message: &str) -> String {
     let m = message.trim();
@@ -185,16 +159,15 @@ mod tests {
 
     #[test]
     fn syntax_error_is_located() {
-        let err = Source::parse(Path::new("rant.hcl"), "workspace {\n  logs = \n}\n".into()).err().unwrap();
+        let err = Source::parse(Path::new("workspace.rant"), "ignore = []\nlogs = \n".into()).err().unwrap();
         assert!(err.line >= 2, "{err}");
         assert!(err.message.starts_with("syntax error"), "{}", err.message);
     }
 
     #[test]
     fn unknown_attribute_is_located() {
-        let src = Source::parse(Path::new("rant.hcl"), "workspace {\n  lgos = \"x\"\n}\n".into()).unwrap();
-        let blocks = src.top_blocks().unwrap();
-        let err = Fields::of(&src, blocks[0], &["logs", "ignore"], &[]).err().unwrap();
+        let src = Source::parse(Path::new("workspace.rant"), "ignore = []\n  lgos = \"x\"\n".into()).unwrap();
+        let err = Fields::of_body(&src, &src.body, "workspace.rant", &["logs", "ignore"], &[]).err().unwrap();
         assert_eq!((err.line, err.column), (2, 3));
         assert!(err.message.contains("lgos"));
     }

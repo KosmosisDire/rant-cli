@@ -9,12 +9,12 @@ static int run(app::Context& ctx) {
     auto opened = config::init(dir);
     for (auto& d : opened.diagnostics) ctx.out.error(d.str());
     if (!opened.workspace) throw app::Failure("");
-    ctx.out.line("created " + config::to_utf8(opened.workspace->root / "rant.hcl"));
+    ctx.out.line("created " + config::to_utf8(opened.workspace->root / "workspace.rant"));
     return 0;
 }
 
 app::Command init() {
-    return { "init", "[dir]", "make this directory a workspace by writing rant.hcl",
+    return { "init", "[dir]", "make this directory a workspace by writing workspace.rant",
              app::Section::Workspace, {}, run };
 }
 

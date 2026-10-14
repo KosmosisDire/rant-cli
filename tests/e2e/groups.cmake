@@ -47,9 +47,9 @@ expect_match("${OUT}" "seq")
 # A node of the same name that rant did not start can stand in, after a question.
 file(MAKE_DIRECTORY "${OTHER}")
 file(COPY "${SCRATCH}/demo" DESTINATION "${OTHER}")
-file(WRITE "${OTHER}/rant.hcl" "workspace {}\n")
-file(WRITE "${OTHER}/demo/rant.hcl"
-     "package {\n  name = \"demo\"\n  node \"planner\" {\n    run = [\"./bin/test_node\", \"--life\", \"60\"]\n  }\n}\n")
+file(WRITE "${OTHER}/workspace.rant" "")
+file(WRITE "${OTHER}/demo/package.rant"
+     "name = \"demo\"\nnode \"planner\" {\n  run = [\"./bin/test_node\", \"--life\", \"60\"]\n}\n")
 rant(start node planner IN "${OTHER}")
 rant(start group nav)
 expect_match("${ERR}" "`planner` already runs on the mesh, but rant did not start it. Use it for nav\\? \\[y/N\\] y")
@@ -77,8 +77,8 @@ rant(stop)
 expect_match("${OUT}" "nothing started here is running")
 
 # Placement: prefixes join from the workspace in, and the node prefix is part of the name.
-file(WRITE "${SCRATCH}/rant.hcl" "workspace {\n  prefix = \"plant\"\n}\n")
-file(WRITE "${SCRATCH}/cell.group.hcl"
+file(WRITE "${SCRATCH}/workspace.rant" "prefix = \"plant\"\n")
+file(WRITE "${SCRATCH}/cell.rungroup"
      "node_prefix = \"left\"\nprefix      = \"left\"\nnode \"sensor\" {\n  name = \"lidar\"\n}\n")
 rant(start group cell --dry-run --json)
 expect_match("${OUT}" "\"name\": \"left/lidar\"")

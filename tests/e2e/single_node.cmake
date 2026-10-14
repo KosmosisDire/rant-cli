@@ -49,7 +49,7 @@ expect_match("${st}" "\"instances\": \\[\\]")
 # A node another workspace started stops from here too.
 file(MAKE_DIRECTORY "${OTHER}")
 file(COPY "${SCRATCH}/demo" DESTINATION "${OTHER}")
-file(WRITE "${OTHER}/rant.hcl" "workspace {}\n")
+file(WRITE "${OTHER}/workspace.rant" "")
 rant(start node chatty IN "${OTHER}")
 rant(stop node chatty)
 expect_match("${OUT}" "^stopped chatty\n")

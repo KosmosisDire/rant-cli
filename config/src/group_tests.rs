@@ -15,17 +15,17 @@ use crate::workspace;
 
 fn workspace_with(extra: &[(&str, &str)]) -> TestDir {
     let t = TestDir::new();
-    t.write("rant.hcl", "workspace {}\n");
+    t.write("workspace.rant", "");
     t.write(
-        "drivers/rant.hcl",
-        "package {\n  name = \"drivers\"\n  node \"lidar\" {\n    run = \"lidar --fast\"\n  }\n  node \"camera\" {\n    run = \"cam\"\n  }\n  node \"motors\" {\n    run = \"motors\"\n  }\n}\n",
+        "drivers/package.rant",
+        "name = \"drivers\"\nnode \"lidar\" {\n  run = \"lidar --fast\"\n}\nnode \"camera\" {\n  run = \"cam\"\n}\nnode \"motors\" {\n  run = \"motors\"\n}\n",
     );
     t.write(
-        "planner/rant.hcl",
-        "package {\n  name = \"planner\"\n  node \"planner\" {\n    run = \"plan\"\n  }\n  node \"odom\" {\n    run = \"odom\"\n  }\n}\n",
+        "planner/package.rant",
+        "name = \"planner\"\nnode \"planner\" {\n  run = \"plan\"\n}\nnode \"odom\" {\n  run = \"odom\"\n}\n",
     );
     t.write(
-        "drivers/launch/cameras.group.hcl",
+        "drivers/launch/cameras.rungroup",
         r#"# The two cameras of the robot, one per side.
   param "side" {
     type    = string
@@ -43,11 +43,11 @@ fn workspace_with(extra: &[(&str, &str)]) -> TestDir {
 "#,
     );
     t.write(
-        "base.group.hcl",
+        "base.rungroup",
         "  param \"lidar_args\" {\n    default = \"--range 30\"\n  }\n  node \"drivers/lidar\" {\n    args = param.lidar_args\n  }\n  node \"planner/odom\" {}\n",
     );
     t.write(
-        "nav.group.hcl",
+        "nav.rungroup",
         r#"
   description = "Drive around"
   param "speed" {
@@ -69,7 +69,7 @@ fn workspace_with(extra: &[(&str, &str)]) -> TestDir {
   }
 "#,
     );
-    t.write("pick.group.hcl", "  include \"base\" {}\n  node \"drivers/motors\" {\n    name = \"arm\"\n  }\n");
+    t.write("pick.rungroup", "  include \"base\" {}\n  node \"drivers/motors\" {\n    name = \"arm\"\n  }\n");
     for (path, text) in extra {
         t.write(path, text);
     }
@@ -146,7 +146,7 @@ fn values_are_checked_before_anything_runs() {
 
 #[test]
 fn a_bare_reference_looks_in_its_own_package_first() {
-    let t = workspace_with(&[("drivers/launch/front.group.hcl", "  include \"cameras\" {\n    side = \"left\"\n  }\n")]);
+    let t = workspace_with(&[("drivers/launch/front.rungroup", "  include \"cameras\" {\n    side = \"left\"\n  }\n")]);
     let (p, _) = plan(&model(&t), "drivers/front", &[]).unwrap();
     assert_eq!(names(&p), ["camera_left"]);
     let groups_model = model(&t);
@@ -157,21 +157,21 @@ fn a_bare_reference_looks_in_its_own_package_first() {
 #[test]
 fn the_same_node_twice_merges_and_a_different_one_is_an_error() {
     let t = workspace_with(&[
-        ("both.group.hcl", "  include \"nav\" {}\n  include \"pick\" {}\n"),
-        ("clash.group.hcl", "  include \"base\" {}\n  node \"planner/odom\" {\n    args = \"--other\"\n  }\n"),
+        ("both.rungroup", "  include \"nav\" {}\n  include \"pick\" {}\n"),
+        ("clash.rungroup", "  include \"base\" {}\n  node \"planner/odom\" {\n    args = \"--other\"\n  }\n"),
     ]);
     let m = model(&t);
     let (p, _) = plan(&m, "both", &[]).unwrap();
     assert_eq!(names(&p), ["lidar", "odom", "camera_left", "camera_right", "planner", "arm"]);
     let err = plan(&m, "clash", &[]).unwrap_err();
     assert!(err.message.contains("node `odom` is also defined at"), "{err}");
-    assert!(err.message.contains("base.group.hcl:7:3"), "{err}");
+    assert!(err.message.contains("base.rungroup:7:3"), "{err}");
     assert_eq!((err.line, err.column), (2, 3));
 }
 
 #[test]
 fn a_node_label_names_what_runs() {
-    let t = workspace_with(&[("bare.group.hcl", "  node \"lidar\" {}\n  node \"odom\" {\n    args = \"--slow\"\n  }\n")]);
+    let t = workspace_with(&[("bare.rungroup", "  node \"lidar\" {}\n  node \"odom\" {\n    args = \"--slow\"\n  }\n")]);
     let m = model(&t);
     let (p, _) = plan(&m, "bare", &[]).unwrap();
     assert_eq!(names(&p), ["lidar", "odom"]);
@@ -182,28 +182,28 @@ fn a_node_label_names_what_runs() {
 #[test]
 fn semantic_errors_point_at_their_place() {
     let cases: &[(&str, &str, &str, u32)] = &[
-        ("undeclared.group.hcl", "  node \"drivers/lidar\" {\n    args = [param.nope]\n  }\n", "param `nope` is not declared", 2),
-        ("unbound.group.hcl", "  include \"drivers/cameras\" {}\n", "param `side` needs a value, bind it here or expose it", 1),
-        ("unknown.group.hcl", "  include \"base\" {\n    colour = \"red\"\n  }\n", "group `base` has no param `colour`", 2),
-        ("missing.group.hcl", "  include \"nowhere\" {}\n", "no group named `nowhere`", 1),
-        ("badtype.group.hcl", "  node \"drivers/nothing\" {}\n", "has no node `nothing`", 1),
+        ("undeclared.rungroup", "  node \"drivers/lidar\" {\n    args = [param.nope]\n  }\n", "param `nope` is not declared", 2),
+        ("unbound.rungroup", "  include \"drivers/cameras\" {}\n", "param `side` needs a value, bind it here or expose it", 1),
+        ("unknown.rungroup", "  include \"base\" {\n    colour = \"red\"\n  }\n", "group `base` has no param `colour`", 2),
+        ("missing.rungroup", "  include \"nowhere\" {}\n", "no group named `nowhere`", 1),
+        ("badtype.rungroup", "  node \"drivers/nothing\" {}\n", "has no node `nothing`", 1),
         (
-            "collide.group.hcl",
+            "collide.rungroup",
             "  param \"lidar_args\" {}\n  include \"base\" {\n    expose = true\n  }\n",
             "exposed param `lidar_args` collides",
             2,
         ),
-        ("cycle_a.group.hcl", "  include \"cycle_b\" {}\n", "include cycle", 0),
-        ("nodetype.group.hcl", "  node \"x\" {}\n", "no node named `x`", 1),
-        ("default.group.hcl", "  param \"n\" {\n    type    = int\n    default = \"ten\"\n  }\n", "default: param `n` is int", 3),
+        ("cycle_a.rungroup", "  include \"cycle_b\" {}\n", "include cycle", 0),
+        ("nodetype.rungroup", "  node \"x\" {}\n", "no node named `x`", 1),
+        ("default.rungroup", "  param \"n\" {\n    type    = int\n    default = \"ten\"\n  }\n", "default: param `n` is int", 3),
     ];
-    let t = workspace_with(&[("cycle_b.group.hcl", "  include \"cycle_a\" {}\n")]);
+    let t = workspace_with(&[("cycle_b.rungroup", "  include \"cycle_a\" {}\n")]);
     for (file, text, _, _) in cases {
         t.write(file, text);
     }
     let m = model(&t);
     for (file, _, message, line) in cases {
-        let group = file.trim_end_matches(".group.hcl");
+        let group = file.trim_end_matches(".rungroup");
         let err = plan(&m, group, &[]).unwrap_err();
         assert!(err.message.contains(message), "{group}: {err}");
         assert_eq!(err.line, *line, "{group}: {err}");
@@ -212,7 +212,7 @@ fn semantic_errors_point_at_their_place() {
 
 #[test]
 fn a_block_a_group_file_does_not_know_is_an_error() {
-    let t = workspace_with(&[("two.group.hcl", "group {}\n")]);
+    let t = workspace_with(&[("two.rungroup", "group {}\n")]);
     let m = model(&t);
     let groups = Groups::new(&m);
     assert!(groups.load(groups.find("two", None).unwrap()).is_err());
@@ -221,12 +221,12 @@ fn a_block_a_group_file_does_not_know_is_an_error() {
 #[test]
 fn placement_follows_workspace_package_groups_and_node() {
     let t = workspace_with(&[
-        ("rant.hcl", "workspace {\n  domain = 5\n  prefix = \"plant\"\n}\n"),
-        ("arm/rant.hcl", "package {\n  name   = \"arm\"\n  prefix = \"arm\"\n  node \"joint\" {\n    run = \"joint\"\n  }\n}\n"),
-        ("side.group.hcl", "  param \"side\" {}\n  prefix      = param.side\n  node_prefix = param.side\n  node \"arm/joint\" {\n    domain = 9\n  }\n  node \"lidar\" {}\n"),
-        ("cell.group.hcl", "  node_prefix = \"cell\"\n  include \"side\" {\n    side   = \"left\"\n    domain = 7\n  }\n"),
-        ("bad.group.hcl", "  param \"domain\" {}\n"),
-        ("long.group.hcl", "  node \"lidar\" {\n    node_prefix = \"a_very_long_cell_name\"\n    name        = \"and_a_long_node\"\n  }\n"),
+        ("workspace.rant", "domain = 5\nprefix = \"plant\"\n"),
+        ("arm/package.rant", "name   = \"arm\"\nprefix = \"arm\"\nnode \"joint\" {\n  run = \"joint\"\n}\n"),
+        ("side.rungroup", "  param \"side\" {}\n  prefix      = param.side\n  node_prefix = param.side\n  node \"arm/joint\" {\n    domain = 9\n  }\n  node \"lidar\" {}\n"),
+        ("cell.rungroup", "  node_prefix = \"cell\"\n  include \"side\" {\n    side   = \"left\"\n    domain = 7\n  }\n"),
+        ("bad.rungroup", "  param \"domain\" {}\n"),
+        ("long.rungroup", "  node \"lidar\" {\n    node_prefix = \"a_very_long_cell_name\"\n    name        = \"and_a_long_node\"\n  }\n"),
     ]);
     let m = model(&t);
     let (p, _) = plan(&m, "cell", &[]).unwrap();

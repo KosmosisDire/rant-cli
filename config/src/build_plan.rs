@@ -7,7 +7,7 @@ use crate::diag::Diag;
 use crate::manifest::{python_name, ManifestKind};
 use crate::model::{Model, Package};
 use crate::paths;
-use crate::workspace::MANIFEST;
+use crate::workspace::WORKSPACE_FILE;
 
 /// One package's build: an optional configure step the user is asked about first, then
 /// commands run in order in the package directory.
@@ -171,7 +171,7 @@ fn cycle(model: &Model, edges: &[Edge], selected: &[bool], done: &[bool]) -> Dia
     }
     let start = path.iter().position(|e| e.from == at).unwrap_or(0);
     let lines: Vec<String> = path[start..].iter().map(|e| format!("  {} -> {} ({})", e.from, e.to, e.source)).collect();
-    let file = model.config.root.join(MANIFEST);
+    let file = model.config.root.join(WORKSPACE_FILE);
     Diag::file(&file, format!("the packages depend on each other in a cycle:\n{}", lines.join("\n")))
 }
 
@@ -189,13 +189,13 @@ mod tests {
 
     fn workspace_tree() -> TestDir {
         let t = TestDir::new();
-        t.write("rant.hcl", "workspace {}\n");
-        t.write("a_sdk/rant.hcl", "package {\n  name  = \"sdk\"\n  build = [\"make\", \"make install\"]\n}\n");
+        t.write("workspace.rant", "");
+        t.write("a_sdk/package.rant", "name  = \"sdk\"\nbuild = [\"make\", \"make install\"]\n");
         t.write("b_driver/CMakeLists.txt", "project(driver)\nfind_package(rant)\nfind_package(sdk)\n");
         t.write("c_app/CMakeLists.txt", "project(app)\nfind_package(rant)\nfind_package(driver)\n");
         t.write("c_app/build/CMakeCache.txt", "");
         t.write("d_py/pyproject.toml", "[project]\nname = \"vision\"\ndependencies = [\"rant-middleware\"]\n");
-        t.write("d_py/rant.hcl", "package {\n  depend = [\"app\"]\n}\n");
+        t.write("d_py/package.rant", "depend = [\"app\"]\n");
         t
     }
 
@@ -206,7 +206,7 @@ mod tests {
         let order: Vec<&str> = p.steps.iter().map(|s| s.package.as_str()).collect();
         assert_eq!(order, ["sdk", "driver", "app", "vision"]);
         assert!(p.edges.contains(&Edge { from: "driver".into(), to: "sdk".into(), source: "find_package(sdk) in b_driver/CMakeLists.txt".into() }));
-        assert!(p.edges.iter().any(|e| e.from == "vision" && e.source == "depend in d_py/rant.hcl"));
+        assert!(p.edges.iter().any(|e| e.from == "vision" && e.source == "depend in d_py/package.rant"));
     }
 
     #[test]
@@ -232,17 +232,17 @@ mod tests {
     #[test]
     fn a_cycle_names_every_edge() {
         let t = workspace_tree();
-        t.write("a_sdk/rant.hcl", "package {\n  name   = \"sdk\"\n  depend = [\"app\"]\n}\n");
+        t.write("a_sdk/package.rant", "name   = \"sdk\"\ndepend = [\"app\"]\n");
         let err = plan(&model(&t), &[]).unwrap_err();
         assert!(err.message.contains("cycle"), "{err}");
-        assert!(err.message.contains("sdk -> app (depend in a_sdk/rant.hcl)"), "{err}");
+        assert!(err.message.contains("sdk -> app (depend in a_sdk/package.rant)"), "{err}");
         assert!(err.message.contains("driver -> sdk (find_package(sdk)"), "{err}");
     }
 
     #[test]
     fn an_unknown_depend_is_an_error() {
         let t = workspace_tree();
-        t.write("d_py/rant.hcl", "package {\n  depend = [\"ghost\"]\n}\n");
+        t.write("d_py/package.rant", "depend = [\"ghost\"]\n");
         assert!(plan(&model(&t), &[]).unwrap_err().message.contains("`ghost`"));
     }
 }

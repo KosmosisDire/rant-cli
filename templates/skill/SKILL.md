@@ -1,6 +1,6 @@
 ---
 name: rant
-description: Rant robotics middleware and the rant CLI. Use when a project uses Rant (rant.hcl, *.group.hcl, rant.hpp, import rant, using Rant) or the user asks to make, build, run, debug or inspect Rant nodes, topics, variables, functions or tasks.
+description: Rant robotics middleware and the rant CLI. Use when a project uses Rant (workspace.rant, package.rant, *.rungroup, rant.hpp, import rant, using Rant) or the user asks to make, build, run, debug or inspect Rant nodes, topics, variables, functions or tasks.
 ---
 
 # Rant
@@ -21,9 +21,9 @@ writes the mesh. Full docs: https://docs.rantlib.dev/llms.txt (fetch the page yo
 ## Layout
 
 ```
-cell/                     workspace: rant.hcl with workspace {}
-  rant.hcl
-  cell.group.hcl          a group: which nodes run together, and how
+cell/                     workspace: the folder holding workspace.rant
+  workspace.rant
+  cell.rungroup           a group: which nodes run together, and how
   drivers/                a package: CMakeLists.txt, pyproject.toml or a .csproj that uses Rant
     CMakeLists.txt
     lidar.cpp             a node: one program
@@ -31,8 +31,8 @@ cell/                     workspace: rant.hcl with workspace {}
   .rant/                  rant's state, never edit, keep out of git
 ```
 
-A build file that uses Rant makes a package by itself. Add `package {}` to its rant.hcl
-only to override something. A CMake folder inside a CMake package belongs to it.
+A build file that uses Rant makes a package by itself. Add a package.rant beside it only
+to override something. A folder may be a workspace and a package, with both files. A CMake folder inside a CMake package belongs to it.
 
 ## Commands
 
@@ -55,21 +55,20 @@ answer its questions.
 
 ## Config files
 
-rant.hcl at the workspace root:
+All three are HCL with every setting at the top level. workspace.rant at the workspace root,
+empty for the defaults:
 
 ```hcl
-workspace {
-  logs   = "logs"              # where node output goes
-  ignore = ["third_party/**"]  # folders discovery skips
-  domain = 7                   # placement, see below
-}
+logs   = "logs"              # where node output goes
+ignore = ["third_party/**"]  # folders discovery skips
+domain = 7                   # placement, see below
 ```
 
-`package {}` in a package's rant.hcl: `name`, `build` (commands replacing the default),
+package.rant in a package: `name`, `build` (commands replacing the default),
 `depend` (package names built first), `ignore`, `python` (the interpreter), and
 `node "name" { run = "./tool --flag" }` for programs rant cannot find itself.
 
-A group is `<name>.group.hcl`, everything at the top level:
+A group is `<name>.rungroup`:
 
 ```hcl
 description = "Both arms"
@@ -91,7 +90,7 @@ node "planner" {               # the label names the node to run, package/name w
 Expressions may use `param.<name>` in groups and `path.file`, `path.package` and
 `path.workspace` anywhere.
 
-Placement: `domain`, `prefix` and `node_prefix` may go in `workspace {}`, `package {}`, a
+Placement: `domain`, `prefix` and `node_prefix` may go in workspace.rant, package.rant, a
 group's top level, an `include` and a group `node`. Prefixes join from the outside in, the
 innermost domain wins. `prefix` goes in front of every entity name a node makes,
 `node_prefix` in front of its node name. Place nodes this way, never with names or domains
@@ -207,8 +206,8 @@ rant_queue_dispatch(q, 0, 100);              /* on the thread that runs them */
     counterclockwise seen from above.
   - Image or screen: origin at the top left, x right, y down, angles clockwise on screen.
     Raw image rows start at the top.
-- One program per node. Keep domain, prefixes and node names out of the code: rant.hcl and
-  groups place them, and the name in the code is only a default.
+- One program per node. Keep domain, prefixes and node names out of the code: the config
+  files and groups place them, and the name in the code is only a default.
 - Add Rant with `rant lib install`, never by hand, and keep packages current with it.
 
 ## Debugging

@@ -1,4 +1,4 @@
-//! The `package {}` block of a package's rant.hcl.
+//! A package's `package.rant`.
 
 use std::path::{Path, PathBuf};
 
@@ -6,8 +6,10 @@ use crate::argv;
 use crate::diag::Diag;
 use crate::eval::{self, Scope, StringOrList};
 use crate::placement::{self, Placement};
-use crate::source::{no_labels, one_label, Fields, Source};
-use crate::workspace::{check_kinds, MANIFEST};
+use crate::source::{one_label, Fields, Source};
+
+/// The file that makes its folder a package and sets how it builds and runs.
+pub const PACKAGE_FILE: &str = "package.rant";
 
 #[derive(Debug, Clone, Default)]
 pub struct PackageBlock {
@@ -28,28 +30,16 @@ pub struct DeclaredNode {
     pub run: Vec<String>,
 }
 
-/// Reads dir/rant.hcl when it holds a `package {}` block. `is_root` allows a
-/// `workspace {}` block beside it.
-pub fn read(dir: &Path, workspace: &Path, is_root: bool) -> Result<Option<PackageBlock>, Diag> {
-    let path = dir.join(MANIFEST);
+/// Reads dir/package.rant when there is one.
+pub fn read(dir: &Path, workspace: &Path) -> Result<Option<PackageBlock>, Diag> {
+    let path = dir.join(PACKAGE_FILE);
     if !path.is_file() {
         return Ok(None);
     }
     let src = Source::read(&path)?;
-    let blocks = src.top_blocks()?;
-    check_kinds(&src, &blocks)?;
-    if !is_root {
-        if let Some(w) = blocks.iter().find(|b| b.ident.as_str() == "workspace") {
-            return Err(src.diag_at(*w, "a workspace block belongs only in the workspace root's rant.hcl"));
-        }
-    }
-    let Some(block) = blocks.iter().find(|b| b.ident.as_str() == "package") else {
-        return Ok(None);
-    };
-    no_labels(&src, block)?;
     let scope = Scope { params: None, file_dir: dir, package_dir: Some(dir), workspace };
     let keys = [&["name", "build", "depend", "ignore", "python"][..], &placement::KEYS[..]].concat();
-    let fields = Fields::of(&src, block, &keys, &["node"])?;
+    let fields = Fields::of_body(&src, &src.body, PACKAGE_FILE, &keys, &["node"])?;
 
     let mut out = PackageBlock { file: path.clone(), placement: Placement::read(&src, &fields.attrs, &scope)?, ..Default::default() };
     if let Some(a) = fields.attr("name") {
@@ -102,23 +92,21 @@ mod tests {
     fn reads_every_field() {
         let t = TestDir::new();
         t.write(
-            "dash/rant.hcl",
-            r#"package {
-  name   = "dashboard"
-  build  = ["npm ci", "npm run build"]
-  depend = ["rant_msgs"]
-  ignore = ["**/calib"]
-  python = ".venv/bin/python"
-  node "dashboard" {
-    run = "npm run serve -- --port '80 80'"
-  }
-  node "raw" {
-    run = ["${path.package}/x", "a b"]
-  }
+            "dash/package.rant",
+            r#"name   = "dashboard"
+build  = ["npm ci", "npm run build"]
+depend = ["rant_msgs"]
+ignore = ["**/calib"]
+python = ".venv/bin/python"
+node "dashboard" {
+  run = "npm run serve -- --port '80 80'"
+}
+node "raw" {
+  run = ["${path.package}/x", "a b"]
 }
 "#,
         );
-        let p = read(&t.path("dash"), t.root(), false).unwrap().unwrap();
+        let p = read(&t.path("dash"), t.root()).unwrap().unwrap();
         assert_eq!(p.name.as_deref(), Some("dashboard"));
         assert_eq!(p.build.unwrap(), vec![vec!["npm", "ci"], vec!["npm", "run", "build"]]);
         assert_eq!(p.depend, ["rant_msgs"]);
@@ -128,18 +116,10 @@ mod tests {
     }
 
     #[test]
-    fn workspace_block_only_at_the_root() {
-        let t = TestDir::new();
-        t.write("p/rant.hcl", "workspace {}\npackage {}\n");
-        assert!(read(&t.path("p"), t.root(), false).is_err());
-        assert!(read(&t.path("p"), t.root(), true).unwrap().is_some());
-    }
-
-    #[test]
     fn node_needs_run() {
         let t = TestDir::new();
-        t.write("p/rant.hcl", "package {\n  node \"x\" {}\n}\n");
-        let err = read(&t.path("p"), t.root(), false).err().unwrap();
+        t.write("p/package.rant", "name = \"p\"\nnode \"x\" {}\n");
+        let err = read(&t.path("p"), t.root()).err().unwrap();
         assert!(err.message.contains("needs `run`"));
         assert_eq!(err.line, 2);
     }

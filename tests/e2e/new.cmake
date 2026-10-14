@@ -3,16 +3,16 @@ include("${CMAKE_CURRENT_LIST_DIR}/lib.cmake")
 rant(init)
 
 rant(new group nav)
-expect_match("${OUT}" "created nav[.]group[.]hcl")
-file(READ "${SCRATCH}/nav.group.hcl" nav)
+expect_match("${OUT}" "created nav[.]rungroup")
+file(READ "${SCRATCH}/nav.rungroup" nav)
 expect_match("${nav}" "description = \"What nav runs\"")
 rant(new group nav FAILS)
-expect_match("${ERR}" "nav[.]group[.]hcl exists already, nothing was written")
+expect_match("${ERR}" "nav[.]rungroup exists already, nothing was written")
 
 # With no name a node or group takes the name of the folder it is made in.
 file(MAKE_DIRECTORY "${SCRATCH}/lidar")
 rant(new group IN "${SCRATCH}/lidar")
-expect_match("${OUT}" "created lidar[.]group[.]hcl")
+expect_match("${OUT}" "created lidar[.]rungroup")
 
 # A node takes the language of the package it is made in.
 file(WRITE "${SCRATCH}/py/pyproject.toml" "[project]\nname = \"py\"\ndependencies = [\"rant-middleware\"]\n")
@@ -46,10 +46,10 @@ expect_match("${ERR}" "target `arm` already, nothing was written")
 # nodes once built.
 rant(new workspace demo --lang cpp MAY_FAIL)
 expect_match("${OUT}" "created demo/CMakeLists[.]txt
-created demo/rant[.]hcl
 created demo/src/listener[.]cpp
 created demo/src/talker[.]cpp
-created demo/demo[.]group[.]hcl
+created demo/workspace[.]rant
+created demo/demo[.]rungroup
 ")
 rant(start group demo --dry-run IN "${SCRATCH}/demo" FAILS)
 expect_match("${ERR}" "no node named `talker`, `demo` is not built yet, run `rant build` first")

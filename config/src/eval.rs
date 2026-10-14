@@ -184,8 +184,7 @@ mod tests {
 
     fn eval_attr(text: &str, params: Option<&BTreeMap<String, Value>>, package: Option<&Path>) -> Result<Value, Diag> {
         let src = Source::parse(Path::new("/ws/g.hcl"), text.to_string()).unwrap();
-        let block = src.top_blocks().unwrap()[0];
-        let fields = Fields::of(&src, block, &["v"], &[]).unwrap();
+        let fields = Fields::of_body(&src, &src.body, "test", &["v"], &[]).unwrap();
         let scope = Scope { params, file_dir: Path::new("/ws/sub"), package_dir: package, workspace: Path::new("/ws") };
         value(&src, fields.attr("v").unwrap(), &scope)
     }
@@ -194,34 +193,34 @@ mod tests {
     fn templates_see_params_and_paths() {
         let mut p = BTreeMap::new();
         p.insert("side".to_string(), Value::from("left"));
-        let v = eval_attr("b {\n  v = \"${path.workspace}/cam_${param.side}\"\n}\n", Some(&p), None).unwrap();
+        let v = eval_attr("\n  v = \"${path.workspace}/cam_${param.side}\"\n", Some(&p), None).unwrap();
         assert_eq!(v, Value::from("/ws/cam_left"));
     }
 
     #[test]
     fn undeclared_param_points_at_the_reference() {
         let p = BTreeMap::new();
-        let err = eval_attr("b {\n  v = [\"--x\", param.nope]\n}\n", Some(&p), None).err().unwrap();
+        let err = eval_attr("\n  v = [\"--x\", param.nope]\n", Some(&p), None).err().unwrap();
         assert_eq!((err.line, err.column), (2, 15));
         assert!(err.message.contains("param `nope` is not declared"));
     }
 
     #[test]
     fn path_package_outside_a_package() {
-        let err = eval_attr("b {\n  v = path.package\n}\n", None, None).err().unwrap();
+        let err = eval_attr("\n  v = path.package\n", None, None).err().unwrap();
         assert!(err.message.contains("outside a package"));
-        assert!(eval_attr("b {\n  v = path.package\n}\n", None, Some(Path::new("/ws/p"))).is_ok());
+        assert!(eval_attr("\n  v = path.package\n", None, Some(Path::new("/ws/p"))).is_ok());
     }
 
     #[test]
     fn unknown_path_name() {
-        let err = eval_attr("b {\n  v = path.root\n}\n", None, None).err().unwrap();
+        let err = eval_attr("\n  v = path.root\n", None, None).err().unwrap();
         assert!(err.message.contains("path.root"));
     }
 
     #[test]
     fn param_outside_group_files() {
-        let err = eval_attr("b {\n  v = param.x\n}\n", None, None).err().unwrap();
+        let err = eval_attr("\n  v = param.x\n", None, None).err().unwrap();
         assert!(err.message.contains("only in group files"));
     }
 }

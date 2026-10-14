@@ -14,7 +14,8 @@ use crate::package::PackageBlock;
 use crate::paths;
 use crate::placement::Placement;
 use crate::scan::{self, Cache, NodeKind};
-use crate::workspace::{WorkspaceConfig, MANIFEST};
+use crate::package::PACKAGE_FILE;
+use crate::workspace::WorkspaceConfig;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct NodeType {
@@ -112,7 +113,7 @@ impl Model {
 }
 
 /// A CMake folder inside another CMake package is part of it, since CMake nests projects
-/// through add_subdirectory and the parent builds the child. A `package {}` block makes a
+/// through add_subdirectory and the parent builds the child. A `package.rant` makes a
 /// folder its own package whatever its manifests say.
 fn without_cmake_subdirectories(candidates: Vec<Candidate>) -> Vec<Candidate> {
     let cmake = |c: &Candidate| c.manifests.iter().any(|m| m.kind == ManifestKind::CMake);
@@ -127,7 +128,7 @@ fn without_cmake_subdirectories(candidates: Vec<Candidate>) -> Vec<Candidate> {
         .collect()
 }
 
-/// Names each package: `package { name }`, else the manifest's, else the directory's.
+/// Names each package: `name` in package.rant, else the manifest's, else the directory's.
 /// Two packages with one name are an error, and the second is dropped.
 fn name_packages(candidates: Vec<Candidate>, diags: &mut Vec<Diag>) -> Vec<Package> {
     let mut out: Vec<Package> = Vec::new();
@@ -141,8 +142,8 @@ fn name_packages(candidates: Vec<Candidate>, diags: &mut Vec<Diag>) -> Vec<Packa
         if let Some(other) = out.iter().find(|p| p.name == name) {
             let file = c.block.as_ref().map(|b| b.file.clone()).or_else(|| c.manifests.first().map(|m| m.path.clone()));
             diags.push(Diag::file(
-                &file.unwrap_or_else(|| c.dir.join(MANIFEST)),
-                format!("package name `{name}` is also used by {}, set `name` in a package block to tell them apart", other.dir.display()),
+                &file.unwrap_or_else(|| c.dir.join(PACKAGE_FILE)),
+                format!("package name `{name}` is also used by {}, set `name` in package.rant to tell them apart", other.dir.display()),
             ));
             continue;
         }

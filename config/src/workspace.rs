@@ -2,12 +2,14 @@ use std::path::{Path, PathBuf};
 
 use crate::diag::Diag;
 use crate::eval::{self, Scope};
+use crate::package::PACKAGE_FILE;
 use crate::placement::{self, Placement};
-use crate::source::{no_labels, Fields, Source};
+use crate::source::{Fields, Source};
 
-pub const MANIFEST: &str = "rant.hcl";
+/// The file that makes its folder a workspace root.
+pub const WORKSPACE_FILE: &str = "workspace.rant";
 
-/// The `workspace {}` block with every default applied.
+/// The workspace settings with every default applied.
 #[derive(Debug, Clone)]
 pub struct WorkspaceConfig {
     pub root: PathBuf,
@@ -16,31 +18,20 @@ pub struct WorkspaceConfig {
     pub placement: Placement,
 }
 
-/// Walks up from `start` to the nearest `rant.hcl` holding a `workspace {}` block. A
-/// `rant.hcl` with only a `package {}` block is passed over.
+/// Walks up from `start` to the nearest folder holding a `workspace.rant`.
 pub fn open(start: &Path) -> Result<Option<WorkspaceConfig>, Diag> {
     let start = std::path::absolute(start).map_err(|e| Diag::file(start, format!("bad directory: {e}")))?;
     for dir in start.ancestors() {
-        let manifest = dir.join(MANIFEST);
-        if !manifest.is_file() {
-            continue;
-        }
-        let src = Source::read(&manifest)?;
-        if let Some(ws) = parse(&src, dir)? {
-            return Ok(Some(ws));
+        let file = dir.join(WORKSPACE_FILE);
+        if file.is_file() {
+            return parse(&Source::read(&file)?, dir).map(Some);
         }
     }
     Ok(None)
 }
 
-fn parse(src: &Source, dir: &Path) -> Result<Option<WorkspaceConfig>, Diag> {
-    let blocks = src.top_blocks()?;
-    check_kinds(src, &blocks)?;
-    let Some(block) = blocks.iter().find(|b| b.ident.as_str() == "workspace") else {
-        return Ok(None);
-    };
-    no_labels(src, block)?;
-    let has_package = blocks.iter().any(|b| b.ident.as_str() == "package");
+fn parse(src: &Source, dir: &Path) -> Result<WorkspaceConfig, Diag> {
+    let has_package = dir.join(PACKAGE_FILE).is_file();
     let scope = Scope {
         params: None,
         file_dir: dir,
@@ -48,7 +39,7 @@ fn parse(src: &Source, dir: &Path) -> Result<Option<WorkspaceConfig>, Diag> {
         workspace: dir,
     };
     let keys = [&["logs", "ignore"][..], &placement::KEYS[..]].concat();
-    let fields = Fields::of(src, block, &keys, &[])?;
+    let fields = Fields::of_body(src, &src.body, WORKSPACE_FILE, &keys, &[])?;
     let logs = match fields.attr("logs") {
         Some(a) => dir.join(eval::string(src, a, &scope)?),
         None => dir.join("logs"),
@@ -58,26 +49,7 @@ fn parse(src: &Source, dir: &Path) -> Result<Option<WorkspaceConfig>, Diag> {
         None => Vec::new(),
     };
     let placement = Placement::read(src, &fields.attrs, &scope)?;
-    Ok(Some(WorkspaceConfig { root: dir.to_path_buf(), logs, ignore, placement }))
-}
-
-/// A `rant.hcl` holds `workspace {}`, `package {}` or both, once each.
-pub fn check_kinds(src: &Source, blocks: &[&hcl_edit::structure::Block]) -> Result<(), Diag> {
-    let mut seen: Vec<&str> = Vec::new();
-    for b in blocks {
-        let ident = b.ident.as_str();
-        match ident {
-            "workspace" | "package" => {
-                if seen.contains(&ident) {
-                    return Err(src.diag_at(*b, format!("rant.hcl allows one `{ident}` block")));
-                }
-                seen.push(ident);
-            }
-            "group" => return Err(src.diag_at(*b, "a group lives in its own .group.hcl file, not in rant.hcl")),
-            other => return Err(src.diag_at(*b, format!("unknown block `{other}`, expected workspace or package"))),
-        }
-    }
-    Ok(())
+    Ok(WorkspaceConfig { root: dir.to_path_buf(), logs, ignore, placement })
 }
 
 /// The workspace's own data directory, `.rant/` at the root, made on first use with a
@@ -91,16 +63,16 @@ pub fn data_dir(root: &Path) -> PathBuf {
     dir
 }
 
-const TEMPLATE: &str = "workspace {\n  # logs   = \"logs\"\n  # ignore = [\"experiments/**\"]\n}\n";
+const TEMPLATE: &str = "# logs   = \"logs\"\n# ignore = [\"experiments/**\"]\n";
 
-/// Writes a fresh `rant.hcl` into `dir`. Refused when one is already there.
+/// Writes a fresh `workspace.rant` into `dir`. Refused when one is already there.
 pub fn init(dir: &Path) -> Result<PathBuf, Diag> {
     let dir = std::path::absolute(dir).map_err(|e| Diag::file(dir, format!("bad directory: {e}")))?;
-    let manifest = dir.join(MANIFEST);
-    if manifest.exists() {
-        return Err(Diag::file(&manifest, "exists already"));
+    let file = dir.join(WORKSPACE_FILE);
+    if file.exists() {
+        return Err(Diag::file(&file, "exists already"));
     }
-    std::fs::write(&manifest, TEMPLATE).map_err(|e| Diag::file(&manifest, format!("cannot write: {e}")))?;
+    std::fs::write(&file, TEMPLATE).map_err(|e| Diag::file(&file, format!("cannot write: {e}")))?;
     Ok(dir)
 }
 
@@ -112,8 +84,8 @@ mod tests {
     #[test]
     fn finds_the_nearest_workspace_above() {
         let t = TestDir::new();
-        t.write("rant.hcl", "workspace {\n  logs = \"out\"\n}\n");
-        t.write("a/rant.hcl", "package {}\n");
+        t.write("workspace.rant", "logs = \"out\"\n");
+        t.write("a/package.rant", "");
         t.mkdir("a/b");
         let ws = open(&t.path("a/b")).unwrap().unwrap();
         assert_eq!(ws.root, t.path(""));
@@ -127,9 +99,9 @@ mod tests {
     }
 
     #[test]
-    fn group_in_rant_hcl_is_an_error() {
+    fn a_block_in_workspace_rant_is_an_error() {
         let t = TestDir::new();
-        t.write("rant.hcl", "workspace {}\ngroup {}\n");
+        t.write("workspace.rant", "logs = \"out\"\ngroup {}\n");
         let err = open(&t.path("")).err().unwrap();
         assert_eq!(err.line, 2);
     }

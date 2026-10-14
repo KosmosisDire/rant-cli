@@ -4,7 +4,7 @@ use_fixture(build)
 
 # The dry run shows every edge with where it came from, the order and the exact commands.
 rant(build --dry-run)
-expect_match("${OUT}" "DEPENDENCIES\n  app -> driver +depend in app/rant.hcl\n  driver -> sdk +find_package[(]sdk[)] in driver/CMakeLists.txt\n")
+expect_match("${OUT}" "DEPENDENCIES\n  app -> driver +depend in app/package.rant\n  driver -> sdk +find_package[(]sdk[)] in driver/CMakeLists.txt\n")
 expect_match("${OUT}" "BUILD ORDER\n  1. sdk\n +cmake -E echo building-sdk\n +cmake -E touch sdk.built\n  2. driver\n +cmake -S [.] -B build +[(]asks first[)]\n +cmake --build build\n  3. app\n")
 
 # Building app builds what it needs first, in the order the dry run showed. The configure
@@ -22,7 +22,7 @@ expect_no_match("${ERR}" "Configure")
 expect_match("${OUT}" "built 2 packages")
 
 # The first failure stops the run and names the package and the command.
-file(WRITE "${SCRATCH}/broken/rant.hcl" "package {\n  build  = [\"cmake -E false\", \"cmake -E echo never\"]\n  depend = [\"sdk\"]\n}\n")
+file(WRITE "${SCRATCH}/broken/package.rant" "build  = [\"cmake -E false\", \"cmake -E echo never\"]\ndepend = [\"sdk\"]\n")
 rant(build broken FAILS)
 expect_match("${ERR}" "building broken failed: `cmake -E false` exited 1")
 expect_no_match("${OUT}" "never")
@@ -31,8 +31,8 @@ expect_no_match("${OUT}" "never")
 # no %VAR% expansion and no & to start a second command.
 if(CMAKE_HOST_WIN32)
   file(WRITE "${SCRATCH}/batch/tool.cmd" "@echo off\n>args.txt echo(%1\n>>args.txt echo(%2\n")
-  file(WRITE "${SCRATCH}/batch/rant.hcl"
-       "package {\n  build = \"./tool.cmd %PATH% '&cmake -E touch pwned.txt'\"\n}\n")
+  file(WRITE "${SCRATCH}/batch/package.rant"
+       "build = \"./tool.cmd %PATH% '&cmake -E touch pwned.txt'\"\n")
   rant(build batch)
   file(READ "${SCRATCH}/batch/args.txt" args)
   expect_match("${args}" "^\"%PATH%\"\r?\n\"&cmake -E touch pwned.txt\"")

@@ -40,7 +40,7 @@ pub enum RantConfigNodeKind {
     Declared,
 }
 
-/// A runnable node type. path is NULL for a node declared in a package block.
+/// A runnable node type. path is NULL for a node declared in package.rant.
 #[repr(C)]
 pub struct RantConfigNodeType {
     pub package: *const c_char,
@@ -56,8 +56,8 @@ pub struct RantConfigNodeType {
 pub struct RantConfigPackage {
     pub name: *const c_char,
     pub dir: *const c_char,
-    /// What makes it a package: "cmake", "python", "csharp" for its manifests, "rant.hcl"
-    /// for a package block.
+    /// What makes it a package: "cmake", "python", "csharp" for its manifests, "package.rant"
+    /// for its own settings.
     pub kinds: *const *const c_char,
     pub kind_count: usize,
     pub nodes: *const RantConfigNodeType,
@@ -239,7 +239,7 @@ impl Store {
             .collect();
         kinds.dedup();
         if p.block.is_some() {
-            kinds.push("rant.hcl".into());
+            kinds.push(crate::package::PACKAGE_FILE.into());
         }
         let (kinds, kind_count) = self.strs(&kinds);
         RantConfigPackage { name: self.str(&p.name), dir: self.path(&p.dir), kinds, kind_count, nodes, node_count }
@@ -405,7 +405,7 @@ pub unsafe extern "C" fn rant_config_open(start_dir: *const c_char, flags: u32) 
     workspace_handle(&load(&arg_path(start_dir), flags & RANT_CONFIG_PACKAGES != 0), Vec::new())
 }
 
-/// Writes a new rant.hcl into dir and opens it. Refused when dir already has one.
+/// Writes a new workspace.rant into dir and opens it. Refused when dir already has one.
 ///
 /// # Safety
 /// `dir` must be NULL or a NUL terminated UTF-8 string.

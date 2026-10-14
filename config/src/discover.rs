@@ -1,7 +1,7 @@
 //! The walk that finds packages, group files and Python nodes: every directory under the
-//! workspace root that declares `package {}` or has a manifest that uses Rant, every
-//! `*.group.hcl` file, and every Python file that is a node, skipping gitignored paths and
-//! the workspace `ignore` globs.
+//! workspace root that has a `package.rant` or a manifest that uses Rant, every `.rungroup`
+//! file, and every Python file that is a node, skipping gitignored paths and the workspace
+//! `ignore` globs.
 
 use std::path::{Path, PathBuf};
 
@@ -12,7 +12,7 @@ use crate::manifest::{self, Manifest};
 use crate::package::{self, PackageBlock};
 use crate::paths;
 use crate::scan::{skipped_dir, Cache, NodeKind};
-use crate::workspace::{WorkspaceConfig, MANIFEST};
+use crate::workspace::{WorkspaceConfig, WORKSPACE_FILE};
 
 /// A directory that is a package, before it is named and scanned.
 pub struct Candidate {
@@ -61,7 +61,7 @@ fn build_tree(dir: &Path) -> bool {
 /// control, rant's data, npm trees, fetched sources, build trees and the workspace's
 /// `ignore` globs are left out, gitignored paths are not, since a venv usually is one.
 pub fn folders(start: &Path, config: Option<&WorkspaceConfig>) -> (Vec<PathBuf>, Vec<PathBuf>) {
-    let ignore = config.and_then(|c| glob_set(&c.ignore, &c.root.join(MANIFEST)).ok()).unwrap_or_else(GlobSet::empty);
+    let ignore = config.and_then(|c| glob_set(&c.ignore, &c.root.join(WORKSPACE_FILE)).ok()).unwrap_or_else(GlobSet::empty);
     let root = config.map(|c| c.root.clone()).unwrap_or_else(|| start.to_path_buf());
     let top = start.to_path_buf();
     let (mut dirs, mut venvs) = (Vec::new(), Vec::new());
@@ -91,7 +91,7 @@ pub fn folders(start: &Path, config: Option<&WorkspaceConfig>) -> (Vec<PathBuf>,
 }
 
 pub fn walk(config: &WorkspaceConfig, cache: &mut Cache, diags: &mut Vec<Diag>) -> Found {
-    let ignore = match glob_set(&config.ignore, &config.root.join(MANIFEST)) {
+    let ignore = match glob_set(&config.ignore, &config.root.join(WORKSPACE_FILE)) {
         Ok(g) => g,
         Err(d) => {
             diags.push(d);
@@ -132,8 +132,11 @@ pub fn walk(config: &WorkspaceConfig, cache: &mut Cache, diags: &mut Vec<Diag>) 
             }
             continue;
         }
-        let is_root = path == config.root;
-        let block = match package::read(path, &config.root, is_root) {
+        if path != config.root && path.join(WORKSPACE_FILE).is_file() {
+            diags.push(Diag::file(&path.join(WORKSPACE_FILE), "a workspace inside a workspace, remove one of the two"));
+            continue;
+        }
+        let block = match package::read(path, &config.root) {
             Ok(b) => b,
             Err(d) => {
                 diags.push(d);
