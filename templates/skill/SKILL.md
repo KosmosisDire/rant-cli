@@ -203,9 +203,10 @@ rant_queue_dispatch(q, 0, 100);              /* on the thread that runs them */
   - Entities and namespaces are PascalCase, `/` between levels: `FrontLidar/JointState`,
     `Line1/Conveyor`. So are types and enum options.
   - Groups are PascalCase and end in Group: `NavGroup.rungroup`, run as `rant run NavGroup`.
-    `rant new group` names them so, and run and build note a name that breaks this.
-  - Fields follow the language (`frame_id` in Python, `FrameId` in C#), the wire matches
-    them.
+    `rant new group` names them so.
+  - Fields are snake_case on the wire. Write them in the language's style (`frame_id` in
+    Python, `FrameId` in C#) and Rant converts, so both are `frame_id`.
+  - `rant run` and `rant build` note each group or node name that breaks this.
 - Units are SI: meters, seconds, m/s, N, radians. Time is a `Timestamp`, microseconds since
   the Unix epoch.
 - Frames are right handed, and an angle turns from +x toward +y. Two kinds of 2D differ:

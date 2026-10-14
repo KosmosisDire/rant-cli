@@ -17,12 +17,14 @@ void require_plan(app::Context& ctx, const config::Plan& plan) {
     throw app::Failure("");
 }
 
-void note_group_names(app::Context& ctx, const std::vector<std::string>& groups) {
-    for (auto& g : groups) {
-        std::string stem = g.substr(g.rfind('/') + 1);    /* package/stem */
-        std::string want = util::group_name(stem);
-        if (want != stem) ctx.out.note("rename group `" + g + "` to `" + want + "`");
-    }
+void note_names(app::Context& ctx, const std::vector<std::string>& groups, const std::vector<std::string>& nodes) {
+    auto check = [&](const char* kind, const std::string& name, std::string (*want_of)(const std::string&)) {
+        std::string last = name.substr(name.rfind('/') + 1);
+        std::string want = want_of(last);
+        if (want != last) ctx.out.note(std::string("rename ") + kind + " `" + name + "` to `" + want + "`");
+    };
+    for (auto& g : groups) check("group", g, util::group_name);
+    for (auto& n : nodes) check("node", n, util::snake);
 }
 
 void print_params(app::Context& ctx, const std::vector<config::Param>& params) {

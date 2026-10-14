@@ -100,6 +100,7 @@ static int finish(app::Context& ctx, const config::Workspace& ws, const std::vec
 int run_node(app::Context& ctx, const std::string& ref) {
     config::Plan plan = config::plan_node(ctx.cwd(), ref);
     require_plan(ctx, plan);
+    note_names(ctx, {}, { plan.instances.front().name });
     if (ctx.args.has("dry-run")) {
         print_plan(ctx, plan);
         return 0;
@@ -149,7 +150,9 @@ int run_group(app::Context& ctx, const std::string& group, const std::vector<std
     }
     config::Plan plan = config::plan_group(ctx.cwd(), group, params);
     require_plan(ctx, plan);
-    note_group_names(ctx, { plan.group });
+    std::vector<std::string> nodes;
+    for (auto& i : plan.instances) nodes.push_back(i.name);
+    note_names(ctx, { plan.group }, nodes);
     if (ctx.args.has("dry-run")) {
         print_plan(ctx, plan);
         return 0;

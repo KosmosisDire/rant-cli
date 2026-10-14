@@ -24,12 +24,12 @@ endforeach()
 
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/get_cpm.cmake")
 
-# Placement needs 0.0.19 or newer, whose nodes take RANT_DOMAIN and RANT_PREFIX. A release
+# Placement needs 0.0.19 or newer and snake_case field names 0.0.22. A release
 # pins the newest Rant. The local presets set CPM_rant_SOURCE to ../rant to build against
 # the working tree instead.
 CPMAddPackage(NAME rant
   GITHUB_REPOSITORY KosmosisDire/Rant
-  VERSION 0.0.20
+  VERSION 0.0.22
   EXCLUDE_FROM_ALL YES
   SYSTEM YES)
 

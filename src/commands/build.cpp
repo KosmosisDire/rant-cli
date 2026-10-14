@@ -137,9 +137,12 @@ static int run(app::Context& ctx) {
     }
     if (built == 0) ctx.out.line("nothing to build: no package here has a build step");
     else ctx.out.line("built " + std::to_string(built) + (built == 1 ? " package" : " packages"));
-    std::vector<std::string> groups;
+    std::vector<std::string> groups, nodes;
     for (auto& g : ws.groups) groups.push_back(g.name);
-    note_group_names(ctx, groups);
+    for (auto& p : ws.packages)
+        for (auto& n : p.nodes) nodes.push_back(n.name);
+    for (auto& n : ws.loose) nodes.push_back(n.name);
+    note_names(ctx, groups, nodes);
     return 0;
 }
 

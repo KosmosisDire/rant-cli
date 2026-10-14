@@ -9,6 +9,9 @@ namespace util {
 /* A name in PascalCase: arm_controller is ArmController. */
 std::string pascal(const std::string& name);
 
+/* A name in snake_case: ArmController is arm_controller. */
+std::string snake(const std::string& name);
+
 /* What a group is called: PascalCase ending in Group, so nav is NavGroup. */
 std::string group_name(const std::string& name);
 
