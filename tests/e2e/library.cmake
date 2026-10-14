@@ -29,7 +29,7 @@ expect_match("${OUT}" "\"how\": \"CPM\"")
 rant(lib nowhere FAILS)
 expect_match("${ERR}" "no folder `nowhere`")
 rant(lib --version 0.0.17 FAILS)
-expect_match("${ERR}" "--version goes with `rant lib install`")
+expect_match("${ERR}" "--version goes with `rant lib install` or `rant lib update`")
 
 # The rest asks GitHub for the release, so it needs the network.
 rant(lib install tool --version 0.0.17 MAY_FAIL)
@@ -43,13 +43,17 @@ file(READ "${SCRATCH}/tool/CMakeLists.txt" tool)
 expect_match("${tool}" "FetchContent_Declare[(]rant\n  GIT_REPOSITORY https://github.com/KosmosisDire/Rant[.]git\n  GIT_TAG v0[.]0[.]17\n")
 expect_match("${tool}" "add_executable[(]tool tool[.]c[)]\ntarget_link_libraries[(]tool PRIVATE rant::rant_host[)]\n")
 
+# install only adds, update moves what uses Rant, after listing it. The question is answered
+# yes, since stdin is not a terminal.
 rant(lib install cam --version 0.0.17)
-expect_match("${OUT}" "cam cmake: 0[.]0[.]16 -> 0[.]0[.]17")
+expect_match("${ERR}" "cam uses Rant already, move it to another release with `rant lib update`")
+rant(lib update cam --version 0.0.17)
+expect_match("${OUT}" "cam cmake: 0[.]0[.]16 -> 0[.]0[.]17 in cam/CMakeLists[.]txt\n.*updated 1 package")
 file(READ "${SCRATCH}/cam/CMakeLists.txt" cam)
 expect_match("${cam}" "  GIT_TAG v0[.]0[.]17[)]")
 
-rant(lib install cam --version 0.0.17)
-expect_match("${OUT}" "cam cmake: already 0[.]0[.]17")
+rant(lib update cam --version 0.0.17)
+expect_match("${OUT}" "everything here is at 0[.]0[.]17")
 
 rant(lib install --version 0.0.99 FAILS)
 expect_match("${ERR}" "has no release v0[.]0[.]99")

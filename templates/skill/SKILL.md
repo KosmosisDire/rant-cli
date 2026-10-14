@@ -47,7 +47,8 @@ to override something. A folder may be a workspace and a package, with both file
 | see the mesh | `rant ls [nodes\|entities\|topics\|variables\|functions\|tasks\|packages\|groups]` |
 | explain one thing | `rant info [kind] <name>` |
 | read and write | `rant sub <topic> -n 1`, `rant pub <topic> <value>`, `rant get <var>`, `rant set <var> <value>`, `rant call <fn> [value]` |
-| Rant version in packages | `rant lib [folder]`, `rant lib install [folder] [--version V]` |
+| Rant version in packages | `rant lib [folder]` shows it, `rant lib install [folder]` adds it, `rant lib update [folder]` moves it, both take `--version V` |
+| update | `rant update`: the CLI, then the workspace's packages |
 | visual debugger | `rant explore` |
 
 Values on the command line are forgiving JSON: `{x: 1, y: 2}`, `[1, 2]`, or field words
@@ -217,7 +218,7 @@ rant_queue_dispatch(q, 0, 100);              /* on the thread that runs them */
     Raw image rows start at the top.
 - One program per node. Keep domain, prefixes and node names out of the code: the config
   files and groups place them, and the name in the code is only a default.
-- Add Rant with `rant lib install`, never by hand, and keep packages current with it.
+- Add Rant with `rant lib install`, never by hand, and keep packages current with `rant lib update`.
 
 ## Debugging
 

@@ -15,7 +15,6 @@ const std::vector<OptionSpec>& global_options() {
         { "domain",  0,   "N", "the Rant domain to use, else the workspace's, else RANT_DOMAIN, else 0" },
         { "help",    'h', "",  "show help, also after a command" },
         { "version", 0,   "",  "show the version" },
-        { "update",  0,   "",  "update rant-cli to its newest release" },
     };
     return opts;
 }
@@ -80,10 +79,6 @@ int run(Context& ctx, const std::vector<std::string>& tokens) {
     if (global.has("version")) {
         ctx.out.line("rant-cli " RANT_CLI_VERSION " (Rant " + std::string(rant::version()) + ")");
         return 0;
-    }
-    if (global.has("update")) {
-        ctx.yes = global.has("yes");
-        return commands::update_self(ctx);
     }
     if (consumed == tokens.size()) {
         ctx.out.line(main_help());

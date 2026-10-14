@@ -98,7 +98,7 @@ static bool changes(const Use& u, const net::Release& r) {
 }
 
 /* Brings one use to the release. Returns what it did, empty when there was nothing to do. */
-static std::string update(const app::Context& ctx, const Use& u, const net::Release& r) {
+static std::string bring(const app::Context& ctx, const Use& u, const net::Release& r) {
     if (!changes(u, r)) {
         if (u.how == "PackageReference") install_nupkg(ctx, r);    /* the feed may still lack it */
         return "";
@@ -129,48 +129,29 @@ static std::vector<std::pair<Kind, fs::path>> missing(const fs::path& dir, const
     return out;
 }
 
-bool install(const app::Context& ctx, const fs::path& dir, bool recursive, const net::Release& r) {
-    std::vector<Use> uses = recursive ? under(dir) : in_folder(dir);
-    auto adds = recursive ? decltype(missing(dir, uses)){} : missing(dir, uses);
-    if (uses.empty() && adds.empty())
-        throw app::Failure(recursive ? "nothing under here uses Rant yet, add it to a folder with `rant lib install <folder>`"
-                                     : "no CMakeLists.txt, C# project or Python file in " + ctx.shown(dir));
+static void report(const app::Context& ctx, const fs::path& d, Kind k, const std::string& what) {
+    ctx.out.line("  " + ctx.shown(d) + " " + kind_name(k) + ": " + what);
+}
 
-    ctx.out.line(ctx.out.paint(ui::Style::Bold, "Rant " + r.version));
-    auto report = [&](const fs::path& d, Kind k, const std::string& what) {
-        ctx.out.line("  " + ctx.shown(d) + " " + kind_name(k) + ": " + what);
-    };
-
-    /* every package under a folder is a lot to change unasked, so the list comes first */
-    if (recursive) {
-        size_t n = 0;
-        for (auto& u : uses)
-            if (changes(u, r)) {
-                report(u.dir, u.kind, (u.version ? *u.version : "none") + " -> " + r.version + " in " + ctx.shown(u.file));
-                n++;
-            }
-        if (n == 0) {
-            ctx.out.line("  " + ctx.out.paint(ui::Style::Dim, "everything here is at " + r.version));
-        } else if (!ui::confirm("Update " + std::to_string(n) + (n == 1 ? " package?" : " packages?"), ctx.yes)) {
-            ctx.out.note("nothing was changed");
-            return false;
-        }
+bool install(const app::Context& ctx, const fs::path& dir, const net::Release& r) {
+    std::vector<Use> uses = in_folder(dir);
+    auto adds = missing(dir, uses);
+    if (uses.empty() && adds.empty()) throw app::Failure("no CMakeLists.txt, C# project or Python file in " + ctx.shown(dir));
+    /* a use with no version yet, such as a venv without Rant, is installed too */
+    std::vector<const Use*> bare;
+    for (auto& u : uses)
+        if (!u.version && changes(u, r)) bare.push_back(&u);
+    if (adds.empty() && bare.empty()) {
+        ctx.out.note(ctx.shown(dir) + " uses Rant already, move it to another release with `rant lib update`");
+        return true;
     }
-
+    ctx.out.line(ctx.out.paint(ui::Style::Bold, "Rant " + r.version));
     bool ok = true, cmake = false;
-    size_t done = 0;
-    for (auto& u : uses) {
+    for (auto* u : bare) {
         try {
-            std::string did = update(ctx, u, r);
-            if (did.empty()) {
-                if (u.version && !recursive) report(u.dir, u.kind, ctx.out.paint(ui::Style::Dim, "already " + *u.version));
-                continue;
-            }
-            if (!recursive) report(u.dir, u.kind, did);    /* the list before the question said it already */
-            done++;
-            cmake |= u.kind == Kind::CMake;
+            report(ctx, u->dir, u->kind, bring(ctx, *u, r));
         } catch (const app::Failure& e) {
-            ctx.out.warn(ctx.shown(u.dir) + " " + kind_name(u.kind) + ": " + e.what());
+            ctx.out.warn(ctx.shown(u->dir) + " " + kind_name(u->kind) + ": " + e.what());
             ok = false;
         }
     }
@@ -178,7 +159,7 @@ bool install(const app::Context& ctx, const fs::path& dir, bool recursive, const
         try {
             std::string hint = add(kind, file, r.version);
             if (kind == Kind::CSharp) install_nupkg(ctx, r);
-            report(dir, kind, "added to " + ctx.shown(file));
+            report(ctx, dir, kind, "added to " + ctx.shown(file));
             if (!hint.empty()) ctx.out.note("    link it to your target: " + hint);
             cmake |= kind == Kind::CMake;
         } catch (const app::Failure& e) {
@@ -186,7 +167,42 @@ bool install(const app::Context& ctx, const fs::path& dir, bool recursive, const
             ok = false;
         }
     }
-    if (recursive && done) ctx.out.line("updated " + std::to_string(done) + (done == 1 ? " package" : " packages"));
+    if (cmake) ctx.out.note("CMake fetches it on the next configure, which `rant build` runs");
+    return ok;
+}
+
+bool update(const app::Context& ctx, const fs::path& dir, const net::Release& r) {
+    std::vector<Use> uses = under(dir);
+    if (uses.empty()) throw app::Failure("nothing under " + ctx.shown(dir) + " uses Rant yet, add it with `rant lib install <folder>`");
+
+    /* every package under a folder is a lot to change unasked, so the list comes first */
+    ctx.out.line(ctx.out.paint(ui::Style::Bold, "Rant " + r.version));
+    size_t n = 0;
+    for (auto& u : uses)
+        if (changes(u, r)) {
+            report(ctx, u.dir, u.kind, (u.version ? *u.version : "none") + " -> " + r.version + " in " + ctx.shown(u.file));
+            n++;
+        }
+    if (n == 0) {
+        ctx.out.line("  " + ctx.out.paint(ui::Style::Dim, "everything here is at " + r.version));
+    } else if (!ui::confirm("Update " + std::to_string(n) + (n == 1 ? " package?" : " packages?"), ctx.yes)) {
+        ctx.out.note("nothing was changed");
+        return false;
+    }
+
+    bool ok = true, cmake = false;
+    size_t done = 0;
+    for (auto& u : uses) {
+        try {
+            if (bring(ctx, u, r).empty()) continue;
+            done++;
+            cmake |= u.kind == Kind::CMake;
+        } catch (const app::Failure& e) {
+            ctx.out.warn(ctx.shown(u.dir) + " " + kind_name(u.kind) + ": " + e.what());
+            ok = false;
+        }
+    }
+    if (done) ctx.out.line("updated " + std::to_string(done) + (done == 1 ? " package" : " packages"));
     if (cmake) ctx.out.note("CMake fetches it on the next configure, which `rant build` runs");
     return ok;
 }

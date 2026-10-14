@@ -29,8 +29,6 @@ app::Command call();
 app::Command setup();
 app::Command lib();
 app::Command explore();
-
-/* rant --update: replaces this binary with the newest rant-cli release, after a question. */
-int update_self(app::Context& ctx);
+app::Command update();
 
 }

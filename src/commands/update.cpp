@@ -6,6 +6,8 @@
 #include "app/failure.hpp"
 #include "commands/commands.hpp"
 #include "config/config.hpp"
+#include "library/library.hpp"
+#include "library/uses.hpp"
 #include "net/github.hpp"
 #include "process/command.hpp"
 #include "process/supervisor.hpp"
@@ -28,7 +30,8 @@ static std::vector<long> numbers(const std::string& v) {
     return out;
 }
 
-int update_self(app::Context& ctx) {
+/* Replaces this binary with the newest rant-cli release, after a question. */
+static int update_self(app::Context& ctx) {
     net::Release r = net::release(cli_repo);
     if (numbers(r.version) <= numbers(RANT_CLI_VERSION)) {
         ctx.out.line("rant-cli " RANT_CLI_VERSION " is up to date, the newest release is " + r.version);
@@ -53,6 +56,21 @@ int update_self(app::Context& ctx) {
     if (!names.empty() && process::run({ { config::to_utf8(self), "setup", "skill" }, config::fs::temp_directory_path(), {} }) != 0)
         ctx.out.warn("the rant skill was not updated, run `rant setup skill`");
     return 0;
+}
+
+/* The CLI first, then every package of the workspace here that uses Rant, each after its
+ * own question. */
+static int run(app::Context& ctx) {
+    if (!ctx.args.words.empty()) throw app::UsageError("update takes no folder, see `rant lib update`");
+    int code = update_self(ctx);
+    const config::Workspace* ws = ctx.workspace();
+    if (!ws || library::under(ws->root).empty()) return code;
+    ctx.out.line();
+    return library::update(ctx, ws->root, library::release("")) ? code : 1;
+}
+
+app::Command update() {
+    return { "update", "", "update rant-cli, then the Rant library of this workspace's packages", app::Section::Setup, {}, run };
 }
 
 }

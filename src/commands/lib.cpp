@@ -51,30 +51,36 @@ static int show(app::Context& ctx) {
     return 0;
 }
 
-static int install(app::Context& ctx) {
+/* install adds Rant to the folder named, here by default. update moves every package under
+ * the folder named, the whole workspace by default, to another release. */
+static int change(app::Context& ctx) {
     auto& w = ctx.args.words;
-    if (w.size() > 2) throw app::UsageError("lib install takes at most one folder");
-    bool one = w.size() == 2;
-    fs::path dir = one ? folder(ctx, w[1]) : ctx.cwd();
+    bool install = w[0] == "install";
+    if (w.size() > 2) throw app::UsageError("lib " + w[0] + " takes at most one folder");
+    fs::path dir = ctx.cwd();
+    if (w.size() == 2) dir = folder(ctx, w[1]);
+    else if (!install && ctx.workspace()) dir = ctx.workspace()->root;
     net::Release r = library::release(ctx.args.get("version").value_or(""));
-    return library::install(ctx, dir, !one, r) ? 0 : 1;
+    return (install ? library::install(ctx, dir, r) : library::update(ctx, dir, r)) ? 0 : 1;
 }
 
 static int run(app::Context& ctx) {
-    if (!ctx.args.words.empty() && ctx.args.words[0] == "install") return install(ctx);
-    if (ctx.args.has("version")) throw app::UsageError("--version goes with `rant lib install`");
+    auto& w = ctx.args.words;
+    if (!w.empty() && (w[0] == "install" || w[0] == "update")) return change(ctx);
+    if (ctx.args.has("version")) throw app::UsageError("--version goes with `rant lib install` or `rant lib update`");
     return show(ctx);
 }
 
 static complete::Candidates complete_words(complete::Request& r) {
-    if (r.words.empty()) return { { "install" } };
+    if (r.words.empty()) return { { "install", "update" } };
     return {};
 }
 
 app::Command lib() {
-    app::Command c{ "lib", "[folder] | install [folder]", "show or install the Rant library a package uses",
+    app::Command c{ "lib", "[folder] | install [folder] | update [folder]",
+                    "show the Rant library packages use, add it where it is missing, or update it",
                     app::Section::Setup,
-                    { { "version", 0, "V", "with install: this Rant version, the latest by default" } }, run };
+                    { { "version", 0, "V", "with install or update: this Rant version, the latest by default" } }, run };
     c.complete = complete_words;
     return c;
 }

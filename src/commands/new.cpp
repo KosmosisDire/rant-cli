@@ -154,7 +154,7 @@ static int run(app::Context& ctx) {
     bool ok = true;
     try {
         net::Release r = library::release("");
-        for (auto& dir : needs) ok &= library::install(ctx, dir, false, r);
+        for (auto& dir : needs) ok &= library::install(ctx, dir, r);
     } catch (const app::Failure& e) {
         ctx.out.warn(std::string("Rant was not added: ") + e.what());
         ok = false;
