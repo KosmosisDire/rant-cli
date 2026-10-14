@@ -48,7 +48,7 @@ to override something. A folder may be a workspace and a package, with both file
 | explain one thing | `rant info [kind] <name>` |
 | read and write | `rant sub <topic> -n 1`, `rant pub <topic> <value>`, `rant get <var>`, `rant set <var> <value>`, `rant call <fn> [value]` |
 | Rant version in packages | `rant lib [folder]` shows it, `rant lib install [folder]` adds it, `rant lib update [folder]` moves it, both take `--version V` |
-| update | `rant update`: the CLI, then the workspace's packages |
+| update | `rant update`: the CLI, the explorer and the skill where installed, then the workspace's packages |
 | visual debugger | `rant explore` |
 
 Values on the command line are forgiving JSON: `{x: 1, y: 2}`, `[1, 2]`, or field words

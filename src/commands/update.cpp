@@ -1,10 +1,12 @@
 #include <cstdlib>
+#include <optional>
 #include <string>
 #include <vector>
 
 #include "agents/skill.hpp"
 #include "app/failure.hpp"
 #include "commands/commands.hpp"
+#include "commands/explore.hpp"
 #include "config/config.hpp"
 #include "library/library.hpp"
 #include "library/uses.hpp"
@@ -30,39 +32,55 @@ static std::vector<long> numbers(const std::string& v) {
     return out;
 }
 
-/* Replaces this binary with the newest rant-cli release, after a question. */
-static int update_self(app::Context& ctx) {
-    net::Release r = net::release(cli_repo);
-    if (numbers(r.version) <= numbers(RANT_CLI_VERSION)) {
-        ctx.out.line("rant-cli " RANT_CLI_VERSION " is up to date, the newest release is " + r.version);
+/* Replaces this binary and the explorer rant installed with their newest releases, after
+ * one question. The skill moves with the CLI, both only where someone installed them. */
+static int update_programs(app::Context& ctx) {
+    net::Release cli = net::release(cli_repo);
+    const net::Asset* a = nullptr;
+    if (numbers(cli.version) > numbers(RANT_CLI_VERSION)) {
+        std::string asset = "rant-" + cli.version + "-" + net::platform();
+        a = cli.asset(asset);
+        if (!a) throw app::Failure("the rant-cli " + cli.version + " release has no " + asset);
+    }
+    std::optional<net::Release> ex;
+    std::string ex_had = explorer::installed_version();
+    if (config::fs::is_regular_file(explorer::installed())) {
+        ex = explorer::latest();
+        if (ex->version == ex_had) ex.reset();
+    }
+    if (!a && !ex) {
+        bool has = config::fs::is_regular_file(explorer::installed());
+        ctx.out.line("rant-cli " RANT_CLI_VERSION + std::string(has ? " and the explorer " + ex_had + " are" : " is") + " up to date");
         return 0;
     }
-    std::string asset = "rant-" + r.version + "-" + net::platform();
-    const net::Asset* a = r.asset(asset);
-    if (!a) throw app::Failure("the rant-cli " + r.version + " release has no " + asset);
+
     config::fs::path self = process::self_path();
-    ctx.out.line("This updates rant-cli " RANT_CLI_VERSION " to " + r.version + ":");
-    ctx.out.line("  download " + a->url);
-    ctx.out.line("    over " + config::to_utf8(self));
-    /* the skill moves along only where someone installed it */
     std::string names;
-    for (auto& agent : agents::detected())
-        if (agents::installed(agent.skills)) names += (names.empty() ? "" : ", ") + agent.name;
-    if (!names.empty()) ctx.out.line("  update the rant skill for " + names);
+    if (a)
+        for (auto& agent : agents::detected())
+            if (agents::installed(agent.skills)) names += (names.empty() ? "" : ", ") + agent.name;
+    ctx.out.line("This updates:");
+    if (a) ctx.out.line("  rant-cli " RANT_CLI_VERSION " to " + cli.version + ", over " + config::to_utf8(self));
+    if (ex) ctx.out.line("  the explorer " + (ex_had.empty() ? std::string("") : ex_had + " ") + "to " + ex->version + ", over " +
+                         config::to_utf8(explorer::installed()));
+    if (!names.empty()) ctx.out.line("  the rant skill for " + names);
     if (!ui::confirm("Update?", ctx.yes)) return 1;
+
+    if (ex) explorer::install(ctx, *ex);
+    if (!a) return 0;
     net::download(a->url, self, true);
-    ctx.out.line("updated to rant-cli " + r.version);
+    ctx.out.line("updated to rant-cli " + cli.version);
     /* the new binary holds the new skill */
     if (!names.empty() && process::run({ { config::to_utf8(self), "setup", "skill" }, config::fs::temp_directory_path(), {} }) != 0)
         ctx.out.warn("the rant skill was not updated, run `rant setup skill`");
     return 0;
 }
 
-/* The CLI first, then every package of the workspace here that uses Rant, each after its
- * own question. */
+/* The CLI and the explorer first, then every package of the workspace here that uses Rant,
+ * each after its own question. */
 static int run(app::Context& ctx) {
     if (!ctx.args.words.empty()) throw app::UsageError("update takes no folder, see `rant lib update`");
-    int code = update_self(ctx);
+    int code = update_programs(ctx);
     const config::Workspace* ws = ctx.workspace();
     if (!ws || library::under(ws->root).empty()) return code;
     ctx.out.line();
@@ -70,7 +88,8 @@ static int run(app::Context& ctx) {
 }
 
 app::Command update() {
-    return { "update", "", "update rant-cli, then the Rant library of this workspace's packages", app::Section::Setup, {}, run };
+    return { "update", "", "update rant-cli and the explorer, then the Rant library of this workspace's packages",
+             app::Section::Setup, {}, run };
 }
 
 }

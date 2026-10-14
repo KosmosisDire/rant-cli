@@ -4,6 +4,7 @@
 
 #include "app/failure.hpp"
 #include "commands/commands.hpp"
+#include "commands/explore.hpp"
 #include "config/config.hpp"
 #include "net/github.hpp"
 #include "process/supervisor.hpp"
@@ -22,15 +23,33 @@ static const char* exe_name = "rant-explorer.exe";
 static const char* exe_name = "rant-explorer";
 #endif
 
-static fs::path installed() { return util::rant_home() / "bin" / exe_name; }
+namespace explorer {
+
+fs::path installed() { return util::rant_home() / "bin" / exe_name; }
 static fs::path version_file() { return util::rant_home() / "bin" / "rant-explorer.version"; }
 
-static std::string installed_version() {
+std::string installed_version() {
     std::ifstream in(version_file());
     std::string v;
     std::getline(in, v);
     return v;
 }
+
+void install(const app::Context& ctx, const net::Release& r) {
+    std::string asset = "rant-explorer-" + r.version + "-" + net::platform();
+    const net::Asset* a = r.asset(asset);
+    if (!a) throw app::Failure("the explorer " + r.version + " release has no " + asset);
+    ctx.out.note("downloading " + asset);
+    net::download(a->url, installed(), true);
+    std::ofstream(version_file()) << r.version << "\n";
+    ctx.out.note("installed the explorer " + r.version + " as " + config::to_utf8(installed()));
+}
+
+net::Release latest() { return net::release(explorer_repo); }
+
+}
+
+using explorer::installed;
 
 /* The explorer to run: the one beside this rant first, so a pair installed together stays
  * together, then the one rant installed, then any on PATH. */
@@ -43,35 +62,17 @@ static std::optional<fs::path> locate(const app::Context& ctx) {
     return std::nullopt;
 }
 
-/* Downloads the release's explorer for this platform into ~/.rant/bin. */
-static void install(const app::Context& ctx, const net::Release& r) {
-    std::string asset = "rant-explorer-" + r.version + "-" + net::platform();
-    const net::Asset* a = r.asset(asset);
-    if (!a) throw app::Failure("the explorer " + r.version + " release has no " + asset);
-    ctx.out.note("downloading " + asset);
-    net::download(a->url, installed(), true);
-    std::ofstream(version_file()) << r.version << "\n";
-    ctx.out.note("installed the explorer " + r.version + " as " + config::to_utf8(installed()));
-}
-
-static net::Release latest() { return net::release(explorer_repo); }
-
 static int run(app::Context& ctx) {
     if (!ctx.args.words.empty()) throw app::UsageError("explore takes no arguments");
     std::optional<fs::path> exe = locate(ctx);
     if (!exe) {
-        net::Release r = latest();
+        net::Release r = explorer::latest();
         if (!ui::confirm("The explorer is not installed. Download the explorer " + r.version + " into " +
                              config::to_utf8(installed().parent_path()) + "?",
                          ctx.yes))
             return 1;
-        install(ctx, r);
+        explorer::install(ctx, r);
         exe = installed();
-    } else if (ctx.args.has("update")) {
-        net::Release r = latest();
-        if (installed_version() == r.version && fs::is_regular_file(installed())) ctx.out.note("the explorer " + r.version + " is the newest");
-        else install(ctx, r);
-        if (*exe != installed()) ctx.out.note("still starting " + config::to_utf8(*exe) + ", which comes first");
     }
 
     std::vector<std::string> argv = { config::to_utf8(*exe) };
@@ -84,8 +85,8 @@ static int run(app::Context& ctx) {
 }
 
 app::Command explore() {
-    app::Command c{ "explore", "", "open the explorer, installing it first when it is missing", app::Section::Setup,
-                    { { "update", 0, "", "download the newest explorer before opening it" } }, run };
+    app::Command c{ "explore", "", "open the explorer, installing it first when it is missing, `rant update` updates it",
+                    app::Section::Setup, {}, run };
     c.aliases = { "explorer" };
     return c;
 }
