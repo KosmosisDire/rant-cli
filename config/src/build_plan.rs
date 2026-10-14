@@ -48,8 +48,9 @@ fn step(pkg: &Package) -> Step {
         s.commands.push(vec!["dotnet".into(), "build".into(), slash(&m.path)]);
     }
     if pkg.manifests.iter().any(|m| m.kind == ManifestKind::CMake) {
-        // Commands run in the package directory, so the short relative form is exact.
-        if !pkg.dir.join("build").join("CMakeCache.txt").is_file() {
+        // Commands run in the package directory, so the short relative form is exact. A failed
+        // configure leaves CMakeCache.txt, only a finished one writes TargetDirectories.txt.
+        if !pkg.dir.join("build/CMakeFiles/TargetDirectories.txt").is_file() {
             s.configure = Some(vec!["cmake".into(), "-S".into(), ".".into(), "-B".into(), "build".into()]);
         }
         s.commands.push(vec!["cmake".into(), "--build".into(), "build".into()]);
@@ -193,7 +194,8 @@ mod tests {
         t.write("a_sdk/package.rant", "name  = \"sdk\"\nbuild = [\"make\", \"make install\"]\n");
         t.write("b_driver/CMakeLists.txt", "project(driver)\nfind_package(rant)\nfind_package(sdk)\n");
         t.write("c_app/CMakeLists.txt", "project(app)\nfind_package(rant)\nfind_package(driver)\n");
-        t.write("c_app/build/CMakeCache.txt", "");
+        t.write("b_driver/build/CMakeCache.txt", "");
+        t.write("c_app/build/CMakeFiles/TargetDirectories.txt", "");
         t.write("d_py/pyproject.toml", "[project]\nname = \"vision\"\ndependencies = [\"rant-middleware\"]\n");
         t.write("d_py/package.rant", "depend = [\"app\"]\n");
         t
@@ -214,7 +216,7 @@ mod tests {
         let t = workspace_tree();
         let p = plan(&model(&t), &[]).unwrap();
         assert_eq!(p.steps[0].commands, vec![vec!["make"], vec!["make", "install"]]);
-        assert!(p.steps[1].configure.is_some(), "no CMakeCache.txt yet");
+        assert!(p.steps[1].configure.is_some(), "a failed configure leaves only the cache");
         assert_eq!(p.steps[1].commands[0][..2], ["cmake", "--build"]);
         assert!(p.steps[2].configure.is_none(), "already configured");
         assert!(p.steps[3].commands.is_empty(), "python builds nothing");

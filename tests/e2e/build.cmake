@@ -11,7 +11,7 @@ expect_match("${OUT}" "BUILD ORDER\n  1. sdk\n +cmake -E echo building-sdk\n +cm
 # question is answered yes, since stdin is not a terminal.
 rant(build app)
 expect_match("${OUT}" "building sdk\n.*building-sdk\n.*building driver\n.*building-driver.*building app\n.*building-app\n.*built 3 packages")
-expect_match("${ERR}" "driver has no build directory yet. Configure it")
+expect_match("${ERR}" "driver is not configured yet. Configure it")
 if(NOT EXISTS "${SCRATCH}/sdk/sdk.built" OR NOT EXISTS "${SCRATCH}/driver/build/CMakeCache.txt")
   message(FATAL_ERROR "the builds did not run in their package directories")
 endif()

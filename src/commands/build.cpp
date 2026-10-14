@@ -128,7 +128,7 @@ static int run(app::Context& ctx) {
         ctx.out.line(ctx.out.paint(ui::Style::Bold, "building " + s.package));
         std::fflush(stdout);
         if (!s.configure.empty()) {
-            if (!ui::confirm(s.package + " has no build directory yet. Configure it with `" + process::shown(s.configure) + "`?", ctx.yes))
+            if (!ui::confirm(s.package + " is not configured yet. Configure it with `" + process::shown(s.configure) + "`?", ctx.yes))
                 throw app::Failure(s.package + " was not configured, so not built");
             run_command(s, s.configure);
         }
