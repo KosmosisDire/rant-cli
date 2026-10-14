@@ -27,7 +27,7 @@ cell/                     workspace: the folder holding workspace.rant
   drivers/                a package: CMakeLists.txt, pyproject.toml or a .csproj that uses Rant
     CMakeLists.txt
     lidar.cpp             a node: one program
-  logs/                   each started node's output, <node>.log
+  logs/                   each started node's output, <node>.log, read with rant log
   .rant/                  rant's state, never edit, keep out of git
 ```
 
@@ -43,6 +43,7 @@ to override something. A folder may be a workspace and a package, with both file
 | build | `rant build [package...]`, `--dry-run` shows order and commands |
 | run | `rant run <group> key=value...` or `rant run <node>`, `--dry-run` first. It watches for 2 s and fails with the log of a node that exited |
 | stop, restart | `rant stop [name]` (nothing named: all this workspace started), `rant stop --all` (every node on this machine), `rant restart [name]` |
+| node output | `rant log [name...]`, `-f` to follow, `-n N` lines, a group shows all its nodes |
 | see the mesh | `rant ls [nodes\|entities\|topics\|variables\|functions\|tasks\|packages\|groups]` |
 | explain one thing | `rant info [kind] <name>` |
 | read and write | `rant sub <topic> -n 1`, `rant pub <topic> <value>`, `rant get <var>`, `rant set <var> <value>`, `rant call <fn> [value]` |

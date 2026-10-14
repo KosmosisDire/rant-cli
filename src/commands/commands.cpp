@@ -12,6 +12,7 @@ const std::vector<app::Command>& all() {
         run_(),
         stop(),
         restart(),
+        log(),
         ls(),
         info(),
         sub(),

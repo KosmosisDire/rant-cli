@@ -25,6 +25,7 @@ rant build                     # build every package, dependencies first
 rant run NavGroup speed=2      # run a group of nodes or one node, rant run NavGroup --help lists its params
 rant ls                        # the running nodes and what they talk through
 rant sub Odom                  # print a topic
+rant log NavGroup -f           # follow what its nodes print
 rant stop NavGroup
 rant lib install               # move every package here to the newest Rant
 rant setup                     # tab completion for your shells

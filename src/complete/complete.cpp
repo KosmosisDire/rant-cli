@@ -14,6 +14,7 @@
 #include "app/command.hpp"
 #include "commands/commands.hpp"
 #include "mesh/client.hpp"
+#include "run/logs.hpp"
 #include "run/nodes.hpp"
 
 namespace complete {
@@ -62,6 +63,11 @@ std::vector<std::string> Request::running_nodes() {
     std::vector<std::string> out;
     for (auto& i : run::snapshot(ctx_).instances) out.push_back(i.name);
     return out;
+}
+
+std::vector<std::string> Request::logged_nodes() {
+    const config::Workspace* ws = workspace();
+    return ws ? run::logged_nodes(ws->logs) : std::vector<std::string>{};
 }
 
 std::vector<std::string> Request::running_groups() {

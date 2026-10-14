@@ -19,6 +19,7 @@ add_library(rant_cli_core STATIC
   commands/init.cpp
   commands/kinds.cpp
   commands/lib.cpp
+  commands/log.cpp
   commands/ls.cpp
   commands/new.cpp
   commands/plan_output.cpp

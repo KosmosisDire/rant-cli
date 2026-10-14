@@ -40,6 +40,7 @@ public:
     config::GroupInfo        group(const std::string& name);
     std::vector<std::string> running_nodes();  /* the instances rant started */
     std::vector<std::string> running_groups();
+    std::vector<std::string> logged_nodes();   /* every node with a log, running or not */
     std::vector<std::string> mesh_nodes();
     std::vector<std::string> entities(std::initializer_list<rant::EntityKind> kinds = {});
 
