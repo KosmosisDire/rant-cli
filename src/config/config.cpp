@@ -104,6 +104,13 @@ static Plan read_plan(const RantConfigPlanView* v) {
 
 using PlanHandle = std::unique_ptr<RantConfigPlan, decltype(&rant_config_plan_free)>;
 
+Named named(const fs::path& start, const std::string& name) {
+    std::unique_ptr<RantConfigNamed, decltype(&rant_config_named_free)> h(rant_config_named(to_utf8(start).c_str(), name.c_str()),
+                                                                          &rant_config_named_free);
+    const RantConfigNamedView* v = rant_config_named_view(h.get());
+    return { (v->kind & 1) != 0, (v->kind & 2) != 0, diagnostics(v->diagnostics, v->diagnostic_count) };
+}
+
 Plan plan_node(const fs::path& start, const std::string& node_type) {
     PlanHandle h(rant_config_plan_node(to_utf8(start).c_str(), node_type.c_str()), &rant_config_plan_free);
     return read_plan(rant_config_plan_view(h.get()));

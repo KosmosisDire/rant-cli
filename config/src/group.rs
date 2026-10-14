@@ -255,10 +255,10 @@ impl<'m> Groups<'m> {
         let iface = self.interface(def)?;
         for name in given.keys() {
             if !iface.iter().any(|p| p.name == *name) {
-                return Err(Diag::plain(format!("group `{}` has no param `{name}`, see `rant start group {} --help`", def.file.name, def.file.name)));
+                return Err(Diag::plain(format!("group `{}` has no param `{name}`, see `rant run {} --help`", def.file.name, def.file.name)));
             }
         }
-        let help = format!(", see `rant start group {} --help`", def.file.name);
+        let help = format!(", see `rant run {} --help`", def.file.name);
         let values = param::bind(&iface, given, &|m| Diag::plain(format!("{m}{help}")), "")?;
         let mut found = Vec::new();
         self.expand(def, &iface, &values, &Placement::default(), &mut found)?;

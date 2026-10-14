@@ -41,8 +41,8 @@ to override something. A folder may be a workspace and a package, with both file
 | new project | `rant new workspace [folder] --lang cpp\|python\|csharp` (talker, listener, group) |
 | new package or node | `rant new package [folder] --lang L`, `rant new node [name]`, `rant new group [name]` |
 | build | `rant build [package...]`, `--dry-run` shows order and commands |
-| run | `rant start node <node>`, `rant start group <group> key=value...`, `--dry-run` first |
-| stop, restart | `rant stop [node X \| group X]` (nothing named: all this workspace started), `rant stop --all` (every node on this machine), `rant restart ...` |
+| run | `rant run <group> key=value...` or `rant run <node>`, `--dry-run` first |
+| stop, restart | `rant stop [name]` (nothing named: all this workspace started), `rant stop --all` (every node on this machine), `rant restart [name]` |
 | see the mesh | `rant ls [nodes\|entities\|topics\|variables\|functions\|tasks\|packages\|groups]` |
 | explain one thing | `rant info [kind] <name>` |
 | read and write | `rant sub <topic> -n 1`, `rant pub <topic> <value>`, `rant get <var>`, `rant set <var> <value>`, `rant call <fn> [value]` |
@@ -215,7 +215,7 @@ rant_queue_dispatch(q, 0, 100);              /* on the thread that runs them */
 1. `rant ls` shows what runs, `rant ls nodes` also what could.
 2. Not seeing a node: check the domain on both sides (`--domain`, `domain`, `RANT_DOMAIN`).
 3. A node that died: read `logs/<node>.log`.
-4. Wrong config: `rant start group X --dry-run`, `rant build --dry-run`, `rant info group X`.
+4. Wrong config: `rant run X --dry-run`, `rant build --dry-run`, `rant info group X`.
 5. Wrong data: `rant info <topic>` shows its type and who talks, `rant sub <topic> -n 1`
    shows a message. A type mismatch is refused, not silently read.
 6. "not built yet": run `rant build`.

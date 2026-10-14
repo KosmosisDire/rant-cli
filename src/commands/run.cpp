@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <optional>
 #include <set>
 
 #include <nlohmann/json.hpp>
@@ -6,7 +7,7 @@
 #include "app/failure.hpp"
 #include "commands/commands.hpp"
 #include "commands/plan_output.hpp"
-#include "commands/start.hpp"
+#include "commands/run.hpp"
 #include "complete/complete.hpp"
 #include "run/nodes.hpp"
 #include "ui/prompt.hpp"
@@ -21,7 +22,7 @@ static std::string relative(const config::Workspace& ws, const std::string& path
     return ec || rel.empty() ? path : config::to_utf8(rel);
 }
 
-/* What start did for one node, printed as a line or a JSON object. */
+/* What run did for one node, printed as a line or a JSON object. */
 struct Outcome {
     std::string name;
     std::string action;    /* "started", "running", "shared" or "external" */
@@ -52,9 +53,9 @@ static void report(app::Context& ctx, const config::Workspace& ws, const std::ve
     }
 }
 
-/* One node of a node type, named after it. Starting the same type again gives the copy a
+/* One node of a node type, named after it. Running the same type again gives the copy a
  * free name, talker_1, then talker_2, since two nodes of one name collide on the mesh. */
-int start_node(app::Context& ctx, const std::string& ref) {
+int run_node(app::Context& ctx, const std::string& ref) {
     config::Plan plan = config::plan_node(ctx.cwd(), ref);
     require_plan(ctx, plan);
     if (ctx.args.has("dry-run")) {
@@ -89,7 +90,7 @@ static void group_help(app::Context& ctx, const std::string& group) {
         for (auto& d : g.diagnostics) ctx.out.error(d.str());
         throw app::Failure("");
     }
-    ctx.out.line("Usage: rant start group " + g.name + (g.params.empty() ? "" : " [key=value...]"));
+    ctx.out.line("Usage: rant run " + g.name + (g.params.empty() ? "" : " [key=value...]"));
     if (!g.description.empty()) ctx.out.line("\n" + g.description);
     print_params(ctx, g.params);
 }
@@ -97,7 +98,7 @@ static void group_help(app::Context& ctx, const std::string& group) {
 /* A group root: its nodes start in plan order. A node already running for another root
  * with the same settings is shared, and a node of that name on the mesh that rant did not
  * start can stand in after a question. Every check runs before the first node starts. */
-int start_group(app::Context& ctx, const std::string& group, const std::vector<std::string>& params) {
+int run_group(app::Context& ctx, const std::string& group, const std::vector<std::string>& params) {
     if (ctx.args.has("help")) {
         group_help(ctx, group);
         return 0;
@@ -165,42 +166,49 @@ int start_group(app::Context& ctx, const std::string& group, const std::vector<s
     return 0;
 }
 
-/* The start command line a name alone was most likely meant as. */
-static std::string guess(app::Context& ctx, const std::string& name) {
-    if (config::describe_group(ctx.cwd(), name).diagnostics.empty()) return "did you mean `rant start group " + name + "`?";
-    if (config::plan_node(ctx.cwd(), name).diagnostics.empty()) return "did you mean `rant start node " + name + "`?";
-    return "";
+static void fail_with(app::Context& ctx, const std::vector<config::Diagnostic>& diagnostics) {
+    for (auto& d : diagnostics) ctx.out.error(d.str());
+    throw app::Failure("");
+}
+
+bool names_group(app::Context& ctx, const std::string& name) {
+    if (!ctx.workspace()) return false;
+    config::Named n = config::named(ctx.cwd(), name);
+    if (n.group && n.node) fail_with(ctx, n.diagnostics);
+    if (n.group) return true;
+    for (auto& r : run::snapshot(ctx).roots)
+        if (r.kind == "group" && r.name == name) return true;
+    return false;
 }
 
 static int run(app::Context& ctx) {
     auto& w = ctx.args.words;
-    bool group = !w.empty() && w[0] == "group";
-    if (ctx.args.has("help") && !(group && w.size() >= 2)) {
-        ctx.out.line(app::command_help(start()));
+    std::optional<config::Named> n;
+    if (!w.empty()) n = config::named(ctx.cwd(), w[0]);
+    if (ctx.args.has("help") && !(n && n->group && !n->node)) {
+        ctx.out.line(app::command_help(run_()));
         return 0;
     }
-    if (w.empty() || (w[0] != "node" && !group)) {
-        std::string hint = w.empty() ? "" : guess(ctx, w[0]);
-        throw app::UsageError("say what to start: " + (hint.empty() ? std::string("`rant start node <node>` or `rant start group <name>`") : hint));
-    }
-    if (w.size() < 2) throw app::UsageError("start " + w[0] + " needs a name");
-    if (group) return start_group(ctx, w[1], { w.begin() + 2, w.end() });
-    if (w.size() != 2) throw app::UsageError("start node takes one node, such as `rant start node talker`");
-    return start_node(ctx, w[1]);
+    if (!n) throw app::UsageError("say what to run: `rant run <group> [key=value...]` or `rant run <node>`");
+    if (n->group == n->node) fail_with(ctx, n->diagnostics);
+    if (n->group) return run_group(ctx, w[0], { w.begin() + 1, w.end() });
+    if (w.size() != 1) throw app::UsageError("a node takes no key=value, only a group does");
+    return run_node(ctx, w[0]);
 }
 
 static complete::Candidates complete_words(complete::Request& r) {
     auto& w = r.words;
-    if (w.empty()) return { { "node", "group" } };
-    if (w[0] == "node" && w.size() == 1) return { r.node_types() };
-    if (w[0] != "group") return {};
-    if (w.size() == 1) return { r.groups() };
-    return { complete::params(r.group(w[1]), r.partial, { w.begin() + 2, w.end() }) };
+    if (w.empty()) {
+        std::vector<std::string> out = r.groups();
+        for (auto& n : r.node_types()) out.push_back(n);
+        return { out };
+    }
+    return { complete::params(r.group(w[0]), r.partial, { w.begin() + 1, w.end() }) };
 }
 
-app::Command start() {
-    app::Command c{ "start", "node <node> | group <name> [key=value...]",
-                    "start nodes, detached, logging to the logs folder", app::Section::Workspace,
+app::Command run_() {
+    app::Command c{ "run", "<group> [key=value...] | <node>",
+                    "start a group or a node, detached, logging to the logs folder", app::Section::Workspace,
                     { { "dry-run", 0, "", "show what would run without starting it" } }, run };
     c.own_help = true;
     c.complete = complete_words;

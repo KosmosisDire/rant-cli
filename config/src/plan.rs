@@ -5,7 +5,9 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use crate::diag::Diag;
+use crate::group::Groups;
 use crate::model::{Model, NodeType};
+use crate::paths;
 use crate::refs;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -40,6 +42,37 @@ pub fn runnable(node: &NodeType) -> Result<(), String> {
         return Err(format!("`{}/{}` is not built yet, run `rant build {}` first", node.package, node.name, node.package));
     }
     Ok(())
+}
+
+/// What a name given to run, stop or restart means. Both and Neither say why.
+#[derive(Debug, PartialEq)]
+pub enum Named {
+    Group,
+    Node,
+    Both(String),
+    Neither(String),
+}
+
+/// A name is a group or a node type, and must not be both. A node type in several packages
+/// counts, so planning it names them.
+pub fn named(model: &Model, reference: &str, from_dir: &Path) -> Named {
+    let package = model.package_holding(&paths::normalize(from_dir)).map(|p| p.name.clone());
+    let group = Groups::new(model).find(reference, package.as_deref()).ok();
+    let node = refs::resolve(model, reference, from_dir);
+    let is_node = node.is_ok() || model.node_types().any(|n| n.name == reference);
+    match (group, node) {
+        (Some(g), _) if is_node => Named::Both(format!(
+            "`{reference}` is both the group in {} and a node, rename one",
+            paths::relative(&g.path, &model.config.root)
+        )),
+        (Some(_), _) => Named::Group,
+        _ if is_node => Named::Node,
+        (None, Err(e)) if reference.contains('/') || refs::is_path(reference) => Named::Neither(e),
+        _ => Named::Neither(format!(
+            "no group or node named `{reference}`, {}",
+            refs::unbuilt(model).unwrap_or_else(|| "see `rant ls groups` and `rant ls nodes`".into())
+        )),
+    }
 }
 
 /// One node of a node type, named after the type, run as the type says.

@@ -32,23 +32,19 @@ node "demo/sensor" {
 }
 ]])
 
-complete(CUR st)
-expect_match("${OUT}" "^start\nstop\n$")
-complete(start CUR "")
-expect_match("${OUT}" "^group\nnode\n$")
-complete(start node CUR "")
-expect_match("${OUT}" "^demo/sensor\ndemo/test_node\nsensor\ntest_node\n$")
-complete(start group CUR "")
-expect_match("${OUT}" "^base\nnav\nopts\npick\n$")
+complete(CUR r)
+expect_match("${OUT}" "^restart\nrun\n$")
+complete(run CUR "")
+expect_match("${OUT}" "^base\ndemo/sensor\ndemo/test_node\nnav\nopts\npick\nsensor\ntest_node\n$")
 
 # A group's params end in = and give way to their options.
-complete(start group nav CUR "")
+complete(run nav CUR "")
 expect_match("${OUT}" "^range=\nspeed=\n$")
-complete(start group opts target=red_bin CUR "")
+complete(run opts target=red_bin CUR "")
 expect_match("${OUT}" "^fast=\n$")
-complete(start group opts CUR target=)
+complete(run opts CUR target=)
 expect_match("${OUT}" "^target=blue_bin\ntarget=red_bin\n$")
-complete(start group opts CUR fast=t)
+complete(run opts CUR fast=t)
 expect_match("${OUT}" "^fast=true\n$")
 
 complete(build CUR "")

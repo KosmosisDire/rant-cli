@@ -15,7 +15,7 @@ const app::Command* find(std::string_view word);
 app::Command init();
 app::Command new_();
 app::Command build();
-app::Command start();
+app::Command run_();
 app::Command stop();
 app::Command restart();
 app::Command ls();

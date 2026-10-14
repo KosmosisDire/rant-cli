@@ -22,10 +22,10 @@ rant new workspace demo --lang python  # a workspace with a talker, a listener a
 rant init                      # or make this folder an empty workspace
 rant new package cam --lang cpp  # a package with one node, Rant added (or python, csharp)
 rant build                     # build every package, dependencies first
-rant start group nav speed=2   # start a group of nodes, rant start group nav --help lists its params
+rant run nav speed=2           # run a group of nodes or one node, rant run nav --help lists its params
 rant ls                        # the running nodes and what they talk through
 rant sub odom                  # print a topic
-rant stop group nav
+rant stop nav
 rant lib install               # move every package here to the newest Rant
 rant setup                     # tab completion for your shells
 ```

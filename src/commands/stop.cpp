@@ -4,6 +4,7 @@
 #include "app/failure.hpp"
 #include "commands/commands.hpp"
 #include "commands/plan_output.hpp"
+#include "commands/run.hpp"
 #include "complete/complete.hpp"
 #include "run/nodes.hpp"
 #include "ui/prompt.hpp"
@@ -260,43 +261,33 @@ static int stop_group(app::Context& ctx, const std::string& group, const std::ve
     return 0;
 }
 
-/* The stop command line a name alone was most likely meant as. */
-static std::string guess(app::Context& ctx, const std::string& name) {
-    if (config::describe_group(ctx.cwd(), name).diagnostics.empty()) return "did you mean `rant stop group " + name + "`?";
-    if (run::snapshot(ctx).instance(name)) return "did you mean `rant stop node " + name + "`?";
-    return "";
-}
-
 static int run(app::Context& ctx) {
     auto& w = ctx.args.words;
     if (ctx.args.has("all")) {
-        if (!w.empty()) throw app::UsageError("--all takes no node or group");
+        if (!w.empty()) throw app::UsageError("--all takes no group or node");
         return stop_everything(ctx);
     }
     if (w.empty()) {
         const config::Workspace* ws = ctx.workspace();
         return ws ? stop_workspace(ctx, *ws) : stop_everything(ctx);
     }
-    if (w.size() < 2 || (w[0] != "node" && w[0] != "group")) {
-        std::string hint = w.size() == 1 && w[0] != "node" && w[0] != "group" ? guess(ctx, w[0]) : "";
-        throw app::UsageError("say what to stop: " + (hint.empty() ? std::string("`rant stop node <name>` or `rant stop group <name>`") : hint));
-    }
-    if (w[0] == "group") return stop_group(ctx, w[1], { w.begin() + 2, w.end() });
-    if (w.size() != 2) throw app::UsageError("stop node takes one name");
-    return stop_node(ctx, w[1]);
+    if (names_group(ctx, w[0])) return stop_group(ctx, w[0], { w.begin() + 1, w.end() });
+    if (w.size() != 1) throw app::UsageError("a node takes no key=value, only a group does");
+    return stop_node(ctx, w[0]);
 }
 
 static complete::Candidates complete_words(complete::Request& r) {
     auto& w = r.words;
-    if (w.empty()) return { { "node", "group" } };
-    if (w[0] == "node" && w.size() == 1) return { r.running_nodes() };
-    if (w[0] != "group") return {};
-    if (w.size() == 1) return { r.running_groups() };
-    return { complete::params(r.group(w[1]), r.partial, { w.begin() + 2, w.end() }) };
+    if (w.empty()) {
+        std::vector<std::string> out = r.running_groups();
+        for (auto& n : r.running_nodes()) out.push_back(n);
+        return { out };
+    }
+    return { complete::params(r.group(w[0]), r.partial, { w.begin() + 1, w.end() }) };
 }
 
 app::Command stop() {
-    app::Command c{ "stop", "[node <name> | group <name> [key=value...]]",
+    app::Command c{ "stop", "[<group> [key=value...] | <node>]",
                     "stop any node on this machine, all this workspace started when nothing is named",
                     app::Section::Workspace,
                     { { "all", 'a', "", "stop every node on this machine, whoever started it" } }, run };

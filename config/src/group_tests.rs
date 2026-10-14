@@ -9,7 +9,7 @@ use crate::diag::Diag;
 use crate::group::Groups;
 use crate::param::parse_value;
 use crate::model::Model;
-use crate::plan::Plan;
+use crate::plan::{self, Named, Plan};
 use crate::testdir::TestDir;
 use crate::workspace;
 
@@ -208,6 +208,20 @@ fn semantic_errors_point_at_their_place() {
         assert!(err.message.contains(message), "{group}: {err}");
         assert_eq!(err.line, *line, "{group}: {err}");
     }
+}
+
+#[test]
+fn a_name_is_a_group_or_a_node_never_both() {
+    let t = workspace_with(&[("odom.rungroup", "  node \"planner/odom\" {}\n")]);
+    let m = model(&t);
+    let at = |name: &str| plan::named(&m, name, t.root());
+    assert_eq!(at("nav"), Named::Group);
+    assert_eq!(at("drivers/cameras"), Named::Group);
+    assert_eq!(at("lidar"), Named::Node);
+    assert_eq!(at("planner/odom"), Named::Node);
+    assert_eq!(at("odom"), Named::Both("`odom` is both the group in odom.rungroup and a node, rename one".into()));
+    assert_eq!(at("nowhere"), Named::Neither("no group or node named `nowhere`, see `rant ls groups` and `rant ls nodes`".into()));
+    assert!(matches!(at("drivers/nothing"), Named::Neither(e) if e.contains("has no node `nothing`")));
 }
 
 #[test]

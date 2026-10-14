@@ -90,6 +90,16 @@ struct Plan {
     std::vector<Diagnostic>            diagnostics;
 };
 
+/* What a name given to run, stop or restart means from start. Both and neither come with a
+ * diagnostic that says so. */
+struct Named {
+    bool                    group = false;
+    bool                    node  = false;
+    std::vector<Diagnostic> diagnostics;
+};
+
+Named named(const fs::path& start, const std::string& name);
+
 /* The plan for one node of a node type, a reference in any form resolved from start. */
 Plan plan_node(const fs::path& start, const std::string& node_type);
 

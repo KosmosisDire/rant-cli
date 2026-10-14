@@ -449,6 +449,64 @@ pub unsafe extern "C" fn rant_config_plan_node(start_dir: *const c_char, node_ty
     plan_handle(&loaded, planned)
 }
 
+/// Whether a name is a group or a node type: kind is 1 for a group, 2 for a node, 3 for both
+/// and 0 for neither, the last two with a diagnostic that says so.
+#[repr(C)]
+pub struct RantConfigNamedView {
+    pub kind: u32,
+    pub diagnostics: *const RantConfigDiagnostic,
+    pub diagnostic_count: usize,
+}
+
+pub struct RantConfigNamed {
+    view: RantConfigNamedView,
+    #[allow(dead_code)]
+    store: Store,
+}
+
+/// What a name means from start_dir. Never NULL.
+///
+/// # Safety
+/// Both arguments must be NULL or NUL terminated UTF-8 strings.
+#[no_mangle]
+pub unsafe extern "C" fn rant_config_named(start_dir: *const c_char, name: *const c_char) -> *mut RantConfigNamed {
+    let start = arg_path(start_dir);
+    let loaded = load(&start, true);
+    let mut diags = loaded.diags.clone();
+    let mut kind = 0;
+    match &loaded.model {
+        Some(m) => match plan::named(m, &arg_str(name), &start) {
+            plan::Named::Group => kind = 1,
+            plan::Named::Node => kind = 2,
+            plan::Named::Both(e) => {
+                kind = 3;
+                diags.push(Diag::plain(e));
+            }
+            plan::Named::Neither(e) => diags.push(Diag::plain(e)),
+        },
+        None => diags.push(no_workspace()),
+    }
+    let mut store = Store::default();
+    let (diagnostics, diagnostic_count) = store.diags(&diags);
+    Box::into_raw(Box::new(RantConfigNamed { view: RantConfigNamedView { kind, diagnostics, diagnostic_count }, store }))
+}
+
+/// # Safety
+/// `named` must be a live handle from rant_config_named.
+#[no_mangle]
+pub unsafe extern "C" fn rant_config_named_view(named: *const RantConfigNamed) -> *const RantConfigNamedView {
+    &(*named).view
+}
+
+/// # Safety
+/// `named` must be NULL or a live handle, and is invalid afterwards.
+#[no_mangle]
+pub unsafe extern "C" fn rant_config_named_free(named: *mut RantConfigNamed) {
+    if !named.is_null() {
+        drop(Box::from_raw(named));
+    }
+}
+
 /// The group a reference names from start_dir, read and with its interface worked out.
 fn group_def(groups: &Groups, model: &Model, start: &Path, reference: &str) -> Result<(Rc<GroupDef>, Vec<Param>), Diag> {
     let package = model.package_holding(&paths::normalize(start)).map(|p| p.name.clone());
@@ -469,7 +527,7 @@ fn plan_group(model: &Model, start: &Path, reference: &str, raw: &[String]) -> R
         };
         let Some(p) = iface.iter().find(|p| p.name == k) else {
             return Err(Diag::plain(format!(
-                "group `{}` has no param `{k}`, see `rant start group {} --help`",
+                "group `{}` has no param `{k}`, see `rant run {} --help`",
                 def.file.name, def.file.name
             )));
         };

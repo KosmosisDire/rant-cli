@@ -51,7 +51,7 @@ created demo/src/talker[.]cpp
 created demo/workspace[.]rant
 created demo/demo[.]rungroup
 ")
-rant(start group demo --dry-run IN "${SCRATCH}/demo" FAILS)
+rant(run demo --dry-run IN "${SCRATCH}/demo" FAILS)
 expect_match("${ERR}" "no node named `talker`, `demo` is not built yet, run `rant build` first")
 
 # A package gets Rant through the same routine as rant lib install, which asks GitHub.

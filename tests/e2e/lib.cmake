@@ -22,7 +22,7 @@ foreach(state_file IN LISTS leftover_states)
   math(EXPR last "${count} - 1")
   foreach(i RANGE ${last})
     string(JSON name GET "${state_text}" instances ${i} name)
-    execute_process(COMMAND "${RANT}" stop node "${name}" -y WORKING_DIRECTORY "${workspace}"
+    execute_process(COMMAND "${RANT}" stop "${name}" -y WORKING_DIRECTORY "${workspace}"
                     OUTPUT_QUIET ERROR_QUIET TIMEOUT 30)
   endforeach()
 endforeach()
