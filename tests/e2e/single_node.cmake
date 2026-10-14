@@ -29,9 +29,10 @@ rant(run stubborn)
 rant(stop stubborn)
 expect_match("${OUT}" "killed after")
 
-# A node that exits on its own is pruned at the next command.
-rant(run brief)
-execute_process(COMMAND "${CMAKE_COMMAND}" -E sleep 3)
+# A node that exits within the watch fails the run with the end of its log, and is pruned
+# at the next command.
+rant(run brief FAILS)
+expect_match("${ERR}" "brief exited within 2 s, the end of logs/brief[.]log:")
 rant(ls)
 expect_no_match("${OUT}" "brief")
 rant(stop brief FAILS)

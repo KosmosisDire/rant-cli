@@ -41,7 +41,7 @@ to override something. A folder may be a workspace and a package, with both file
 | new project | `rant new workspace [folder] --lang cpp\|python\|csharp` (talker, listener, group) |
 | new package or node | `rant new package [folder] --lang L`, `rant new node [name]`, `rant new group [name]` |
 | build | `rant build [package...]`, `--dry-run` shows order and commands |
-| run | `rant run <group> key=value...` or `rant run <node>`, `--dry-run` first |
+| run | `rant run <group> key=value...` or `rant run <node>`, `--dry-run` first. It watches for 2 s and fails with the log of a node that exited |
 | stop, restart | `rant stop [name]` (nothing named: all this workspace started), `rant stop --all` (every node on this machine), `rant restart [name]` |
 | see the mesh | `rant ls [nodes\|entities\|topics\|variables\|functions\|tasks\|packages\|groups]` |
 | explain one thing | `rant info [kind] <name>` |

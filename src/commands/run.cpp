@@ -9,6 +9,7 @@
 #include "commands/plan_output.hpp"
 #include "commands/run.hpp"
 #include "complete/complete.hpp"
+#include "run/logs.hpp"
 #include "run/nodes.hpp"
 #include "ui/prompt.hpp"
 
@@ -30,12 +31,13 @@ struct Outcome {
     std::string log;
 };
 
-static void report(app::Context& ctx, const config::Workspace& ws, const std::vector<Outcome>& done) {
+static void report(app::Context& ctx, const config::Workspace& ws, const std::vector<Outcome>& done,
+                   const std::set<std::string>& exited = {}) {
     if (ctx.json) {
         json out = json::array();
         for (auto& o : done) {
             json j = { { "name", o.name }, { "action", o.action } };
-            if (o.action == "started") j["pid"] = o.pid, j["log"] = o.log;
+            if (o.action == "started") j["pid"] = o.pid, j["log"] = o.log, j["running"] = !exited.count(o.name);
             out.push_back(j);
         }
         ctx.out.line(json{ { "nodes", out } }.dump(2));
@@ -51,6 +53,46 @@ static void report(app::Context& ctx, const config::Workspace& ws, const std::ve
         else
             ctx.out.line("using " + o.name + ", which rant did not start");
     }
+}
+
+app::OptionSpec watch_option() {
+    return { "watch", 0, "S", "seconds to watch started nodes for an early exit, 2 by default, 0 for none" };
+}
+
+static std::string seconds(double s) {
+    std::string t = std::to_string(s);
+    t.erase(t.find_last_not_of('0') + 1);
+    if (t.back() == '.') t.pop_back();
+    return t;
+}
+
+int watch_started(app::Context& ctx, const config::Workspace& ws, const std::vector<state::Instance>& started,
+                  std::set<std::string>* exited) {
+    double span = 2;
+    if (auto w = ctx.args.get("watch")) {
+        char* end = nullptr;
+        span = std::strtod(w->c_str(), &end);
+        if (end == w->c_str() || *end || span < 0) throw app::UsageError("--watch takes seconds, 0 or more");
+    }
+    if (span == 0 || started.empty()) return 0;
+    auto gone = run::exited_within(started, std::chrono::milliseconds((long long)(span * 1000)));
+    for (auto* i : gone) {
+        if (exited) exited->insert(i->name);
+        ctx.out.error(i->name + " exited within " + seconds(span) + " s, the end of " + relative(ws, i->log) + ":");
+        for (auto& l : run::tail(config::from_utf8(i->log), 10)) ctx.out.note("  " + ctx.out.paint_err(ui::Style::Dim, l));
+    }
+    return gone.empty() ? 0 : 1;
+}
+
+/* Prints what run did, then watches what it started. The state is unlocked by then, so
+ * other commands need not wait. */
+static int finish(app::Context& ctx, const config::Workspace& ws, const std::vector<Outcome>& done,
+                  const std::vector<state::Instance>& started) {
+    if (!ctx.json) report(ctx, ws, done);
+    std::set<std::string> exited;
+    int code = watch_started(ctx, ws, started, &exited);
+    if (ctx.json) report(ctx, ws, done, exited);
+    return code;
 }
 
 /* One node of a node type, named after it. Running the same type again gives the copy a
@@ -69,19 +111,21 @@ int run_node(app::Context& ctx, const std::string& ref) {
     mesh.settle();
     for (auto& p : mesh.peers()) taken.insert(p.name);
 
-    run::Session s(*plan.workspace);
-    for (auto& i : s.state().instances) taken.insert(i.name);
-    std::string name = inst.name;
-    for (int n = 1; taken.count(name); n++) name = inst.name + "_" + std::to_string(n);
+    state::Instance rec;
+    {
+        run::Session s(*plan.workspace);
+        for (auto& i : s.state().instances) taken.insert(i.name);
+        std::string name = inst.name;
+        for (int n = 1; taken.count(name); n++) name = inst.name + "_" + std::to_string(n);
 
-    state::Root root{ "node", name, {} };
-    state::Instance rec = run::spawn(s.workspace(), inst, name);
-    rec.roots.push_back(root.key());
-    s.state().roots.push_back(root);
-    s.state().instances.push_back(rec);
-    s.save();
-    report(ctx, s.workspace(), { { name, "started", rec.tracking.pid, rec.log } });
-    return 0;
+        state::Root root{ "node", name, {} };
+        rec = run::spawn(s.workspace(), inst, name);
+        rec.roots.push_back(root.key());
+        s.state().roots.push_back(root);
+        s.state().instances.push_back(rec);
+        s.save();
+    }
+    return finish(ctx, *plan.workspace, { { rec.name, "started", rec.tracking.pid, rec.log } }, { rec });
 }
 
 static void group_help(app::Context& ctx, const std::string& group) {
@@ -114,7 +158,8 @@ int run_group(app::Context& ctx, const std::string& group, const std::vector<std
 
     mesh::Client mesh(ctx.domain());
     mesh.settle();
-    run::Session s(*plan.workspace);
+    std::optional<run::Session> held(std::in_place, *plan.workspace);
+    run::Session& s = *held;
     auto managed = run::managed_peers(mesh, s.state());
 
     std::vector<std::string> actions;
@@ -141,6 +186,7 @@ int run_group(app::Context& ctx, const std::string& group, const std::vector<std
 
     if (!s.state().root(root.key())) s.state().roots.push_back(root);
     std::vector<Outcome> done;
+    std::vector<state::Instance> started;
     try {
         for (size_t i = 0; i < plan.instances.size(); i++) {
             const config::Instance& inst = plan.instances[i];
@@ -148,6 +194,7 @@ int run_group(app::Context& ctx, const std::string& group, const std::vector<std
                 state::Instance rec = run::spawn(s.workspace(), inst, inst.name);
                 rec.roots.push_back(root.key());
                 s.state().instances.push_back(rec);
+                started.push_back(rec);
                 done.push_back({ inst.name, "started", rec.tracking.pid, rec.log });
             } else if (actions[i] == "shared" || actions[i] == "running") {
                 state::Instance* running = s.state().instance(inst.name);
@@ -163,8 +210,8 @@ int run_group(app::Context& ctx, const std::string& group, const std::vector<std
         throw;
     }
     s.save();
-    report(ctx, s.workspace(), done);
-    return 0;
+    held.reset();    /* unlocks the state before the watch */
+    return finish(ctx, *plan.workspace, done, started);
 }
 
 static void fail_with(app::Context& ctx, const std::vector<config::Diagnostic>& diagnostics) {
@@ -210,7 +257,7 @@ static complete::Candidates complete_words(complete::Request& r) {
 app::Command run_() {
     app::Command c{ "run", "<group> [key=value...] | <node>",
                     "start a group or a node, detached, logging to the logs folder", app::Section::Workspace,
-                    { { "dry-run", 0, "", "show what would run without starting it" } }, run };
+                    { { "dry-run", 0, "", "show what would run without starting it" }, watch_option() }, run };
     c.own_help = true;
     c.complete = complete_words;
     return c;

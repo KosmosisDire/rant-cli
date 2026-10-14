@@ -1,6 +1,7 @@
 #include "run/nodes.hpp"
 
 #include <algorithm>
+#include <thread>
 
 #include "util/home.hpp"
 
@@ -25,6 +26,18 @@ static std::string job_name(const config::fs::path& root, const std::string& nam
     for (auto& c : safe)
         if (c == '\\') c = '_';
     return "Local\\rant-" + util::path_key(root).substr(0, 12) + "-" + safe;
+}
+
+std::vector<const state::Instance*> exited_within(const std::vector<state::Instance>& started, std::chrono::milliseconds span) {
+    auto end = std::chrono::steady_clock::now() + span;
+    for (;;) {
+        std::vector<const state::Instance*> out;
+        for (auto& i : started)
+            if (!process::alive(i.tracking)) out.push_back(&i);
+        auto now = std::chrono::steady_clock::now();
+        if (out.size() == started.size() || now >= end) return out;
+        std::this_thread::sleep_for(std::min<std::chrono::steady_clock::duration>(std::chrono::milliseconds(100), end - now));
+    }
 }
 
 state::Instance spawn(const config::Workspace& ws, const config::Instance& inst, const std::string& name) {

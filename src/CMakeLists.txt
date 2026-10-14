@@ -46,6 +46,7 @@ add_library(rant_cli_core STATIC
   net/interfaces.cpp
   process/command.cpp
   process/quote.cpp
+  run/logs.cpp
   run/nodes.cpp
   scaffold/scaffold.cpp
   state/state.cpp

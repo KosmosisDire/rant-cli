@@ -31,7 +31,7 @@ static void report_stop(app::Context& ctx, const std::string& name, process::Sto
 }
 
 /* Restarts one node under its name and roots, with the spec its first root plans now. */
-static void restart_instance(app::Context& ctx, run::Session& s, const std::string& name, const config::Instance& planned) {
+static state::Instance restart_instance(app::Context& ctx, run::Session& s, const std::string& name, const config::Instance& planned) {
     state::Instance* inst = s.state().instance(name);
     report_stop(ctx, name, run::halt(*inst));
     std::vector<std::string> roots = inst->roots;
@@ -40,9 +40,11 @@ static void restart_instance(app::Context& ctx, run::Session& s, const std::stri
     *s.state().instance(name) = rec;
     s.save();
     ctx.out.line("restarted " + name + ", pid " + std::to_string(rec.tracking.pid));
+    return rec;
 }
 
-static int restart_node(app::Context& ctx, const std::string& name) {
+/* The restarted node, returned once the state is unlocked again. */
+static state::Instance restart_node(app::Context& ctx, const std::string& name) {
     run::Session s(ctx.require_workspace());
     state::Instance* inst = s.state().instance(name);
     if (!inst) throw app::Failure("no node `" + name + "` started here, see `rant ls nodes`");
@@ -53,13 +55,12 @@ static int restart_node(app::Context& ctx, const std::string& name) {
     for (auto& i : plan.instances)
         if (root->kind == "node" || i.name == name) planned = &i;
     if (!planned) throw app::Failure("`" + name + "` is no longer in " + root->key().substr(6) + ", stop it instead");
-    restart_instance(ctx, s, name, *planned);
-    return 0;
+    return restart_instance(ctx, s, name, *planned);
 }
 
 /* Restarts every node of one group root: its nodes stop last started first, then the plan
  * starts in order. A node the plan has dropped stops for good unless another root needs it. */
-static void restart_root(app::Context& ctx, run::Session& s, const state::Root& root) {
+static void restart_root(app::Context& ctx, run::Session& s, const state::Root& root, std::vector<state::Instance>& started) {
     config::Plan plan = replan(ctx, root, nullptr);
     state::State& st = s.state();
     std::string key = root.key();
@@ -107,6 +108,7 @@ static void restart_root(app::Context& ctx, run::Session& s, const state::Root& 
         if (inst) *inst = rec;
         else st.instances.push_back(rec);
         s.save();
+        started.push_back(rec);
         ctx.out.line("restarted " + p.name + ", pid " + std::to_string(rec.tracking.pid));
     }
 }
@@ -132,29 +134,32 @@ static std::vector<state::Root> group_roots(app::Context& ctx, const state::Stat
 }
 
 static int restart_all(app::Context& ctx) {
-    run::Session s(ctx.require_workspace());
-    std::vector<state::Root> roots = s.state().roots;
-    if (roots.empty()) {
-        ctx.out.line("nothing rant started is running");
-        return 0;
-    }
-    std::string list;
-    for (auto& r : roots) list += (list.empty() ? "" : ", ") + r.key();
-    ctx.out.line("roots: " + list);
-    if (!ui::confirm("Restart all " + std::to_string(s.state().instances.size()) + " nodes?", ctx.yes)) return 1;
-    for (auto& r : roots) {
-        if (r.kind == "group") {
-            restart_root(ctx, s, r);
-            continue;
+    std::vector<state::Instance> started;
+    {
+        run::Session s(ctx.require_workspace());
+        std::vector<state::Root> roots = s.state().roots;
+        if (roots.empty()) {
+            ctx.out.line("nothing rant started is running");
+            return 0;
         }
-        for (auto& i : s.state().instances)
-            if (i.roots.front() == r.key()) {
-                config::Plan plan = replan(ctx, r, &i);
-                restart_instance(ctx, s, i.name, plan.instances.front());
-                break;
+        std::string list;
+        for (auto& r : roots) list += (list.empty() ? "" : ", ") + r.key();
+        ctx.out.line("roots: " + list);
+        if (!ui::confirm("Restart all " + std::to_string(s.state().instances.size()) + " nodes?", ctx.yes)) return 1;
+        for (auto& r : roots) {
+            if (r.kind == "group") {
+                restart_root(ctx, s, r, started);
+                continue;
             }
+            for (auto& i : s.state().instances)
+                if (i.roots.front() == r.key()) {
+                    config::Plan plan = replan(ctx, r, &i);
+                    started.push_back(restart_instance(ctx, s, i.name, plan.instances.front()));
+                    break;
+                }
+        }
     }
-    return 0;
+    return watch_started(ctx, ctx.require_workspace(), started);
 }
 
 static int run(app::Context& ctx) {
@@ -163,7 +168,7 @@ static int run(app::Context& ctx) {
     /* what is not running starts, looked up first without holding the state, which run takes */
     if (!names_group(ctx, w[0])) {
         if (w.size() != 1) throw app::UsageError("a node takes no key=value, only a group does");
-        if (run::snapshot(ctx).instance(w[0])) return restart_node(ctx, w[0]);
+        if (run::snapshot(ctx).instance(w[0])) return watch_started(ctx, ctx.require_workspace(), { restart_node(ctx, w[0]) });
         ctx.out.note("`" + w[0] + "` is not running, starting it");
         return run_node(ctx, w[0]);
     }
@@ -172,9 +177,12 @@ static int run(app::Context& ctx) {
         ctx.out.note("group `" + w[0] + "` is not running, starting it");
         return run_group(ctx, w[0], params);
     }
-    run::Session s(ctx.require_workspace());
-    for (auto& r : group_roots(ctx, s.state(), w[0], params)) restart_root(ctx, s, r);
-    return 0;
+    std::vector<state::Instance> started;
+    {
+        run::Session s(ctx.require_workspace());
+        for (auto& r : group_roots(ctx, s.state(), w[0], params)) restart_root(ctx, s, r, started);
+    }
+    return watch_started(ctx, ctx.require_workspace(), started);
 }
 
 static complete::Candidates complete_words(complete::Request& r) {
@@ -191,7 +199,7 @@ static complete::Candidates complete_words(complete::Request& r) {
 app::Command restart() {
     app::Command c{ "restart", "[<group> [key=value...] | <node>]",
                     "stop and start again as configured now, start what is not running, all of it when nothing is named",
-                    app::Section::Workspace, {}, run };
+                    app::Section::Workspace, { watch_option() }, run };
     c.complete = complete_words;
     return c;
 }
