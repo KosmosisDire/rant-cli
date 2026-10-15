@@ -97,11 +97,9 @@ static void start_root(app::Context& ctx, run::Session& s, const Halted& h, std:
     for (auto& p : planned) {
         state::Instance* inst = st.instance(p.name);
         if (inst && !std::count(inst->roots.begin(), inst->roots.end(), key)) {
-            std::string with;
-            for (auto& k : inst->roots)
-                if (const state::Root* r = st.root(k)) with += (with.empty() ? "" : ", ") + r->name;
+            std::string with = held_by(inst->roots, "shared with");
             inst->roots.push_back(key);    /* another root's node, now shared, left running as it is */
-            summary.add({ p.name, Summary::Mark::Running, "already running", "shared with " + with });
+            summary.add({ p.name, Summary::Mark::Running, "already running", with });
             continue;
         }
         if (!inst && elsewhere.count(p.name)) {

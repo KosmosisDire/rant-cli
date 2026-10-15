@@ -55,6 +55,10 @@ private:
 /* A stopped node's row, saying how it stopped. */
 Summary::Row stopped_row(const std::string& name, process::Stopped how);
 
+/* Why a node other roots hold stays up: "started on its own" for its own start, then lead
+ * and the groups, such as "shared with nav" or "still needed by nav". */
+std::string held_by(const std::vector<std::string>& root_keys, const std::string& lead);
+
 /* A started node's row: its pid and log, and status "starting" until it comes up. */
 Summary::Row started_row(const state::Instance& rec);
 

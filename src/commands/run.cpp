@@ -135,11 +135,9 @@ int run_group(app::Context& ctx, const std::string& group, const std::vector<std
                 summary.add(started_row(rec));
             } else if (actions[i] == "shared" || actions[i] == "running") {
                 state::Instance* running = s.state().instance(inst.name);
-                std::string with;
-                for (auto& key : running->roots)
-                    if (const state::Root* r = s.state().root(key)) with += (with.empty() ? "" : ", ") + r->name;
+                std::string with = actions[i] == "shared" ? held_by(running->roots, "shared with") : "";
                 if (actions[i] == "shared") running->roots.push_back(root.key());
-                summary.add({ inst.name, Summary::Mark::Running, "already running", actions[i] == "shared" ? "shared with " + with : "" });
+                summary.add({ inst.name, Summary::Mark::Running, "already running", with });
             } else {
                 summary.add({ inst.name, Summary::Mark::Running, "already running", "started outside rant" });
             }

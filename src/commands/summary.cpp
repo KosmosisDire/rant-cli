@@ -128,6 +128,17 @@ Summary::Row stopped_row(const std::string& name, process::Stopped how) {
     return { name, Summary::Mark::Stopped, "already exited", "" };
 }
 
+std::string held_by(const std::vector<std::string>& root_keys, const std::string& lead) {
+    std::string alone, groups;
+    for (auto& key : root_keys) {
+        /* "group nav target=red" names nav, "node talker" is talker started by itself */
+        if (key.rfind("group ", 0) == 0) groups += (groups.empty() ? "" : ", ") + key.substr(6, key.find(' ', 6) - 6);
+        else alone = "started on its own";
+    }
+    if (groups.empty()) return alone;
+    return alone + (alone.empty() ? "" : ", ") + lead + " " + groups;
+}
+
 Summary::Row started_row(const state::Instance& rec) {
     Summary::Row r{ rec.name, Summary::Mark::Running, "starting", "", rec.log, rec.tracking.pid };
     r.fields = { { "pid", rec.tracking.pid }, { "log", rec.log } };

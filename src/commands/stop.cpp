@@ -265,9 +265,7 @@ static int stop_group(app::Context& ctx, const std::string& group, const std::ve
                 summary.add(stopped_row(rel.name, rel.how));
                 continue;
             }
-            std::vector<std::string> by;    /* group names, as the summary heads them */
-            for (auto& key : rel.kept_for) by.push_back(key.rfind("group ", 0) == 0 ? key.substr(6, key.find(' ', 6) - 6) : key);
-            summary.add({ rel.name, Summary::Mark::Running, "kept running", "still needed by " + list(by) });
+            summary.add({ rel.name, Summary::Mark::Running, "kept running", held_by(rel.kept_for, "still needed by") });
         }
         s.save();
     }
