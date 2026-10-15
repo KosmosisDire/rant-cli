@@ -45,7 +45,7 @@ to override something. A folder may be a workspace and a package, with both file
 | stop, restart | `rant stop [name]` (nothing named: all this workspace started), `rant stop --all` (every node on this machine), `rant restart [name]`, which stops, builds, then starts, the last build when the build fails |
 | node output | `rant log [name...]`, `-f` to follow, `-n N` lines, a group shows all its nodes |
 | see the mesh | `rant ls [nodes\|entities\|topics\|variables\|functions\|tasks\|types\|packages\|groups]`, `rant ls nodes --no-mesh` for only what this workspace started, without joining the mesh |
-| explain one thing | `rant info [kind] <name>`, a type shows its fields and who uses it |
+| explain one thing | `rant info [kind] <name>`, a type shows its fields and who uses it, a node its source file |
 | read and write | `rant sub <topic> -n 1`, `rant pub <topic> <value>`, `rant get <var>`, `rant set <var> <value>`, `rant call <fn> [value]` |
 | Rant version in packages | `rant lib [folder]` shows it, `rant lib install [folder]` adds it, `rant lib update [folder]` moves it, both take `--version V` |
 | update | `rant update`: the CLI, the explorer, the bridge, the VS Code extension and the skill where installed, then the workspace's packages |

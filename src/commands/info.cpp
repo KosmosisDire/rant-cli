@@ -199,6 +199,7 @@ static Answer type_answer(app::Context& ctx, const config::Workspace& ws, const 
     j["node"] = n.ref();
     j["kind"] = config::kind_name(n.kind);
     if (n.path) j["file"] = ctx.shown(*n.path);
+    if (auto s = library::node_source(n)) j["source"] = ctx.shown(*s);
     j["run"] = process::shown(n.run);
     j["cwd"] = ctx.shown(n.cwd);
     json groups = json::array(), running = json::array();

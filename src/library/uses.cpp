@@ -267,6 +267,109 @@ std::string cmake_add_node(const std::string& text, const std::string& name, con
     return out.insert(at == std::string::npos ? out.size() : at + 1, lines);
 }
 
+static std::string read_file(const fs::path& p);
+
+/* The words of a call's arguments: quoted ones whole and unquoted, bracket arguments left out. */
+static std::vector<std::string> cmake_words(const std::string& args) {
+    std::vector<std::string> out;
+    size_t i = 0, len = 0, eqs = 0;
+    while (i < args.size()) {
+        char c = args[i];
+        if (std::isspace((unsigned char)c)) {
+            i++;
+            continue;
+        }
+        if (c == '"') {
+            size_t k = i + 1;
+            while (k < args.size() && args[k] != '"') k += args[k] == '\\' ? 2 : 1;
+            out.push_back(args.substr(i + 1, std::min(k, args.size()) - i - 1));
+            i = k + 1;
+            continue;
+        }
+        if (c == '[' && bracket_open(args, i, &len, &eqs)) {
+            i = skip_bracket(args, i, len, eqs);
+            continue;
+        }
+        size_t k = i;
+        while (k < args.size() && !std::isspace((unsigned char)args[k])) k++;
+        out.push_back(args.substr(i, k - i));
+        i = k;
+    }
+    return out;
+}
+
+std::optional<std::string> cmake_source(const std::string& text, const std::string& target) {
+    static const std::regex source(R"(\.(c|cc|cpp|cxx|c\+\+|cu|m|mm)$)", std::regex::icase);
+    for (auto& c : cmake_calls(text)) {
+        if (!named(c, { "add_executable", "target_sources" })) continue;
+        std::vector<std::string> words = cmake_words(c.args(text));
+        if (words.empty() || words[0] != target) continue;
+        for (size_t i = 1; i < words.size(); i++) {
+            const std::string& w = words[i];
+            if (w.find("${") != std::string::npos || w.find("$<") != std::string::npos) continue;
+            if (std::regex_search(w, source)) return w;
+        }
+    }
+    return std::nullopt;
+}
+
+bool csharp_main(const std::string& text) {
+    static const std::regex main(R"(\bstatic\s+(async\s+)?(void|int|Task|Task\s*<\s*int\s*>)\s+Main\s*\()");
+    return std::regex_search(text, main);
+}
+
+/* The source of a CMake node: its executable's name looked up in every CMakeLists of the package. */
+static std::optional<fs::path> cmake_node_source(const config::NodeType& n) {
+    std::vector<std::string> targets = { n.name };
+    if (n.path && n.path->stem().u8string() != n.name) targets.insert(targets.begin(), n.path->stem().u8string());
+    for (auto& dir : config::folders_under(n.cwd).folders) {
+        fs::path cmake = dir / "CMakeLists.txt";
+        if (!fs::is_regular_file(cmake)) continue;
+        std::string text = read_file(cmake);
+        for (auto& t : targets)
+            if (auto s = cmake_source(text, t)) {
+                fs::path file = dir / config::from_utf8(*s);
+                if (fs::is_regular_file(file)) return file;
+            }
+    }
+    return std::nullopt;
+}
+
+/* The source of a C# node: the file with Main in its project, else Program.cs. */
+static std::optional<fs::path> csharp_node_source(const config::NodeType& n) {
+    fs::path project = n.cwd;
+    for (auto& dir : config::folders_under(n.cwd).folders) {
+        std::error_code ec;
+        if (fs::is_regular_file(dir / (n.name + ".csproj"), ec)) {
+            project = dir;
+            break;
+        }
+    }
+    for (auto& dir : config::folders_under(project).folders) {
+        fs::path rel = dir.lexically_relative(project);
+        if (std::any_of(rel.begin(), rel.end(), [](const fs::path& p) { return lower(p.u8string()) == "bin" || lower(p.u8string()) == "obj"; }))
+            continue;
+        std::error_code ec;
+        for (auto& e : fs::directory_iterator(dir, ec))
+            if (lower(e.path().extension().u8string()) == ".cs" && csharp_main(read_file(e.path()))) return e.path();
+    }
+    if (fs::is_regular_file(project / "Program.cs")) return project / "Program.cs";
+    return std::nullopt;
+}
+
+std::optional<fs::path> node_source(const config::NodeType& n) {
+    switch (n.kind) {
+    case config::NodeKind::Python:
+        return n.path;
+    case config::NodeKind::Native:
+        return cmake_node_source(n);
+    case config::NodeKind::CSharp:
+        return csharp_node_source(n);
+    default:
+        return std::nullopt;
+    }
+}
+
 // ---- Python ----
 
 static const std::regex& pin_pattern() {

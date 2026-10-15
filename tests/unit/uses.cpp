@@ -156,3 +156,22 @@ TEST(every_venv_under_a_folder_is_listed_by_the_workspace_ignore_rules) {
     CHECK(uses.size() == 2 && uses[0].version == std::string("0.0.18") && uses[0].wanted);
     CHECK(uses.size() == 2 && !uses[1].version && !uses[1].wanted && fs::equivalent(uses[1].file, t.root / "tools" / "env"));
 }
+
+TEST(cmake_source_is_the_first_source_of_the_target) {
+    const std::string text =
+        "add_executable(cam WIN32 \"src/cam main.cpp\" src/cam.h)  # cam\n"
+        "add_executable(lidar ${COMMON} $<$<CONFIG:Debug>:debug.cpp> src/lidar.cc)\n"
+        "add_library(util src/util.cpp)\n"
+        "add_executable(arm)\ntarget_sources(arm PRIVATE src/arm.cpp)\n";
+    CHECK_EQ(library::cmake_source(text, "cam").value_or(""), std::string("src/cam main.cpp"));
+    CHECK_EQ(library::cmake_source(text, "lidar").value_or(""), std::string("src/lidar.cc"));
+    CHECK_EQ(library::cmake_source(text, "arm").value_or(""), std::string("src/arm.cpp"));
+    CHECK(!library::cmake_source(text, "util"));
+    CHECK(!library::cmake_source("# add_executable(cam main.cpp)\n", "cam"));
+}
+
+TEST(csharp_main_is_found_in_its_forms) {
+    CHECK(library::csharp_main("class P { static void Main(string[] a) {} }"));
+    CHECK(library::csharp_main("public static async Task<int> Main() => 0;"));
+    CHECK(!library::csharp_main("var node = new Rant.Node(\"panel\");"));
+}

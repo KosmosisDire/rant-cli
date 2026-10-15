@@ -5,6 +5,8 @@
 #include <string>
 #include <vector>
 
+#include "config/config.hpp"
+
 /* Where packages take the Rant library from and at which version, and the edits that add
  * it or move it. Build files are matched by pattern, never fully parsed, so a file edited by
  * hand still works within reason. */
@@ -48,6 +50,16 @@ std::string add(Kind kind, const fs::path& file, const std::string& version);
 /* Adds a node to a CMakeLists: its own executable built from source, a path from the
  * CMakeLists folder, linked to Rant. Throws app::Failure when the target exists. */
 void add_node(const fs::path& cmakelists, const std::string& name, const std::string& source);
+
+/* The file a node is written in: a Python node's own file, the first source of the CMake
+ * target named after it, the C# file holding its Main. nullopt when none is found. */
+std::optional<fs::path> node_source(const config::NodeType& n);
+
+/* The first source a CMakeLists gives target, as written: from add_executable, else
+ * target_sources. Variables and generator expressions are passed over. */
+std::optional<std::string> cmake_source(const std::string& text, const std::string& target);
+/* Whether C# text declares a Main entry point. */
+bool csharp_main(const std::string& text);
 
 /* The pure text edits behind set_version, add and add_node, for the tests. Throw app::Failure. */
 std::string cmake_set(const std::string& text, const std::string& version);
