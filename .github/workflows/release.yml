@@ -20,7 +20,7 @@ jobs:
         include:
           - { os: ubuntu-latest,  preset: linux,   name: linux-x64 }
           - { os: windows-latest, preset: windows, name: win-x64 }
-          - { os: macos-latest,   preset: macos,   name: osx-arm64 }
+          - { os: macos-15,       preset: macos,   name: osx-arm64 }
     steps:
       - uses: actions/checkout@v7
 
