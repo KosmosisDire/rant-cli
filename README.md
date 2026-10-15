@@ -12,9 +12,9 @@ irm https://raw.githubusercontent.com/KosmosisDire/rant-cli/main/install.ps1 | i
 ```
 
 Each lists what it will do and asks first: the `rant` command goes to `~/.rant/bin`, that
-folder onto PATH, then `rant setup` adds tab completion. Later, `rant update` moves it and
-the explorer to the newest release, and `rant uninstall` removes all of it again, leaving
-workspaces as they are.
+folder onto PATH, then `rant setup` adds tab completion. Later, `rant update` moves it, the
+explorer, the bridge and the VS Code extension to their newest releases where installed, and
+`rant uninstall` removes all of it again, leaving workspaces as they are.
 
 ## Use
 
@@ -31,6 +31,7 @@ rant log NavGroup -f           # follow what its nodes print
 rant stop NavGroup
 rant lib update                # move every package here to the newest Rant
 rant setup                     # tab completion for your shells
+rant vscode install            # the VS Code extension, through its `code` command
 ```
 
 `rant --help` lists every command.

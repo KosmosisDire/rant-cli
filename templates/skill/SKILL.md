@@ -48,9 +48,10 @@ to override something. A folder may be a workspace and a package, with both file
 | explain one thing | `rant info [kind] <name>`, a type shows its fields and who uses it |
 | read and write | `rant sub <topic> -n 1`, `rant pub <topic> <value>`, `rant get <var>`, `rant set <var> <value>`, `rant call <fn> [value]` |
 | Rant version in packages | `rant lib [folder]` shows it, `rant lib install [folder]` adds it, `rant lib update [folder]` moves it, both take `--version V` |
-| update | `rant update`: the CLI, the explorer, the bridge and the skill where installed, then the workspace's packages |
+| update | `rant update`: the CLI, the explorer, the bridge, the VS Code extension and the skill where installed, then the workspace's packages |
 | visual debugger | `rant explore` |
 | web frontends | `rant bridge enable`, see Bridge |
+| VS Code | `rant vscode install` (`--editor cursor` for another editor, `--from PATH` for a built .vsix), `rant vscode uninstall`. In a remote terminal it installs on that remote. Its Mesh view needs the bridge |
 
 Values on the command line are forgiving JSON: `{x: 1, y: 2}`, `[1, 2]`, or field words
 like `position.x=1`. Add `--json` to any command for output a program can read, `-y` to

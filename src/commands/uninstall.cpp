@@ -5,6 +5,7 @@
 #include "agents/skill.hpp"
 #include "app/failure.hpp"
 #include "commands/bridge.hpp"
+#include "commands/vscode.hpp"
 #include "commands/commands.hpp"
 #include "complete/shells.hpp"
 #include "library/library.hpp"
@@ -156,6 +157,8 @@ static int run(app::Context& ctx) {
                              if (process::run({ { "dotnet", "nuget", "remove", "source", "rant" }, fs::temp_directory_path(), {} }) != 0)
                                  throw app::Failure("dotnet could not remove the NuGet source rant");
                          } });
+    if (auto editor = vscode::recorded_editor(); editor && !vscode::installed_version(*editor).empty())
+        steps.push_back({ {}, "the VS Code extension, through " + editor->u8string(), [ed = *editor] { vscode::remove(ed); } });
     if (bridge::enabled() || bridge::running())
         steps.push_back({ bridge::installed(), "stopped and no longer started at login", [] { bridge::disable(); } });
     std::error_code ec;
@@ -166,7 +169,7 @@ static int run(app::Context& ctx) {
         ctx.out.line("rant-cli left nothing here to remove");
         return 0;
     }
-    ctx.out.line("This uninstalls rant-cli, the explorer and the bridge, removing:");
+    ctx.out.line("This uninstalls rant-cli and what it installed, removing:");
     for (auto& s : steps) {
         std::string where = fs::path(s.path).lexically_normal().make_preferred().u8string();
         ctx.out.line("  " + (s.path.empty() ? s.part : s.part.empty() ? where : where + " (" + s.part + ")"));
@@ -188,7 +191,7 @@ static int run(app::Context& ctx) {
 }
 
 app::Command uninstall() {
-    return { "uninstall", "", "remove rant-cli, the explorer, the bridge and what setup added, never touching workspaces",
+    return { "uninstall", "", "remove rant-cli, the explorer, the bridge, the VS Code extension and what setup added, never touching workspaces",
              app::Section::Setup, {}, run };
 }
 

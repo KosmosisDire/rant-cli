@@ -8,6 +8,7 @@
 #include "commands/bridge.hpp"
 #include "commands/commands.hpp"
 #include "commands/explore.hpp"
+#include "commands/vscode.hpp"
 #include "config/config.hpp"
 #include "library/library.hpp"
 #include "library/uses.hpp"
@@ -34,9 +35,9 @@ static std::vector<long> numbers(const std::string& v) {
     return out;
 }
 
-/* Replaces this binary, the explorer and the bridge rant installed with their newest
- * releases, after one question, never with an older one. The skill moves with the CLI, all
- * only where someone installed them. */
+/* Replaces this binary, the explorer, the bridge and the VS Code extension rant installed
+ * with their newest releases, after one question, never with an older one. The skill moves
+ * with the CLI, all only where someone installed them. */
 static int update_programs(app::Context& ctx) {
     net::Release cli = net::release(cli_repo);
     const net::Asset* a = nullptr;
@@ -61,10 +62,22 @@ static int update_programs(app::Context& ctx) {
             ctx.out.warn(std::string("cannot check the bridge: ") + e.what());
         }
     }
-    if (!a && !ex && !br) {
+    std::optional<net::Release> vs;
+    std::optional<config::fs::path> editor = vscode::recorded_editor();
+    std::string vs_had = editor ? vscode::installed_version(*editor) : "";
+    if (!vs_had.empty()) {
+        try {
+            net::Release latest = vscode::latest();
+            if (numbers(latest.version) > numbers(vs_had)) vs = latest;
+        } catch (const app::Failure& e) {
+            ctx.out.warn(std::string("cannot check the VS Code extension: ") + e.what());
+        }
+    }
+    if (!a && !ex && !br && !vs) {
         std::vector<std::string> have = { "rant-cli " RANT_CLI_VERSION };
         if (config::fs::is_regular_file(explorer::installed())) have.push_back("the explorer " + ex_had);
         if (config::fs::is_regular_file(bridge::installed())) have.push_back("the bridge " + br_had);
+        if (!vs_had.empty()) have.push_back("the VS Code extension " + vs_had);
         std::string list;
         for (size_t i = 0; i < have.size(); i++) list += (i == 0 ? "" : i + 1 == have.size() ? " and " : ", ") + have[i];
         ctx.out.line(list + (have.size() > 1 ? " are" : " is") + " up to date");
@@ -82,10 +95,12 @@ static int update_programs(app::Context& ctx) {
                          config::to_utf8(explorer::installed()));
     if (br) ctx.out.line("  the bridge " + (br_had.empty() ? std::string("") : br_had + " ") + "to " + br->version + ", over " +
                          config::to_utf8(bridge::installed()));
+    if (vs) ctx.out.line("  the VS Code extension " + vs_had + " to " + vs->version + ", through " + config::to_utf8(*editor));
     if (!names.empty()) ctx.out.line("  the rant skill for " + names);
     if (!ui::confirm("Update?", ctx.yes)) return 1;
 
     if (ex) explorer::install(ctx, *ex);
+    if (vs) vscode::install(ctx, *editor, *vs);
     if (br) {
         bool was_running = bridge::running().has_value();
         bridge::install(ctx, *br);
@@ -113,8 +128,8 @@ static int update_programs(app::Context& ctx) {
     return 0;
 }
 
-/* The CLI, the explorer and the bridge first, then every package of the workspace here that
- * uses Rant, each after its own question. */
+/* The CLI, the explorer, the bridge and the VS Code extension first, then every package of
+ * the workspace here that uses Rant, each after its own question. */
 static int run(app::Context& ctx) {
     if (!ctx.args.words.empty()) throw app::UsageError("update takes no folder, see `rant lib update`");
     int code = update_programs(ctx);
@@ -125,7 +140,7 @@ static int run(app::Context& ctx) {
 }
 
 app::Command update() {
-    return { "update", "", "update rant-cli, the explorer and the bridge, then the Rant library of this workspace's packages",
+    return { "update", "", "update rant-cli, the explorer, the bridge and the VS Code extension, then the Rant library of this workspace's packages",
              app::Section::Setup, {}, run };
 }
 

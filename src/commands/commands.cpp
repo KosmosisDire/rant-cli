@@ -26,6 +26,7 @@ const std::vector<app::Command>& all() {
         uninstall(),
         explore(),
         bridge_(),
+        vscode_(),
     };
     return list;
 }
