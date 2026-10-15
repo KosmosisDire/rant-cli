@@ -48,7 +48,11 @@ static json dry_run_json(const config::Workspace& ws, const config::Build& b) {
     json steps = json::array();
     for (auto& s : b.steps) {
         json step = { { "package", s.package }, { "dir", config::to_utf8(s.dir) } };
-        step["configure"] = s.configure.empty() ? json(nullptr) : json(s.configure);
+        bool configures = !s.configure.empty() && s.unconfigured;
+        step["configure"] = configures ? json(s.configure) : json(nullptr);
+        json clean = json::array();
+        for (auto& c : s.clean) clean.push_back(config::to_utf8(c));
+        step["clean"] = clean;
         step["commands"] = s.commands;
         steps.push_back(step);
     }
@@ -92,11 +96,15 @@ static void dry_run(app::Context& ctx, const config::Workspace& ws, const config
     section("DEPENDENCIES", edges);
 
     ctx.out.line(ctx.out.paint(ui::Style::Bold, "BUILD ORDER"));
+    bool clean = ctx.args.has("clean");
+    auto dim = [&](const std::string& t) { return ctx.out.paint(ui::Style::Dim, t); };
     int n = 0;
     for (auto& s : b.steps) {
         ctx.out.line("  " + std::to_string(++n) + ". " + s.package);
-        if (!s.configure.empty())
-            ctx.out.line("     " + process::shown(s.configure) + ctx.out.paint(ui::Style::Dim, "  (asks first)"));
+        if (clean)
+            for (auto& c : s.clean) ctx.out.line("     remove " + shown_path(ws, c));
+        if (!s.configure.empty() && (clean || s.unconfigured))
+            ctx.out.line("     " + process::shown(s.configure) + (clean ? "" : dim("  (asks first)")));
         for (auto& c : s.commands) ctx.out.line("     " + process::shown(c));
         if (s.configure.empty() && s.commands.empty()) ctx.out.line(ctx.out.paint(ui::Style::Dim, "     nothing to build"));
     }
@@ -115,14 +123,28 @@ static void run_command(const config::BuildStep& s, const std::vector<std::strin
         throw app::Failure("building " + s.package + " failed: `" + process::shown(argv) + "` exited " + std::to_string(code));
 }
 
-int build_steps(app::Context& ctx, const config::Build& b) {
+/* Removes a folder a build made, so the next build starts from nothing. */
+static void remove_output(const config::BuildStep& s, const config::fs::path& p) {
+    std::error_code ec;
+    config::fs::remove_all(p, ec);
+    if (ec) throw app::Failure("building " + s.package + ": cannot remove " + config::to_utf8(p) + ", " + ec.message());
+}
+
+int build_steps(app::Context& ctx, const config::Build& b, bool clean) {
     int built = 0;
     for (auto& s : b.steps) {
         if (s.configure.empty() && s.commands.empty()) continue;
         ctx.out.line(ctx.out.paint(ui::Style::Bold, "building " + s.package));
         std::fflush(stdout);
-        if (!s.configure.empty()) {
-            if (!ui::confirm(s.package + " is not configured yet. Configure it with `" + process::shown(s.configure) + "`?", ctx.yes))
+        /* a build folder just removed configures again without a question */
+        bool fresh = false;
+        if (clean) {
+            if (s.clean.empty()) ctx.out.note(s.package + " builds with its own commands, so rant removes nothing of it");
+            for (auto& c : s.clean) remove_output(s, c);
+            fresh = true;
+        }
+        if (!s.configure.empty() && (fresh || s.unconfigured)) {
+            if (!fresh && !ui::confirm(s.package + " is not configured yet. Configure it with `" + process::shown(s.configure) + "`?", ctx.yes))
                 throw app::Failure(s.package + " was not configured, so not built");
             run_command(s, s.configure);
         }
@@ -146,7 +168,7 @@ bool build_for(app::Context& ctx, const std::vector<config::Plan>& plans) {
     config::Build b = config::plan_build(ctx.cwd(), packages);
     try {
         require(ctx, b.diagnostics);
-        if (build_steps(ctx, b) > 0) ctx.out.line();
+        if (build_steps(ctx, b, false) > 0) ctx.out.line();
         return true;
     } catch (const app::Failure& e) {
         if (*e.what()) ctx.out.error(std::string(e.what()) + ", starting the last build");
@@ -166,7 +188,7 @@ static int run(app::Context& ctx) {
         dry_run(ctx, ws, b);
         return 0;
     }
-    int built = build_steps(ctx, b);
+    int built = build_steps(ctx, b, ctx.args.has("clean"));
     if (built == 0) ctx.out.line("nothing to build: no package here has a build step");
     else ctx.out.line("built " + std::to_string(built) + (built == 1 ? " package" : " packages"));
     std::vector<std::string> groups, nodes;
@@ -187,7 +209,9 @@ static complete::Candidates complete_words(complete::Request& r) {
 
 app::Command build() {
     app::Command c{ "build", "[package...]", "build packages in dependency order", app::Section::Workspace,
-                    { { "dry-run", 0, "", "show the packages, dependencies, order and commands without building" } }, run };
+                    { { "dry-run", 0, "", "show the packages, dependencies, order and commands without building" },
+                      { "clean", 0, "", "remove each package's build output first, then configure and build from nothing" } },
+                    run };
     c.complete = complete_words;
     return c;
 }

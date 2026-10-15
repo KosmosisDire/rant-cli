@@ -9,13 +9,18 @@ use crate::model::{Model, Package};
 use crate::paths;
 use crate::workspace::WORKSPACE_FILE;
 
-/// One package's build: an optional configure step the user is asked about first, then
-/// commands run in order in the package directory.
-#[derive(Debug, Clone)]
+/// One package's build: a CMake configure when the build folder needs one, then commands
+/// run in order in the package directory.
+#[derive(Debug, Clone, Default)]
 pub struct Step {
     pub package: String,
     pub dir: PathBuf,
+    /// The CMake configure command, none for a package without CMake.
     pub configure: Option<Vec<String>>,
+    /// The CMake build folder is not configured yet, so configure runs first.
+    pub unconfigured: bool,
+    /// What a clean build removes first: the CMake build folder and C# bin and obj.
+    pub clean: Vec<PathBuf>,
     pub commands: Vec<Vec<String>>,
 }
 
@@ -39,24 +44,29 @@ fn slash(p: &Path) -> String {
 
 /// What building a package runs: its `build` when set, else the default of its manifest.
 fn step(pkg: &Package) -> Step {
-    let mut s = Step { package: pkg.name.clone(), dir: pkg.dir.clone(), configure: None, commands: Vec::new() };
+    let mut s = Step { package: pkg.name.clone(), dir: pkg.dir.clone(), ..Step::default() };
     if let Some(build) = pkg.block.as_ref().and_then(|b| b.build.clone()) {
         s.commands = build;
         return s;
     }
     for m in pkg.manifests.iter().filter(|m| m.kind == ManifestKind::CSharp) {
         s.commands.push(vec!["dotnet".into(), "build".into(), slash(&m.path)]);
+        if let Some(dir) = m.path.parent() {
+            s.clean.extend([dir.join("bin"), dir.join("obj")]);
+        }
     }
     if pkg.manifests.iter().any(|m| m.kind == ManifestKind::CMake) {
         // Commands run in the package directory, so the short relative form is exact. A failed
         // configure leaves CMakeCache.txt, only a finished one writes TargetDirectories.txt.
-        if !pkg.dir.join("build/CMakeFiles/TargetDirectories.txt").is_file() {
-            s.configure = Some(vec!["cmake".into(), "-S".into(), ".".into(), "-B".into(), "build".into()]);
-        }
+        let build = pkg.dir.join("build");
+        s.configure = Some(vec!["cmake".into(), "-S".into(), ".".into(), "-B".into(), "build".into()]);
+        s.unconfigured = !build.join("CMakeFiles/TargetDirectories.txt").is_file();
+        s.clean.insert(0, build);
         s.commands.push(vec!["cmake".into(), "--build".into(), "build".into()]);
     }
     s
 }
+
 
 fn shown(p: &Path, root: &Path) -> String {
     paths::relative(p, root)
@@ -216,10 +226,21 @@ mod tests {
         let t = workspace_tree();
         let p = plan(&model(&t), &[]).unwrap();
         assert_eq!(p.steps[0].commands, vec![vec!["make"], vec!["make", "install"]]);
-        assert!(p.steps[1].configure.is_some(), "a failed configure leaves only the cache");
+        assert!(p.steps[1].unconfigured, "a failed configure leaves only the cache");
         assert_eq!(p.steps[1].commands[0][..2], ["cmake", "--build"]);
-        assert!(p.steps[2].configure.is_none(), "already configured");
+        assert!(!p.steps[2].unconfigured, "already configured");
         assert!(p.steps[3].commands.is_empty(), "python builds nothing");
+        assert!(p.steps[0].clean.is_empty() && p.steps[0].configure.is_none(), "declared commands leave nothing rant knows");
+        assert_eq!(p.steps[2].clean, [t.root().join("c_app/build")]);
+    }
+
+    #[test]
+    fn a_csharp_project_cleans_its_bin_and_obj() {
+        let t = TestDir::new();
+        t.write("workspace.rant", "");
+        t.write("arm/Arm.csproj", "<Project Sdk=\"Microsoft.NET.Sdk\"><ItemGroup><PackageReference Include=\"Rant\" Version=\"0.0.23\" /></ItemGroup></Project>\n");
+        let p = plan(&model(&t), &[]).unwrap();
+        assert_eq!(p.steps[0].clean, [t.root().join("arm/bin"), t.root().join("arm/obj")]);
     }
 
     #[test]

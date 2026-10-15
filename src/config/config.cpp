@@ -164,7 +164,12 @@ Build plan_build(const fs::path& start, const std::vector<std::string>& packages
     out.diagnostics = diagnostics(v->diagnostics, v->diagnostic_count);
     for (size_t i = 0; i < v->step_count; i++) {
         const RantConfigBuildStep& s = v->steps[i];
-        BuildStep step{ str(s.package), from_utf8(str(s.dir)), command(s.configure), {} };
+        BuildStep step;
+        step.package = str(s.package);
+        step.dir = from_utf8(str(s.dir));
+        step.configure = command(s.configure);
+        step.unconfigured = s.unconfigured;
+        for (auto& p : strs(s.clean, s.clean_count)) step.clean.push_back(from_utf8(p));
         for (size_t j = 0; j < s.command_count; j++) step.commands.push_back(command(s.commands[j]));
         out.steps.push_back(std::move(step));
     }

@@ -128,11 +128,13 @@ struct GroupInfo {
 
 GroupInfo describe_group(const fs::path& start, const std::string& group);
 
-/* One package's build. configure, when not empty, runs first once the user agrees. */
+/* One package's build: the CMake configure when it needs one, then the commands, all in dir. */
 struct BuildStep {
     std::string                           package;
     fs::path                              dir;
-    std::vector<std::string>              configure;
+    std::vector<std::string>              configure;       /* the CMake configure, empty without CMake */
+    bool                                  unconfigured = false;    /* configure runs first */
+    std::vector<fs::path>                 clean;           /* what a clean build removes first */
     std::vector<std::vector<std::string>> commands;
 };
 

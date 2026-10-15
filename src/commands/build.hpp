@@ -7,9 +7,10 @@
 /* What `rant build` does, shared with run and restart, which build what they start first. */
 namespace commands {
 
-/* Runs a build's steps in order, configuring CMake first after a question. Returns how
- * many packages it built. Throws app::Failure at the first step that fails. */
-int build_steps(app::Context& ctx, const config::Build& b);
+/* Runs a build's steps in order, configuring CMake first after a question. clean removes
+ * every package's build output first. Returns how many packages it built. Throws
+ * app::Failure at the first step that fails. */
+int build_steps(app::Context& ctx, const config::Build& b, bool clean);
 
 /* Builds the packages whose nodes the plans run, and what they depend on, so run and restart
  * start the code as it is now. Build tools only redo what changed. --no-build skips it. A

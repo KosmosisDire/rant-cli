@@ -21,6 +21,16 @@ rant(build driver)
 expect_no_match("${ERR}" "Configure")
 expect_match("${OUT}" "built 2 packages")
 
+# A clean build removes the build output first and configures again without a question.
+file(WRITE "${SCRATCH}/driver/build/leftover.txt" "")
+rant(build driver --clean)
+expect_match("${ERR}" "sdk builds with its own commands, so rant removes nothing of it")
+expect_no_match("${ERR}" "Configure it")
+expect_match("${OUT}" "built 2 packages")
+if(EXISTS "${SCRATCH}/driver/build/leftover.txt" OR NOT EXISTS "${SCRATCH}/driver/build/CMakeCache.txt")
+  message(FATAL_ERROR "the clean build did not start from an empty build folder")
+endif()
+
 # The first failure stops the run and names the package and the command.
 file(WRITE "${SCRATCH}/broken/package.rant" "build  = [\"cmake -E false\", \"cmake -E echo never\"]\ndepend = [\"sdk\"]\n")
 rant(build broken FAILS)

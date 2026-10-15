@@ -692,13 +692,19 @@ pub struct RantConfigCommand {
     pub argc: usize,
 }
 
-/// One package's build: configure, when not empty, runs first and only after the user
-/// agrees, then the commands in order, all in dir.
+/// One package's build: the CMake configure when it needs one, then the commands in order,
+/// all in dir.
 #[repr(C)]
 pub struct RantConfigBuildStep {
     pub package: *const c_char,
     pub dir: *const c_char,
+    /// The CMake configure command, argc 0 for a package without CMake.
     pub configure: RantConfigCommand,
+    /// The CMake build folder is not configured yet.
+    pub unconfigured: bool,
+    /// What a clean build removes first.
+    pub clean: *const *const c_char,
+    pub clean_count: usize,
     pub commands: *const RantConfigCommand,
     pub command_count: usize,
 }
@@ -769,7 +775,18 @@ pub unsafe extern "C" fn rant_config_build(
             let configure = store.command(st.configure.as_deref().unwrap_or(&[]));
             let commands: Vec<RantConfigCommand> = st.commands.iter().map(|c| store.command(c)).collect();
             let (commands, command_count) = store.array(commands);
-            RantConfigBuildStep { package: store.str(&st.package), dir: store.path(&st.dir), configure, commands, command_count }
+            let clean: Vec<String> = st.clean.iter().map(|p| crate::eval::slash(p)).collect();
+            let (clean, clean_count) = store.strs(&clean);
+            RantConfigBuildStep {
+                package: store.str(&st.package),
+                dir: store.path(&st.dir),
+                configure,
+                unconfigured: st.unconfigured,
+                clean,
+                clean_count,
+                commands,
+                command_count,
+            }
         })
         .collect();
     let (steps, step_count) = store.array(steps);
