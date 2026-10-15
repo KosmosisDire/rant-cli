@@ -21,6 +21,16 @@ rant(build driver)
 expect_no_match("${ERR}" "Configure")
 expect_match("${OUT}" "built 2 packages")
 
+# A build folder CMake made in another place, as after a rename, is made again after a question.
+file(READ "${SCRATCH}/driver/build/CMakeCache.txt" cache)
+string(REGEX REPLACE "CMAKE_CACHEFILE_DIR:INTERNAL=[^\n]*" "CMAKE_CACHEFILE_DIR:INTERNAL=/elsewhere/Driver/build" cache "${cache}")
+file(WRITE "${SCRATCH}/driver/build/CMakeCache.txt" "${cache}")
+rant(build driver --dry-run)
+expect_match("${OUT}" "remove driver.build +[(]made in /elsewhere/Driver/build, asks first[)]\n +cmake -S [.] -B build\n")
+rant(build driver)
+expect_match("${ERR}" "The build folder of driver was made in /elsewhere/Driver/build, which CMake cannot use here")
+expect_match("${OUT}" "built 2 packages")
+
 # A clean build removes the build output first and configures again without a question.
 file(WRITE "${SCRATCH}/driver/build/leftover.txt" "")
 rant(build driver --clean)

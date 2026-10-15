@@ -169,6 +169,8 @@ Build plan_build(const fs::path& start, const std::vector<std::string>& packages
         step.dir = from_utf8(str(s.dir));
         step.configure = command(s.configure);
         step.unconfigured = s.unconfigured;
+        if (s.build_dir) step.build_dir = from_utf8(s.build_dir);
+        if (s.moved_from) step.moved_from = from_utf8(s.moved_from);
         for (auto& p : strs(s.clean, s.clean_count)) step.clean.push_back(from_utf8(p));
         for (size_t j = 0; j < s.command_count; j++) step.commands.push_back(command(s.commands[j]));
         out.steps.push_back(std::move(step));

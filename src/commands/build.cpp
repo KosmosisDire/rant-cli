@@ -48,8 +48,9 @@ static json dry_run_json(const config::Workspace& ws, const config::Build& b) {
     json steps = json::array();
     for (auto& s : b.steps) {
         json step = { { "package", s.package }, { "dir", config::to_utf8(s.dir) } };
-        bool configures = !s.configure.empty() && s.unconfigured;
+        bool configures = !s.configure.empty() && (s.unconfigured || !s.moved_from.empty());
         step["configure"] = configures ? json(s.configure) : json(nullptr);
+        step["moved_from"] = s.moved_from.empty() ? json(nullptr) : json(config::to_utf8(s.moved_from));
         json clean = json::array();
         for (auto& c : s.clean) clean.push_back(config::to_utf8(c));
         step["clean"] = clean;
@@ -101,10 +102,13 @@ static void dry_run(app::Context& ctx, const config::Workspace& ws, const config
     int n = 0;
     for (auto& s : b.steps) {
         ctx.out.line("  " + std::to_string(++n) + ". " + s.package);
+        bool moved = !clean && !s.moved_from.empty();
         if (clean)
             for (auto& c : s.clean) ctx.out.line("     remove " + shown_path(ws, c));
-        if (!s.configure.empty() && (clean || s.unconfigured))
-            ctx.out.line("     " + process::shown(s.configure) + (clean ? "" : dim("  (asks first)")));
+        if (moved)
+            ctx.out.line("     remove " + shown_path(ws, s.build_dir) + dim("  (made in " + config::to_utf8(s.moved_from) + ", asks first)"));
+        if (!s.configure.empty() && (clean || moved || s.unconfigured))
+            ctx.out.line("     " + process::shown(s.configure) + (clean || moved ? "" : dim("  (asks first)")));
         for (auto& c : s.commands) ctx.out.line("     " + process::shown(c));
         if (s.configure.empty() && s.commands.empty()) ctx.out.line(ctx.out.paint(ui::Style::Dim, "     nothing to build"));
     }
@@ -141,6 +145,13 @@ int build_steps(app::Context& ctx, const config::Build& b, bool clean) {
         if (clean) {
             if (s.clean.empty()) ctx.out.note(s.package + " builds with its own commands, so rant removes nothing of it");
             for (auto& c : s.clean) remove_output(s, c);
+            fresh = true;
+        } else if (!s.moved_from.empty()) {
+            if (!ui::confirm("The build folder of " + s.package + " was made in " + config::to_utf8(s.moved_from) +
+                                 ", which CMake cannot use here. Remove it and configure again?",
+                             ctx.yes))
+                throw app::Failure(s.package + " was not built, `rant build " + s.package + " --clean` makes its build folder again");
+            remove_output(s, s.build_dir);
             fresh = true;
         }
         if (!s.configure.empty() && (fresh || s.unconfigured)) {

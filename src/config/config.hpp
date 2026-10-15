@@ -134,6 +134,8 @@ struct BuildStep {
     fs::path                              dir;
     std::vector<std::string>              configure;       /* the CMake configure, empty without CMake */
     bool                                  unconfigured = false;    /* configure runs first */
+    fs::path                              build_dir;       /* the CMake build folder, empty without CMake */
+    fs::path                              moved_from;      /* where the CMake cache was made, when not build_dir */
     std::vector<fs::path>                 clean;           /* what a clean build removes first */
     std::vector<std::vector<std::string>> commands;
 };

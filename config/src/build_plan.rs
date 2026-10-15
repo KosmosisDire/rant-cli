@@ -19,6 +19,11 @@ pub struct Step {
     pub configure: Option<Vec<String>>,
     /// The CMake build folder is not configured yet, so configure runs first.
     pub unconfigured: bool,
+    /// The CMake build folder.
+    pub build_dir: Option<PathBuf>,
+    /// Where the CMake cache was made when that is not the build folder: the package moved
+    /// or was renamed, and CMake refuses a cache from elsewhere.
+    pub moved_from: Option<PathBuf>,
     /// What a clean build removes first: the CMake build folder and C# bin and obj.
     pub clean: Vec<PathBuf>,
     pub commands: Vec<Vec<String>>,
@@ -61,12 +66,21 @@ fn step(pkg: &Package) -> Step {
         let build = pkg.dir.join("build");
         s.configure = Some(vec!["cmake".into(), "-S".into(), ".".into(), "-B".into(), "build".into()]);
         s.unconfigured = !build.join("CMakeFiles/TargetDirectories.txt").is_file();
-        s.clean.insert(0, build);
+        s.moved_from = moved_cache(&build);
+        s.clean.insert(0, build.clone());
+        s.build_dir = Some(build);
         s.commands.push(vec!["cmake".into(), "--build".into(), "build".into()]);
     }
     s
 }
 
+/// The folder a CMake cache was made in, when that is not `build`.
+fn moved_cache(build: &Path) -> Option<PathBuf> {
+    let text = std::fs::read_to_string(build.join("CMakeCache.txt")).ok()?;
+    let made = PathBuf::from(text.lines().find_map(|l| l.strip_prefix("CMAKE_CACHEFILE_DIR:INTERNAL="))?.trim());
+    let same = matches!((made.canonicalize(), build.canonicalize()), (Ok(a), Ok(b)) if a == b);
+    (!same).then_some(made)
+}
 
 fn shown(p: &Path, root: &Path) -> String {
     paths::relative(p, root)
@@ -235,12 +249,24 @@ mod tests {
     }
 
     #[test]
+    fn a_cache_made_in_another_folder_is_found() {
+        let t = workspace_tree();
+        let here = t.root().join("c_app/build");
+        t.write("c_app/build/CMakeCache.txt", &format!("CMAKE_CACHEFILE_DIR:INTERNAL={}\n", crate::eval::slash(&here)));
+        t.write("b_driver/build/CMakeCache.txt", "CMAKE_CACHEFILE_DIR:INTERNAL=/home/someone/Driver/build\n");
+        let p = plan(&model(&t), &[]).unwrap();
+        assert_eq!(p.steps[1].moved_from, Some(PathBuf::from("/home/someone/Driver/build")));
+        assert_eq!(p.steps[2].moved_from, None);
+    }
+
+    #[test]
     fn a_csharp_project_cleans_its_bin_and_obj() {
         let t = TestDir::new();
         t.write("workspace.rant", "");
         t.write("arm/Arm.csproj", "<Project Sdk=\"Microsoft.NET.Sdk\"><ItemGroup><PackageReference Include=\"Rant\" Version=\"0.0.23\" /></ItemGroup></Project>\n");
         let p = plan(&model(&t), &[]).unwrap();
         assert_eq!(p.steps[0].clean, [t.root().join("arm/bin"), t.root().join("arm/obj")]);
+        assert!(p.steps[0].build_dir.is_none());
     }
 
     #[test]

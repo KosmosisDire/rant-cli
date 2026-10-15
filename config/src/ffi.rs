@@ -702,6 +702,10 @@ pub struct RantConfigBuildStep {
     pub configure: RantConfigCommand,
     /// The CMake build folder is not configured yet.
     pub unconfigured: bool,
+    /// The CMake build folder, NULL without CMake.
+    pub build_dir: *const c_char,
+    /// Where the CMake cache was made when that is not build_dir, else NULL.
+    pub moved_from: *const c_char,
     /// What a clean build removes first.
     pub clean: *const *const c_char,
     pub clean_count: usize,
@@ -782,6 +786,8 @@ pub unsafe extern "C" fn rant_config_build(
                 dir: store.path(&st.dir),
                 configure,
                 unconfigured: st.unconfigured,
+                build_dir: store.opt_path(st.build_dir.as_deref()),
+                moved_from: store.opt_path(st.moved_from.as_deref()),
                 clean,
                 clean_count,
                 commands,
