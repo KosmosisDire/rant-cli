@@ -137,7 +137,7 @@ static std::string env_key(const std::string& name) {
 #endif
 }
 
-std::vector<std::string> environment(const std::map<std::string, std::string>& env) {
+std::vector<std::string> environment(const Command& c) {
     std::map<std::string, std::string> merged;    /* key, then the entry as written */
 #ifdef _WIN32
     wchar_t* block = GetEnvironmentStringsW();
@@ -155,7 +155,8 @@ std::vector<std::string> environment(const std::map<std::string, std::string>& e
         merged[env_key(s.substr(0, s.find('=')))] = s;
     }
 #endif
-    for (auto& [k, v] : env) merged[env_key(k)] = k + "=" + v;
+    for (auto& k : c.unset) merged.erase(env_key(k));
+    for (auto& [k, v] : c.env) merged[env_key(k)] = k + "=" + v;
     std::vector<std::string> out;
     for (auto& [k, v] : merged) out.push_back(v);
     return out;

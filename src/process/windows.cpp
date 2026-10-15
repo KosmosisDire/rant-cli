@@ -76,7 +76,7 @@ static Launch launch_for(const Command& c) {
 /* A double NUL terminated UTF-16 block, sorted as CreateProcess expects. */
 static std::wstring env_block(const Command& c) {
     std::wstring block;
-    for (auto& e : environment(c.env)) {
+    for (auto& e : environment(c)) {
         block += wide(e);
         block.push_back(L'\0');
     }

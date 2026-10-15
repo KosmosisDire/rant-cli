@@ -16,6 +16,7 @@ struct Command {
     std::vector<std::string>           argv;    /* argv[0] is the program */
     fs::path                           cwd;
     std::map<std::string, std::string> env;     /* set on top of the inherited environment */
+    std::vector<std::string>           unset;   /* inherited names left out */
 };
 
 /* Where a program runs from. A name holding a slash is taken relative to cwd, a bare name
@@ -33,9 +34,9 @@ int run(const Command& c, const fs::path& out = {});
 /* What a command printed on stdout, nullopt when it cannot start or exits nonzero. */
 std::optional<std::string> output(const Command& c);
 
-/* The inherited environment with env applied, as sorted "NAME=value" entries. Names match
- * without case on Windows. */
-std::vector<std::string> environment(const std::map<std::string, std::string>& env);
+/* The inherited environment with a command's env and unset applied, as sorted "NAME=value"
+ * entries. Names match without case on Windows. */
+std::vector<std::string> environment(const Command& c);
 
 /* The words of a command for messages, quoted where a word holds a space. */
 std::string shown(const std::vector<std::string>& argv);

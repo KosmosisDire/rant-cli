@@ -171,6 +171,7 @@ static std::string install_powershell(const Shell& shell, const fs::path& hook) 
     std::string path = ps_quoted(hook.u8string());
     std::string line = "if (Test-Path " + path + ") { . " + path + " }";
     std::string script =
+        "$ProgressPreference = 'SilentlyContinue'\n"
         "$line = " + ps_quoted(line) + "\n"
         "$policy = Get-ExecutionPolicy\n"
         "if ($policy -eq 'Restricted' -or $policy -eq 'AllSigned') { exit 3 }\n"
@@ -181,8 +182,10 @@ static std::string install_powershell(const Shell& shell, const fs::path& hook) 
         "exit 0\n";
     std::string exe(shell.name);
     if (!process::find_program(exe, fs::temp_directory_path())) throw app::Failure(exe + " is not on PATH");
+    /* each edition builds its own module path, since Windows PowerShell started from pwsh
+     * otherwise loads pwsh's modules and fails on Get-ExecutionPolicy */
     int code = process::run({ { exe, "-NoProfile", "-NoLogo", "-NonInteractive", "-EncodedCommand", encoded_command(script) },
-                              fs::temp_directory_path(), {} });
+                              fs::temp_directory_path(), {}, { "PSModulePath" } });
     if (code == 3)
         throw app::Failure("it may not run scripts here, allow that with `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` "
                            "in " + exe + " and run `rant setup " + exe + "` again");

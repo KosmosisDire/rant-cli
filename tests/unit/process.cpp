@@ -32,11 +32,15 @@ TEST(run_refuses_a_missing_program) {
     CHECK_THROWS(process::run({ { "no-such-program-rant-test" }, fs::current_path(), {} }));
 }
 
-TEST(environment_applies_overrides) {
-    auto env = process::environment({ { "RANT_UNIT_X", "1" } });
-    bool found = false;
-    for (auto& e : env) found |= e == "RANT_UNIT_X=1";
+TEST(environment_applies_overrides_and_leaves_out_unset_names) {
+    auto env = process::environment({ {}, {}, { { "RANT_UNIT_X", "1" } }, { "PATH" } });
+    bool found = false, path = false;
+    for (auto& e : env) {
+        found |= e == "RANT_UNIT_X=1";
+        path |= e.size() > 5 && (e.compare(0, 5, "PATH=") == 0 || e.compare(0, 5, "Path=") == 0);
+    }
     CHECK(found);
+    CHECK(!path);
 }
 
 TEST(find_program_searches_path_and_takes_relative_paths) {

@@ -55,7 +55,7 @@ static Prepared prepare(const Command& c) {
     p.program = program.string();
     p.cwd = c.cwd.string();
     p.args = c.argv;
-    p.env = environment(c.env);
+    p.env = environment(c);
     for (auto& a : p.args) p.argv_p.push_back(a.data());
     p.argv_p.push_back(nullptr);
     for (auto& e : p.env) p.env_p.push_back(e.data());
