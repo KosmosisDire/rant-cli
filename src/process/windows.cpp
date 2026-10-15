@@ -190,7 +190,7 @@ Tracking start_detached(const Command& c, const fs::path& log, const std::string
     Handle job(CreateJobObjectW(&sa, wide(job_name).c_str()));
     if (!job) throw app::Failure("cannot create job " + job_name + ": " + last_error_text());
     if (GetLastError() == ERROR_ALREADY_EXISTS)
-        throw app::Failure("job " + job_name + " already exists: an earlier start of this node still runs");
+        throw app::Failure("job " + job_name + " already exists: an earlier start of this node is still running");
 
     DWORD flags = CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW | CREATE_SUSPENDED | CREATE_BREAKAWAY_FROM_JOB;
     PROCESS_INFORMATION pi = create(c, flags, in.get(), out.get(), out.get(), { job.get() });

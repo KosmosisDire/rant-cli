@@ -47,9 +47,9 @@ static void report(app::Context& ctx, const config::Workspace& ws, const std::ve
         if (o.action == "started")
             ctx.out.line("started " + o.name + ", pid " + std::to_string(o.pid) + ", log " + relative(ws, o.log));
         else if (o.action == "running")
-            ctx.out.line(o.name + " already runs");
+            ctx.out.line(o.name + " already running");
         else if (o.action == "shared")
-            ctx.out.line(o.name + " already runs, now shared");
+            ctx.out.line(o.name + " already running, now shared");
         else
             ctx.out.line("using " + o.name + ", which rant did not start");
     }
@@ -169,7 +169,7 @@ int run_group(app::Context& ctx, const std::string& group, const std::vector<std
     for (auto& inst : plan.instances) {
         if (state::Instance* running = s.state().instance(inst.name)) {
             if (!run::same_spec(*running, inst))
-                throw app::Failure("`" + inst.name + "` already runs with other settings for " + running->roots.front() +
+                throw app::Failure("`" + inst.name + "` is already running with other settings for " + running->roots.front() +
                                    ", stop it first or give one of them another name");
             bool mine = std::count(running->roots.begin(), running->roots.end(), root.key()) > 0;
             actions.push_back(mine ? "running" : "shared");
@@ -178,7 +178,7 @@ int run_group(app::Context& ctx, const std::string& group, const std::vector<std
         bool external = false;
         for (auto& p : mesh.peers()) external |= p.name == inst.name && !managed.count(p.id);
         if (external) {
-            if (!ui::confirm("`" + inst.name + "` already runs on the mesh, but rant did not start it. Use it for " +
+            if (!ui::confirm("`" + inst.name + "` is already running on the mesh, but rant did not start it. Use it for " +
                                  plan.group + "?", ctx.yes))
                 throw app::Failure("nothing was started");
             actions.push_back("external");

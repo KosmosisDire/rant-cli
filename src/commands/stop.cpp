@@ -215,7 +215,7 @@ static int stop_node(app::Context& ctx, const std::string& name) {
     if (!loose.empty()) return 0;
     for (auto& p : mesh.peers())
         if (p.name == name && !p.here)
-            throw app::Failure("`" + name + "` runs on " + p.host() + ", rant only stops nodes on this machine");
+            throw app::Failure("`" + name + "` is running on " + p.host() + ", rant only stops nodes on this machine");
     throw app::Failure("no node `" + name + "` on domain " + std::to_string(ctx.domain()) + ", see `rant ls nodes`");
 }
 
@@ -240,7 +240,7 @@ static std::vector<state::Root> targets(app::Context& ctx, run::Session& s, cons
     if (out.size() > 1) {
         std::vector<std::string> keys;
         for (auto& r : out) keys.push_back(r.key().substr(6));
-        ctx.out.note("group `" + name + "` runs " + std::to_string(out.size()) + " times: " + list(keys));
+        ctx.out.note("group `" + name + "` is running " + std::to_string(out.size()) + " times: " + list(keys));
         if (!ui::confirm("Stop all of them?", ctx.yes)) return {};
     }
     return out;

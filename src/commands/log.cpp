@@ -54,7 +54,7 @@ static int run(app::Context& ctx) {
             if (std::count(names.begin(), names.end(), n) == 0) names.push_back(n);
     if (ctx.args.words.empty()) {
         for (auto& i : run::snapshot(ctx).instances) names.push_back(i.name);
-        if (names.empty()) throw app::Failure("nothing rant started runs here, name a node such as `rant log talker`");
+        if (names.empty()) throw app::Failure("nothing rant started is running here, name a node such as `rant log talker`");
     }
     std::vector<config::fs::path> logs;
     for (auto& n : names) {

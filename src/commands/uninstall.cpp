@@ -153,7 +153,7 @@ static int run(app::Context& ctx) {
         std::string where = fs::path(s.path).lexically_normal().make_preferred().u8string();
         ctx.out.line("  " + (s.path.empty() ? s.part : s.part.empty() ? where : where + " (" + s.part + ")"));
     }
-    ctx.out.line("Workspaces stay as they are, and nodes that run keep running.");
+    ctx.out.line("Workspaces stay as they are, and running nodes keep running.");
     if (!ui::confirm("Uninstall?", ctx.yes)) return 1;
     bool ok = true;
     for (auto& s : steps) {
