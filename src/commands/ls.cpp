@@ -1,4 +1,6 @@
 #include <algorithm>
+#include <map>
+#include <optional>
 #include <set>
 
 #include "app/failure.hpp"
@@ -20,10 +22,10 @@ namespace commands {
 using mesh::json;
 
 /* One node as ls lists it. A node rant started that is not on the mesh is still joining,
- * or never joins since it does not use Rant. */
+ * or never joins since it does not use Rant. Unknown with --no-mesh. */
 struct Row {
-    std::string name;
-    bool        on_mesh = true;
+    std::string         name;
+    std::optional<bool> on_mesh;
 };
 
 /* The running nodes as ls shows them: each group root with its nodes, then every node
@@ -37,12 +39,16 @@ struct Listing {
     std::vector<Row>   loose;
 };
 
-static Listing list_nodes(app::Context& ctx, mesh::Client& mesh, const std::string& pattern) {
+/* Without a mesh only the nodes this workspace started, with no word on whether they joined. */
+static Listing list_nodes(app::Context& ctx, mesh::Client* mesh, const std::string& pattern) {
     state::State st = run::snapshot(ctx);
-    auto managed = run::managed_peers(mesh, st);
+    std::map<uint32_t, std::string> managed;
+    if (mesh) managed = run::managed_peers(*mesh, st);
     std::set<std::string> on_mesh;
     for (auto& [_, name] : managed) on_mesh.insert(name);
-    auto row = [&](const state::Instance& i) { return Row{ i.name, on_mesh.count(i.name) > 0 }; };
+    auto row = [&](const state::Instance& i) {
+        return Row{ i.name, mesh ? std::optional<bool>(on_mesh.count(i.name) > 0) : std::nullopt };
+    };
 
     Listing out;
     for (auto& r : st.roots) {
@@ -59,16 +65,17 @@ static Listing list_nodes(app::Context& ctx, mesh::Client& mesh, const std::stri
         bool in_group = std::any_of(i.roots.begin(), i.roots.end(), [](const std::string& k) { return k.rfind("group ", 0) == 0; });
         if (!in_group && util::name_matches(pattern, i.name)) out.loose.push_back(row(i));
     }
-    for (auto& p : mesh.peers())
-        if (!managed.count(p.id) && util::name_matches(pattern, p.name)) out.loose.push_back({ p.name, true });
+    if (mesh)
+        for (auto& p : mesh->peers())
+            if (!managed.count(p.id) && util::name_matches(pattern, p.name)) out.loose.push_back({ p.name, true });
     return out;
 }
 
 /* The explorer's colors: a node's dot green on the mesh and amber while joining, and each
  * entity kind in the color the explorer's mesh view draws it. */
 static std::string node_cell(app::Context& ctx, const Row& r) {
-    if (!ctx.out.color()) return r.name;
-    return ctx.out.paint(r.on_mesh ? ui::Style::Green : ui::Style::Amber, "\xe2\x97\x8f") + " " + r.name;
+    if (!ctx.out.color() || !r.on_mesh) return r.name;
+    return ctx.out.paint(*r.on_mesh ? ui::Style::Green : ui::Style::Amber, "\xe2\x97\x8f") + " " + r.name;
 }
 
 static ui::Style kind_style(rant::EntityKind k) {
@@ -130,15 +137,20 @@ static int list_mesh(app::Context& ctx, std::optional<Kind> kind, const std::str
     if (kind && *kind == Kind::Type) return list_types(ctx, pattern);
     bool show_nodes = !kind || *kind == Kind::Node, show_entities = !kind || *kind != Kind::Node;
     bool all = kind && *kind == Kind::Node;
-    mesh::Client mesh(ctx.domain());
-    mesh.settle();
+    bool no_mesh = ctx.args.has("no-mesh");
+    if (no_mesh && !all) throw app::UsageError("--no-mesh goes with `rant ls nodes`");
+    std::optional<mesh::Client> mesh;
+    if (!no_mesh) {
+        mesh.emplace(ctx.domain());
+        mesh->settle();
+    }
     Listing nodes;
-    if (show_nodes) nodes = list_nodes(ctx, mesh, pattern);
+    if (show_nodes) nodes = list_nodes(ctx, mesh ? &*mesh : nullptr, pattern);
     std::vector<const config::NodeType*> idle;
     if (all) idle = not_running(ctx, pattern);
     std::vector<rant::Entity> entities;
     if (show_entities)
-        for (auto& e : mesh.entities())
+        for (auto& e : mesh->entities())
             if (util::name_matches(pattern, e.name) && entity_matches(kind.value_or(Kind::Entity), mesh::kind_name(e.kind)))
                 entities.push_back(e);
 
@@ -146,7 +158,11 @@ static int list_mesh(app::Context& ctx, std::optional<Kind> kind, const std::str
         json out = json::object();
         auto rows = [](const std::vector<Row>& v) {
             json a = json::array();
-            for (auto& r : v) a.push_back({ { "name", r.name }, { "on_mesh", r.on_mesh } });
+            for (auto& r : v) {
+                json row = { { "name", r.name } };
+                if (r.on_mesh) row["on_mesh"] = *r.on_mesh;
+                a.push_back(row);
+            }
             return a;
         };
         if (show_nodes) {
@@ -282,7 +298,9 @@ static complete::Candidates complete_words(complete::Request& r) {
 app::Command ls() {
     app::Command c{ "ls", "[kind] [pattern]",
                     "list the running nodes and entities, or types, packages or groups",
-                    app::Section::Mesh, {}, run };
+                    app::Section::Mesh,
+                    { { "no-mesh", 0, "", "with nodes: only what this workspace declares and started, without joining the mesh" } },
+                    run };
     c.complete = complete_words;
     return c;
 }

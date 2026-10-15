@@ -44,7 +44,7 @@ to override something. A folder may be a workspace and a package, with both file
 | run | `rant run <Group> key=value...`, one node alone with `rant run node <node>`, `--dry-run` first. It builds what it starts (`--no-build` skips that), waits up to 10 s for the nodes to come up (`--wait S`), watches them 2 s more (`--watch S`) and fails with the log of one that exited or never came up |
 | stop, restart | `rant stop [name]` (nothing named: all this workspace started), `rant stop --all` (every node on this machine), `rant restart [name]`, which stops, builds, then starts, the last build when the build fails |
 | node output | `rant log [name...]`, `-f` to follow, `-n N` lines, a group shows all its nodes |
-| see the mesh | `rant ls [nodes\|entities\|topics\|variables\|functions\|tasks\|types\|packages\|groups]` |
+| see the mesh | `rant ls [nodes\|entities\|topics\|variables\|functions\|tasks\|types\|packages\|groups]`, `rant ls nodes --no-mesh` for only what this workspace started, without joining the mesh |
 | explain one thing | `rant info [kind] <name>`, a type shows its fields and who uses it |
 | read and write | `rant sub <topic> -n 1`, `rant pub <topic> <value>`, `rant get <var>`, `rant set <var> <value>`, `rant call <fn> [value]` |
 | Rant version in packages | `rant lib [folder]` shows it, `rant lib install [folder]` adds it, `rant lib update [folder]` moves it, both take `--version V` |

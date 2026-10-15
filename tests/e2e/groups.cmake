@@ -59,6 +59,15 @@ rant(stop nav)
 expect_no_match("${OUT}" "planner")
 rant(ls nodes IN "${OTHER}")
 expect_match("${OUT}" "NODES\n  planner\n")
+
+# Without the mesh only what this workspace started, so not the other one's planner, and no
+# word on whether a node joined.
+rant(ls nodes --no-mesh --json)
+expect_match("${OUT}" "\"group\": \"pick\"")
+expect_match("${OUT}" "\"nodes\": \\[\\]")
+expect_no_match("${OUT}" "on_mesh")
+rant(ls --no-mesh FAILS)
+expect_match("${ERR}" "--no-mesh goes with `rant ls nodes`")
 rant(stop planner IN "${OTHER}")
 
 # Stopping the last group stops everything, last started first.
