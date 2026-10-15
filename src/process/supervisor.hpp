@@ -34,6 +34,9 @@ bool alive(const Tracking& t);
 /* pid belongs to the tracked group or job, such as a node a wrapper started. */
 bool owns(const Tracking& t, uint64_t pid);
 
+/* A process with this id runs, whether or not rant started it. */
+bool pid_alive(uint64_t pid);
+
 enum class Stopped { Gracefully, Killed, KilledAtOnce, AlreadyGone };
 
 /* Asks the whole group or job to stop (SIGTERM, or Ctrl-Break on Windows), waits up to

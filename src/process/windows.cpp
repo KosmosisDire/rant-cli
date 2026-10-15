@@ -233,6 +233,12 @@ bool owns(const Tracking& t, uint64_t pid) {
     return job && proc && IsProcessInJob(proc.get(), job.get(), &in) && in;
 }
 
+bool pid_alive(uint64_t pid) {
+    Handle proc(OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, (DWORD)pid));
+    DWORD code = 0;
+    return proc && GetExitCodeProcess(proc.get(), &code) && code == STILL_ACTIVE;
+}
+
 /* The ids of the processes in the job, for a console to attach to when the first one is
  * gone. */
 static std::vector<DWORD> job_pids(HANDLE job) {

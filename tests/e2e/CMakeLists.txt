@@ -31,6 +31,7 @@ e2e_test(listing)
 e2e_test(restart)
 e2e_test(log)
 e2e_test(uninstall)
+e2e_test(bridge)
 
 # The C# test needs the .NET SDK, the library and new tests GitHub. Each says SKIPPED without.
 set_tests_properties(e2e.csharp e2e.library e2e.new PROPERTIES SKIP_REGULAR_EXPRESSION "SKIPPED:")

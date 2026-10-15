@@ -38,6 +38,28 @@ endforeach()
 rant(uninstall)
 expect_match("${OUT}" "^rant-cli left nothing here to remove\n$")
 
+# The bridge config holds the user's passphrase, so it stays when the rest goes. The bridge
+# here is a stand in file and no service of this home exists, so the registry stays untouched.
+get_filename_component(ext "${RANT}" LAST_EXT)
+if(NOT ext STREQUAL ".exe")
+  set(ext "")
+endif()
+file(WRITE "${home}/.rant/bridge.yaml" "passphrase: secret\n")
+file(WRITE "${home}/.rant/bin/rant-bridge${ext}" "stand in\n")
+file(WRITE "${home}/.rant/bin/rant-bridge.version" "0.1.0\n")
+file(WRITE "${home}/.rant/bridge.state" "pid: 2147483000\nurl: ws://127.0.0.1:7480\n")
+rant(uninstall)
+expect_match("${OUT}" "[.]rant\n")
+expect_match("${OUT}" "bridge[.]yaml stays, it holds your bridge passphrase and settings")
+file(GLOB left "${home}/.rant/*")
+list(LENGTH left count)
+if(NOT count EQUAL 1 OR NOT EXISTS "${home}/.rant/bridge.yaml")
+  message(FATAL_ERROR "expected only bridge.yaml to stay, got: ${left}")
+endif()
+rant(uninstall)
+expect_match("${OUT}" "^rant-cli left nothing here to remove\n$")
+file(REMOVE_RECURSE "${home}/.rant")
+
 # A RANT_HOME not named .rant is never deleted whole.
 set(ENV{RANT_HOME} "${home}")
 rant(uninstall FAILS)

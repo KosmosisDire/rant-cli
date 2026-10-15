@@ -48,8 +48,9 @@ to override something. A folder may be a workspace and a package, with both file
 | explain one thing | `rant info [kind] <name>`, a type shows its fields and who uses it |
 | read and write | `rant sub <topic> -n 1`, `rant pub <topic> <value>`, `rant get <var>`, `rant set <var> <value>`, `rant call <fn> [value]` |
 | Rant version in packages | `rant lib [folder]` shows it, `rant lib install [folder]` adds it, `rant lib update [folder]` moves it, both take `--version V` |
-| update | `rant update`: the CLI, the explorer and the skill where installed, then the workspace's packages |
+| update | `rant update`: the CLI, the explorer, the bridge and the skill where installed, then the workspace's packages |
 | visual debugger | `rant explore` |
+| web frontends | `rant bridge enable`, see Bridge |
 
 Values on the command line are forgiving JSON: `{x: 1, y: 2}`, `[1, 2]`, or field words
 like `position.x=1`. Add `--json` to any command for output a program can read, `-y` to
@@ -97,6 +98,34 @@ group's top level, an `include` and a group `node`. Prefixes join from the outsi
 innermost domain wins. `prefix` goes in front of every entity name a node makes,
 `node_prefix` in front of its node name. Place nodes this way, never with names or domains
 hard coded in the program.
+
+## Bridge
+
+The bridge is a background server that lets web frontends reach the mesh. rant installs it
+and keeps it running as a service of the user, no admin needed.
+
+| goal | command |
+|---|---|
+| install, start now and at every login | `rant bridge enable` (prints the url), `--from PATH` uses a bridge you built |
+| stop it and stop it starting at login | `rant bridge disable` (the binary and the config stay) |
+| control | `rant bridge start`, `stop`, `restart`, `status` (`--json` for tools) |
+| output | `rant bridge logs`, `-f` to follow |
+| in the foreground | `rant bridge run [-- bridge args]` |
+
+- The config is `~/.rant/bridge.yaml`, which holds the passphrase. Edit it by hand, then run
+  `rant bridge restart`. rant never edits it.
+- Security: anyone who can load a frontend that connects to the bridge has the bridge's
+  access to the mesh. Restrict who can reach the frontend (Cloudflare Access or similar) and
+  set `allowed_origins` in the config.
+- A frontend, a script or an editor extension talks to it with the TypeScript client
+  `rant-client`, which ships with each bridge release. It has every pattern and reflection,
+  with the same names as the other bindings:
+
+```ts
+import { RantNode, types } from "rant-client";
+const node = await RantNode.connect("ws://127.0.0.1:7480", { passphrase });
+await node.subscriber("Pose", types.Pose2D, (p) => draw(p));
+```
 
 ## Writing nodes
 

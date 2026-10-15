@@ -213,6 +213,11 @@ bool owns(const Tracking& t, uint64_t pid) {
     return alive(t) && getpgid((pid_t)pid) == (pid_t)t.pid;
 }
 
+bool pid_alive(uint64_t pid) {
+    if (pid <= 1 || pid > (uint64_t)INT32_MAX) return false;
+    return kill((pid_t)pid, 0) == 0 || errno == EPERM;
+}
+
 static bool wait_gone(const Tracking& t, std::chrono::milliseconds limit) {
     auto deadline = std::chrono::steady_clock::now() + limit;
     while (alive(t)) {

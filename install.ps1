@@ -81,6 +81,19 @@
     $hook = Join-Path $home_dir 'completions\rant.ps1'
     if (Test-Path $hook) { Invoke-Expression (Get-Content -Raw $hook) }
 
+    # the bridge is asked about once, and only where someone can answer
+    if ($env:RANT_YES) {
+        Write-Host 'To run the Rant bridge in the background, run `rant bridge enable`.'
+    } else {
+        $answer = Read-Host 'Set up the Rant bridge to run in the background? [y/N]'
+        if ($answer -in @('y', 'Y', 'yes')) {
+            & $exe bridge enable
+            if ($LASTEXITCODE -ne 0) {
+                Write-Host 'warning: the bridge is not set up, fix what rant said above, then run `rant bridge enable`' -ForegroundColor Yellow
+            }
+        }
+    }
+
     Write-Host ''
     Write-Host "Installed $(& $exe --version). This window can use it now, other open ones once restarted."
 }

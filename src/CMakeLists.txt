@@ -9,6 +9,7 @@ add_library(rant_cli_core STATIC
   app/args.cpp
   app/context.cpp
   app/run.cpp
+  commands/bridge.cpp
   commands/build.cpp
   commands/call.cpp
   commands/commands.cpp

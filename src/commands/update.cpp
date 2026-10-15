@@ -5,6 +5,7 @@
 
 #include "agents/skill.hpp"
 #include "app/failure.hpp"
+#include "commands/bridge.hpp"
 #include "commands/commands.hpp"
 #include "commands/explore.hpp"
 #include "config/config.hpp"
@@ -33,8 +34,9 @@ static std::vector<long> numbers(const std::string& v) {
     return out;
 }
 
-/* Replaces this binary and the explorer rant installed with their newest releases, after
- * one question. The skill moves with the CLI, both only where someone installed them. */
+/* Replaces this binary, the explorer and the bridge rant installed with their newest
+ * releases, after one question, never with an older one. The skill moves with the CLI, all
+ * only where someone installed them. */
 static int update_programs(app::Context& ctx) {
     net::Release cli = net::release(cli_repo);
     const net::Asset* a = nullptr;
@@ -49,9 +51,23 @@ static int update_programs(app::Context& ctx) {
         ex = explorer::latest();
         if (ex->version == ex_had) ex.reset();
     }
-    if (!a && !ex) {
-        bool has = config::fs::is_regular_file(explorer::installed());
-        ctx.out.line("rant-cli " RANT_CLI_VERSION + std::string(has ? " and the explorer " + ex_had + " are" : " is") + " up to date");
+    std::optional<net::Release> br;
+    std::string br_had = bridge::installed_version();
+    if (config::fs::is_regular_file(bridge::installed())) {
+        try {
+            net::Release latest = bridge::latest();
+            if (numbers(latest.version) > numbers(br_had)) br = latest;
+        } catch (const app::Failure& e) {
+            ctx.out.warn(std::string("cannot check the bridge: ") + e.what());
+        }
+    }
+    if (!a && !ex && !br) {
+        std::vector<std::string> have = { "rant-cli " RANT_CLI_VERSION };
+        if (config::fs::is_regular_file(explorer::installed())) have.push_back("the explorer " + ex_had);
+        if (config::fs::is_regular_file(bridge::installed())) have.push_back("the bridge " + br_had);
+        std::string list;
+        for (size_t i = 0; i < have.size(); i++) list += (i == 0 ? "" : i + 1 == have.size() ? " and " : ", ") + have[i];
+        ctx.out.line(list + (have.size() > 1 ? " are" : " is") + " up to date");
         return 0;
     }
 
@@ -64,10 +80,24 @@ static int update_programs(app::Context& ctx) {
     if (a) ctx.out.line("  rant-cli " RANT_CLI_VERSION " to " + cli.version + ", over " + config::to_utf8(self));
     if (ex) ctx.out.line("  the explorer " + (ex_had.empty() ? std::string("") : ex_had + " ") + "to " + ex->version + ", over " +
                          config::to_utf8(explorer::installed()));
+    if (br) ctx.out.line("  the bridge " + (br_had.empty() ? std::string("") : br_had + " ") + "to " + br->version + ", over " +
+                         config::to_utf8(bridge::installed()));
     if (!names.empty()) ctx.out.line("  the rant skill for " + names);
     if (!ui::confirm("Update?", ctx.yes)) return 1;
 
     if (ex) explorer::install(ctx, *ex);
+    if (br) {
+        bool was_running = bridge::running().has_value();
+        bridge::install(ctx, *br);
+        if (was_running) {
+            try {
+                bridge::restart();
+                ctx.out.note("restarted the bridge");
+            } catch (const app::Failure& e) {
+                ctx.out.warn(std::string("the bridge was not restarted: ") + e.what());
+            }
+        }
+    }
     if (!a) return 0;
     net::download(a->url, self, true);
     ctx.out.line("updated to rant-cli " + cli.version);
@@ -83,8 +113,8 @@ static int update_programs(app::Context& ctx) {
     return 0;
 }
 
-/* The CLI and the explorer first, then every package of the workspace here that uses Rant,
- * each after its own question. */
+/* The CLI, the explorer and the bridge first, then every package of the workspace here that
+ * uses Rant, each after its own question. */
 static int run(app::Context& ctx) {
     if (!ctx.args.words.empty()) throw app::UsageError("update takes no folder, see `rant lib update`");
     int code = update_programs(ctx);
@@ -95,7 +125,7 @@ static int run(app::Context& ctx) {
 }
 
 app::Command update() {
-    return { "update", "", "update rant-cli and the explorer, then the Rant library of this workspace's packages",
+    return { "update", "", "update rant-cli, the explorer and the bridge, then the Rant library of this workspace's packages",
              app::Section::Setup, {}, run };
 }
 

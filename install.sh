@@ -92,6 +92,17 @@ fi
 PATH="$bin:$PATH" "$bin/rant" setup ||
     echo "warning: tab completion is not set up, fix what rant setup said above, then run \`rant setup\`" >&2
 
+# the bridge is asked about once, and only where someone can answer
+if [ -z "$yes" ] && [ -r /dev/tty ] && { : < /dev/tty; } 2> /dev/null; then
+    printf "Set up the Rant bridge to run in the background? [y/N] "
+    read -r answer < /dev/tty || answer=""
+    case "$answer" in
+        y | Y | yes) "$bin/rant" bridge enable || echo "warning: the bridge is not set up, fix what rant said above, then run \`rant bridge enable\`" >&2 ;;
+    esac
+else
+    echo "To run the Rant bridge in the background, run \`rant bridge enable\`."
+fi
+
 # a script run through sh cannot change the shell that started it, so only a new one has
 # rant on PATH and tab completion
 echo

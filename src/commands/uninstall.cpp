@@ -4,6 +4,7 @@
 
 #include "agents/skill.hpp"
 #include "app/failure.hpp"
+#include "commands/bridge.hpp"
 #include "commands/commands.hpp"
 #include "complete/shells.hpp"
 #include "library/library.hpp"
@@ -81,8 +82,10 @@ static void user_path(std::vector<Added>& out, const fs::path& bin) {
 static void remove_later(const fs::path& home) {
     std::vector<fs::path> files, dirs;
     std::error_code ec;
-    for (fs::recursive_directory_iterator it(home, ec), end; !ec && it != end; it.increment(ec))
+    for (fs::recursive_directory_iterator it(home, ec), end; !ec && it != end; it.increment(ec)) {
+        if (it->path() == bridge::config_path()) continue;
         (it->is_directory(ec) ? dirs : files).push_back(it->path());
+    }
     std::sort(dirs.begin(), dirs.end(), [](const fs::path& a, const fs::path& b) { return a.native().size() > b.native().size(); });
     dirs.push_back(home);
 
@@ -101,12 +104,24 @@ static void remove_later(const fs::path& home) {
 }
 #endif
 
-/* ~/.rant and all in it: this rant, the explorer, the shell hooks, caches, the workspace
- * list and the NuGet feed. */
+/* What ~/.rant holds but the bridge config, which keeps the user's passphrase and settings. */
+static std::vector<fs::path> removable(const fs::path& home) {
+    std::vector<fs::path> out;
+    std::error_code ec;
+    for (fs::directory_iterator it(home, ec), end; !ec && it != end; it.increment(ec))
+        if (it->path() != bridge::config_path()) out.push_back(it->path());
+    return out;
+}
+
+/* ~/.rant and all in it but the bridge config: this rant, the explorer, the bridge, the shell
+ * hooks, caches, the workspace list and the NuGet feed. */
 static void remove_home(const fs::path& home) {
     std::error_code ec;
-    fs::remove_all(home, ec);
-    if (!fs::exists(home)) return;
+    for (auto& p : removable(home)) fs::remove_all(p, ec);
+    if (removable(home).empty()) {
+        fs::remove(home, ec);    /* stays when the config is in it */
+        return;
+    }
 #ifdef _WIN32
     remove_later(home);
 #else
@@ -141,19 +156,23 @@ static int run(app::Context& ctx) {
                              if (process::run({ { "dotnet", "nuget", "remove", "source", "rant" }, fs::temp_directory_path(), {} }) != 0)
                                  throw app::Failure("dotnet could not remove the NuGet source rant");
                          } });
+    if (bridge::enabled() || bridge::running())
+        steps.push_back({ bridge::installed(), "stopped and no longer started at login", [] { bridge::disable(); } });
     std::error_code ec;
-    if (fs::exists(home, ec)) steps.push_back({ home, "", [home] { remove_home(home); } });
+    bool config_only = fs::exists(bridge::config_path(), ec) && removable(home).empty();
+    if (fs::exists(home, ec) && !config_only) steps.push_back({ home, "", [home] { remove_home(home); } });
 
     if (steps.empty()) {
         ctx.out.line("rant-cli left nothing here to remove");
         return 0;
     }
-    ctx.out.line("This uninstalls rant-cli and the explorer, removing:");
+    ctx.out.line("This uninstalls rant-cli, the explorer and the bridge, removing:");
     for (auto& s : steps) {
         std::string where = fs::path(s.path).lexically_normal().make_preferred().u8string();
         ctx.out.line("  " + (s.path.empty() ? s.part : s.part.empty() ? where : where + " (" + s.part + ")"));
     }
     ctx.out.line("Workspaces stay as they are, and running nodes keep running.");
+    if (fs::exists(bridge::config_path(), ec)) ctx.out.line(bridge::config_path().u8string() + " stays, it holds your bridge passphrase and settings.");
     if (!ui::confirm("Uninstall?", ctx.yes)) return 1;
     bool ok = true;
     for (auto& s : steps) {
@@ -169,7 +188,7 @@ static int run(app::Context& ctx) {
 }
 
 app::Command uninstall() {
-    return { "uninstall", "", "remove rant-cli, the explorer and what setup added, never touching workspaces",
+    return { "uninstall", "", "remove rant-cli, the explorer, the bridge and what setup added, never touching workspaces",
              app::Section::Setup, {}, run };
 }
 
