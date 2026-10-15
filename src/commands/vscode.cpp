@@ -54,14 +54,15 @@ std::string installed_version(const fs::path& editor) {
 
 net::Release latest() { return net::release(vscode_repo); }
 
-/* Installs a vsix through the editor, then remembers the editor. */
-static void install_file(const app::Context& ctx, const fs::path& editor, const fs::path& vsix) {
+/* Installs a vsix through the editor, then remembers the editor. version is the release's, empty for a
+ * built vsix, which is then read back: a running editor may list it a moment later. */
+static void install_file(const app::Context& ctx, const fs::path& editor, const fs::path& vsix, std::string version = {}) {
     if (process::run({ { u8(editor), "--install-extension", u8(vsix), "--force" }, fs::temp_directory_path(), {} }) != 0)
         throw app::Failure(u8(editor) + " could not install " + u8(vsix));
     std::error_code ec;
     fs::create_directories(marker().parent_path(), ec);
     std::ofstream(marker()) << u8(editor) << "\n";
-    std::string version = installed_version(editor);
+    if (version.empty()) version = installed_version(editor);
     ctx.out.note("installed the VS Code extension" + (version.empty() ? "" : " " + version) + " through " + u8(editor) +
                  ", reload the editor window to start it");
 }
@@ -76,7 +77,7 @@ void install(const app::Context& ctx, const fs::path& editor, const net::Release
         ~Download() { std::error_code ec; fs::remove(path, ec); }
     } vsix{ fs::temp_directory_path() / asset };
     net::download(a->url, vsix.path);
-    install_file(ctx, editor, vsix.path);
+    install_file(ctx, editor, vsix.path, r.version);
 }
 
 void remove(const fs::path& editor) {
