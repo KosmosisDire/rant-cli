@@ -46,6 +46,7 @@ struct Package {
     std::string              name;
     fs::path                 dir;
     std::vector<std::string> kinds;    /* "cmake", "python", "csharp", "package.rant" */
+    std::vector<fs::path>    files;    /* its build files, then its package.rant */
     std::vector<NodeType>    nodes;
 };
 

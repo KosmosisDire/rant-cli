@@ -71,7 +71,8 @@ static Opened read(Handle h) {
     if (v->domain >= 0) ws.domain = static_cast<uint16_t>(v->domain);
     for (size_t i = 0; i < v->package_count; i++) {
         const RantConfigPackage& p = v->packages[i];
-        Package pkg{ str(p.name), from_utf8(str(p.dir)), strs(p.kinds, p.kind_count), {} };
+        Package pkg{ str(p.name), from_utf8(str(p.dir)), strs(p.kinds, p.kind_count), {}, {} };
+        for (auto& f : strs(p.files, p.file_count)) pkg.files.push_back(from_utf8(f));
         for (size_t j = 0; j < p.node_count; j++) pkg.nodes.push_back(node_type(p.nodes[j]));
         ws.packages.push_back(std::move(pkg));
     }

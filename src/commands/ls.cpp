@@ -260,7 +260,9 @@ static int list_workspace(app::Context& ctx, Kind kind, const std::string& patte
         for (auto& p : ws.packages) {
             if (!util::name_matches(pattern, p.name)) continue;
             std::string version = rant_version(p);
-            out.push_back({ { "name", p.name }, { "kinds", p.kinds }, { "folder", config::to_utf8(p.dir) },
+            json files = json::array();
+            for (auto& f : p.files) files.push_back(config::to_utf8(f));
+            out.push_back({ { "name", p.name }, { "kinds", p.kinds }, { "folder", config::to_utf8(p.dir) }, { "files", files },
                             { "rant", version.empty() ? json(nullptr) : json(version) } });
             t.row({ p.name, dim(joined(p.kinds, ", ")), version.empty() ? dim("no Rant") : "Rant " + version, dim(ctx.shown(p.dir)) });
         }

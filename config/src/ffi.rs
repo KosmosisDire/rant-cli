@@ -60,6 +60,9 @@ pub struct RantConfigPackage {
     /// for its own settings.
     pub kinds: *const *const c_char,
     pub kind_count: usize,
+    /// Its build files, then its package.rant if it has one.
+    pub files: *const *const c_char,
+    pub file_count: usize,
     pub nodes: *const RantConfigNodeType,
     pub node_count: usize,
 }
@@ -242,7 +245,12 @@ impl Store {
             kinds.push(crate::package::PACKAGE_FILE.into());
         }
         let (kinds, kind_count) = self.strs(&kinds);
-        RantConfigPackage { name: self.str(&p.name), dir: self.path(&p.dir), kinds, kind_count, nodes, node_count }
+        let mut files: Vec<String> = p.manifests.iter().map(|m| crate::eval::slash(&m.path)).collect();
+        if p.block.is_some() {
+            files.push(crate::eval::slash(&p.dir.join(crate::package::PACKAGE_FILE)));
+        }
+        let (files, file_count) = self.strs(&files);
+        RantConfigPackage { name: self.str(&p.name), dir: self.path(&p.dir), kinds, kind_count, files, file_count, nodes, node_count }
     }
 
     fn instance(&mut self, i: &plan::Instance) -> RantConfigInstance {
