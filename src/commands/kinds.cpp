@@ -17,6 +17,7 @@ static const std::vector<Words>& table() {
         { Kind::Variable, "var", "vars", { "variable", "variables" } },
         { Kind::Function, "fn", "fns", { "function", "functions" } },
         { Kind::Task, "task", "tasks", {} },
+        { Kind::Type, "type", "types", {} },
         { Kind::Package, "package", "packages", { "pkg", "pkgs" } },
         { Kind::Group, "group", "groups", {} },
     };

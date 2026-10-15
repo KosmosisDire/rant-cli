@@ -30,6 +30,7 @@ static std::vector<std::string> roles(const rant::Entity& e) {
 struct Answer {
     json                                     fields = json::object();
     std::vector<std::pair<std::string, rant::Schema>> schemas;
+    bool                                     whole = false;    /* a standard type spelled out */
 };
 
 /* A node rant started, a node on the mesh, or both when the mesh node is the instance. */
@@ -106,7 +107,7 @@ static void print_answer(app::Context& ctx, const Answer& a) {
             ctx.out.line(yaml.entry(k, v, width));
             continue;
         }
-        std::string text = mesh::schema_text(schema->second, &ctx.out);
+        std::string text = mesh::schema_text(schema->second, &ctx.out, a.whole);
         if (text.find('\n') == std::string::npos) {
             ctx.out.line(yaml.key(k, width) + " " + text);
             continue;
@@ -267,6 +268,28 @@ static void workspace_answers(app::Context& ctx, std::optional<Kind> kind, const
     }
 }
 
+/* A type by name: one the mesh uses, with what uses it, else a standard type, known
+ * without the mesh. */
+static void type_answers(mesh::Client& mesh, const std::string& name, std::vector<std::pair<Kind, Answer>>& out) {
+    Answer a;
+    a.whole = true;
+    auto used = mesh::types_in_use(mesh.entities());
+    auto it = used.find(name);
+    rant::Schema schema;
+    if (it != used.end()) {
+        schema = it->second.schema;
+    } else {
+        auto std_names = mesh::standard_types();
+        if (std::find(std_names.begin(), std_names.end(), name) == std_names.end()) return;
+        schema = mesh.node().schema(name);
+    }
+    a.fields["type"] = name;
+    a.schemas.emplace_back("definition", schema);
+    a.fields["definition"] = mesh::schema_text(schema, nullptr, true);
+    a.fields["used by"] = it != used.end() ? json(it->second.entities) : json::array();
+    out.push_back({ Kind::Type, a });
+}
+
 static void mesh_answers(mesh::Client& mesh, std::optional<Kind> kind, const std::string& name, const state::State& st,
                          std::vector<std::pair<Kind, Answer>>& out) {
     mesh.settle();
@@ -276,13 +299,14 @@ static void mesh_answers(mesh::Client& mesh, std::optional<Kind> kind, const std
     for (auto& e : mesh.entities())
         if (e.name == name && (!kind || entity_matches(*kind, mesh::kind_name(e.kind))))
             out.push_back({ Kind::Entity, entity_answer(mesh, e) });
+    if (!kind || *kind == Kind::Type) type_answers(mesh, name, out);
 }
 
 static int run(app::Context& ctx) {
     auto& w = ctx.args.words;
     std::optional<Kind> kind;
     if (w.size() == 2 && !(kind = kind_named(w[0])))
-        throw app::UsageError("`" + w[0] + "` is not a kind, use node, entity, topic, var, fn, task, package, type or group");
+        throw app::UsageError("`" + w[0] + "` is not a kind, use node, entity, topic, var, fn, task, type, package or group");
     if (w.empty() || w.size() > 2) throw app::UsageError("info takes a name, or a kind and a name such as `rant info package cam`");
     const std::string& name = w.back();
 
@@ -340,6 +364,7 @@ static std::vector<std::string> names(complete::Request& r, std::optional<Kind> 
     else if (*kind == Kind::Function) add(r.entities({ rant::EntityKind::Function }));
     else if (*kind == Kind::Task) add(r.entities({ rant::EntityKind::Task }));
     else if (*kind == Kind::Entity) add(r.entities());
+    else if (*kind == Kind::Type) add(mesh::standard_types());
     return out;
 }
 
@@ -355,7 +380,8 @@ static complete::Candidates complete_words(complete::Request& r) {
 }
 
 app::Command info() {
-    app::Command c{ "info", "[kind] <name>", "explain a node, running or not, an entity, a package or a group", app::Section::Mesh, {}, run };
+    app::Command c{ "info", "[kind] <name>", "explain a node, running or not, an entity, a type, a package or a group",
+                    app::Section::Mesh, {}, run };
     c.complete = complete_words;
     return c;
 }

@@ -29,7 +29,8 @@ static const char* scalar_name(uint8_t kind) {
 /* Walks the flat field table, where a struct's members follow it one level deeper. */
 class Printer {
 public:
-    Printer(const d::RantSchema* s, const ui::Output* out) : s_(s), out_(out), n_(d::rant_schema_field_count(s)) {}
+    Printer(const d::RantSchema* s, const ui::Output* out, bool whole)
+        : s_(s), out_(out), n_(d::rant_schema_field_count(s)), whole_(whole) {}
 
     std::string print() {
         std::vector<std::string> root;
@@ -37,7 +38,7 @@ public:
         d::RantSchemaFieldInfo first = info(0);
         if (n_ == 0) {
             root.push_back(paint(Style::Faint, "{}"));
-        } else if (name.len && standard(name)) {
+        } else if (name.len && standard(name) && !whole_) {
             root.push_back(paint(Style::Accent, std::string(name.data, name.len)));
         } else if (first.name.len == 0) {
             root = type_lines(0, 0);    /* a bare root, such as f64 or u8[] */
@@ -175,13 +176,33 @@ private:
     const d::RantSchema*     s_;
     const ui::Output*        out_;
     uint16_t                 n_;
+    bool                     whole_;
     std::vector<std::string> defs_;
     std::set<std::string>    defined_;
 };
 
-std::string schema_text(const rant::Schema& s, const ui::Output* out) {
+std::string schema_text(const rant::Schema& s, const ui::Output* out, bool whole) {
     if (s.empty()) return out ? out->paint(Style::Faint, "untyped") : "untyped";
-    return Printer(s.raw(), out).print();
+    return Printer(s.raw(), out, whole).print();
+}
+
+std::map<std::string, TypeUse> types_in_use(const std::vector<rant::Entity>& entities) {
+    std::map<std::string, TypeUse> out;
+    for (auto& e : entities)
+        for (const rant::Schema* s : { &e.schema, &e.rsp_schema, &e.progress_schema }) {
+            if (s->empty() || s->name().empty()) continue;
+            TypeUse& u = out[std::string(s->name())];
+            if (u.schema.empty()) u.schema = *s;
+            if (std::find(u.entities.begin(), u.entities.end(), e.name) == u.entities.end()) u.entities.push_back(e.name);
+        }
+    return out;
+}
+
+std::vector<std::string> standard_types() {
+    std::vector<std::string> out;
+    for (int t = d::RANT_STD_NONE + 1; t < d::RANT_STD_COUNT; t++)
+        if (const char* n = d::rant_std_name((d::RantStdType)t)) out.push_back(n);
+    return out;
 }
 
 }

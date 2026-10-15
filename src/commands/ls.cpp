@@ -7,6 +7,7 @@
 #include "complete/complete.hpp"
 #include "library/uses.hpp"
 #include "mesh/client.hpp"
+#include "mesh/schema_text.hpp"
 #include "mesh/values.hpp"
 #include "process/command.hpp"
 #include "run/nodes.hpp"
@@ -105,9 +106,28 @@ static std::vector<const config::NodeType*> not_running(app::Context& ctx, const
     return out;
 }
 
+/* The named types the mesh's entities use, each with the entities that use it. */
+static int list_types(app::Context& ctx, const std::string& pattern) {
+    mesh::Client mesh(ctx.domain());
+    mesh.settle();
+    json out = json::array();
+    ui::Table t;
+    for (auto& [name, use] : mesh::types_in_use(mesh.entities())) {
+        if (!util::name_matches(pattern, name)) continue;
+        out.push_back({ { "type", name }, { "used_by", use.entities } });
+        std::string users;
+        for (auto& e : use.entities) users += (users.empty() ? "" : ", ") + e;
+        t.row({ name, ctx.out.paint(ui::Style::Dim, users) });
+    }
+    if (ctx.json) ctx.out.line(out.dump(2));
+    else section(ctx, "TYPES", t.lines());
+    return 0;
+}
+
 /* The running nodes and entities, the default. kind narrows to nodes or one entity kind, and
  * nodes alone also list the ones that could start. */
 static int list_mesh(app::Context& ctx, std::optional<Kind> kind, const std::string& pattern) {
+    if (kind && *kind == Kind::Type) return list_types(ctx, pattern);
     bool show_nodes = !kind || *kind == Kind::Node, show_entities = !kind || *kind != Kind::Node;
     bool all = kind && *kind == Kind::Node;
     mesh::Client mesh(ctx.domain());
@@ -261,7 +281,7 @@ static complete::Candidates complete_words(complete::Request& r) {
 
 app::Command ls() {
     app::Command c{ "ls", "[kind] [pattern]",
-                    "list the running nodes and entities, or packages or groups",
+                    "list the running nodes and entities, or types, packages or groups",
                     app::Section::Mesh, {}, run };
     c.complete = complete_words;
     return c;
