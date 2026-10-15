@@ -27,6 +27,11 @@ void note_names(app::Context& ctx, const std::vector<std::string>& groups, const
     for (auto& n : nodes) check("node", n, util::snake);
 }
 
+void place_on_domain(app::Context& ctx, config::Plan& plan) {
+    if (!ctx.domain_option) return;
+    for (auto& i : plan.instances) i.env["RANT_DOMAIN"] = std::to_string(*ctx.domain_option);
+}
+
 void print_params(app::Context& ctx, const std::vector<config::Param>& params) {
     if (params.empty()) return;
     ui::Table t;

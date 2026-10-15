@@ -12,7 +12,7 @@ const std::vector<OptionSpec>& global_options() {
     static const std::vector<OptionSpec> opts = {
         { "yes",     'y', "",  "answer yes to every question" },
         { "json",    0,   "",  "print JSON instead of text" },
-        { "domain",  0,   "N", "the Rant domain to use, else the workspace's, else RANT_DOMAIN, else 0" },
+        { "domain",  0,   "N", "the Rant domain to use and start nodes on, else the workspace's, else RANT_DOMAIN, else 0" },
         { "help",    'h', "",  "show help, also after a command" },
         { "version", 0,   "",  "show the version" },
     };

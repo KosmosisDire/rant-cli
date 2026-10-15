@@ -23,6 +23,7 @@ static config::Plan replan(app::Context& ctx, const state::Root& root, const sta
     config::Plan plan = root.kind == "group" ? config::plan_group(ctx.cwd(), root.name, param_words(root))
                                              : config::plan_node(ctx.cwd(), node ? node->type : root.name);
     require_plan(ctx, plan);
+    place_on_domain(ctx, plan);
     return plan;
 }
 
