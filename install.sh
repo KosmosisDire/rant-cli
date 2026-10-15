@@ -89,8 +89,10 @@ if [ -n "$fish_conf" ]; then
     echo "fish_add_path -g \"$bin\"    # rant-cli" > "$fish_conf"
 fi
 
-PATH="$bin:$PATH" "$bin/rant" setup || echo "warning: rant setup did not finish, run it again later" >&2
+PATH="$bin:$PATH" "$bin/rant" setup ||
+    echo "warning: tab completion is not set up, fix what rant setup said above, then run \`rant setup\`" >&2
 
+# a script run through sh cannot change the shell that started it, so only a new one has
+# rant on PATH and tab completion
 echo
-echo "Installed $("$bin/rant" --version). Open a new shell to use it, or run:"
-echo "  export PATH=\"$bin:\$PATH\""
+echo "Installed $("$bin/rant" --version). Open a new shell to use it."

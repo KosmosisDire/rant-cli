@@ -65,7 +65,7 @@ static int run(app::Context& ctx) {
             failed = true;
         }
     }
-    if (!chosen.empty()) ctx.out.note("open a new shell to use it");
+    if (!chosen.empty()) ctx.out.note("new shells load it, this one does not");
     if (skill) {
         failed |= !install_skill(ctx, found);
     } else if (!found.empty()) {

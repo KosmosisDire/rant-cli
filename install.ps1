@@ -72,8 +72,15 @@
     if (($env:Path -split ';') -notcontains $bin) { $env:Path = "$bin;$env:Path" }
 
     & $exe setup
-    if ($LASTEXITCODE -ne 0) { Write-Host 'warning: rant setup did not finish, run it again later' -ForegroundColor Yellow }
+    $completes = $LASTEXITCODE -eq 0
+    if (-not $completes) {
+        Write-Host 'warning: tab completion is not set up, fix what rant setup said above, then run `rant setup`' -ForegroundColor Yellow
+    }
+    # iex runs this in the caller's session, so its completer works there at once. As text it
+    # loads even where the execution policy refuses script files, and so the profile.
+    $hook = Join-Path $home_dir 'completions\rant.ps1'
+    if (Test-Path $hook) { Invoke-Expression (Get-Content -Raw $hook) }
 
     Write-Host ''
-    Write-Host "Installed $(& $exe --version). Open a new terminal to use it everywhere."
+    Write-Host "Installed $(& $exe --version). This window can use it now, other open ones once restarted."
 }
