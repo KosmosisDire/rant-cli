@@ -31,6 +31,7 @@ _rant_complete() {
 complete -F _rant_complete rant
 )HOOK";
 
+/* zsh filters candidates by case unless -U takes them as rant matched them. */
 static const char* const zsh_hook = R"HOOK(# rant tab completion for zsh, written by `rant setup`
 _rant() {
     local -a reply
@@ -38,7 +39,7 @@ _rant() {
     reply=("${(@f)$(command rant __complete "--cur=${words[CURRENT]}" "${(@)words[2,CURRENT-1]}" 2>/dev/null)}")
     for c in "${reply[@]}"; do
         [[ -z $c ]] && continue
-        if [[ $c == *[/=] ]]; then compadd -S '' -- "$c"; else compadd -- "$c"; fi
+        if [[ $c == *[/=] ]]; then compadd -U -S '' -- "$c"; else compadd -U -- "$c"; fi
     done
 }
 (( $+functions[compdef] )) || { autoload -Uz compinit && compinit }

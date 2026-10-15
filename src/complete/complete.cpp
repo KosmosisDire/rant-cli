@@ -1,6 +1,7 @@
 #include "complete/complete.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdio>
 #include <cstdlib>
 #include <map>
@@ -122,10 +123,18 @@ std::vector<std::string> params(const config::GroupInfo& group, const std::strin
     return out;
 }
 
+/* w starts with partial, whatever the case of either, since names mix NavGroup and talker. */
+static bool starts_with(const std::string& w, const std::string& partial) {
+    if (w.size() < partial.size()) return false;
+    for (size_t i = 0; i < partial.size(); i++)
+        if (std::tolower((unsigned char)w[i]) != std::tolower((unsigned char)partial[i])) return false;
+    return true;
+}
+
 std::vector<std::string> narrow(const Candidates& c, const std::string& partial) {
     std::set<std::string> out;
     for (auto& w : c.words) {
-        if (w.rfind(partial, 0) != 0) continue;
+        if (!starts_with(w, partial)) continue;
         if (c.paths) {    /* a leading slash starts the path, it ends no segment */
             size_t slash = w.find('/', std::max<size_t>(partial.size(), 1));
             if (slash != std::string::npos && slash + 1 < w.size()) {

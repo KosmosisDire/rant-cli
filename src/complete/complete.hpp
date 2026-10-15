@@ -57,8 +57,8 @@ private:
 std::vector<std::string> params(const config::GroupInfo& group, const std::string& partial,
                                 const std::vector<std::string>& given);
 
-/* The candidates that start with partial, each path cut after the next slash past it,
- * sorted and without repeats. */
+/* The candidates that start with partial in any case, each path cut after the next slash
+ * past it, sorted and without repeats. */
 std::vector<std::string> narrow(const Candidates& c, const std::string& partial);
 
 /* Answers one __complete request on stdout. Never fails: a broken workspace or a silent

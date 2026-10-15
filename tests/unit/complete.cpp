@@ -9,6 +9,12 @@ TEST(narrow_keeps_what_starts_with_the_word_sorted_once) {
     CHECK_EQ(complete::narrow(c, "x"), Words{});
 }
 
+TEST(narrow_ignores_case) {
+    complete::Candidates c{ { "NavGroup", "nav_tool", "talker" } };
+    CHECK_EQ(complete::narrow(c, "nav"), (Words{ "NavGroup", "nav_tool" }));
+    CHECK_EQ(complete::narrow(c, "TAL"), (Words{ "talker" }));
+}
+
 TEST(narrow_offers_paths_one_segment_at_a_time) {
     complete::Candidates c{ { "/camera/left", "/camera/right", "/odom", "/odom/rate" }, true };
     CHECK_EQ(complete::narrow(c, ""), (Words{ "/camera/", "/odom", "/odom/" }));

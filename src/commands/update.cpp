@@ -14,6 +14,7 @@
 #include "process/command.hpp"
 #include "process/supervisor.hpp"
 #include "ui/prompt.hpp"
+#include "util/home.hpp"
 
 namespace commands {
 
@@ -73,6 +74,12 @@ static int update_programs(app::Context& ctx) {
     /* the new binary holds the new skill */
     if (!names.empty() && process::run({ { config::to_utf8(self), "setup", "skill" }, config::fs::temp_directory_path(), {} }) != 0)
         ctx.out.warn("the rant skill was not updated, run `rant setup skill`");
+    /* and new shell hooks, written again where setup wrote them before */
+    config::fs::path hooks = util::rant_home() / "completions";
+    for (auto [file, shell] : { std::pair<const char*, const char*>{ "rant.bash", "bash" }, { "rant.zsh", "zsh" }, { "rant.ps1", "powershell" } })
+        if (config::fs::exists(hooks / file) &&
+            process::run({ { config::to_utf8(self), "setup", shell }, config::fs::temp_directory_path(), {} }) != 0)
+            ctx.out.warn(std::string("tab completion for ") + shell + " was not updated, run `rant setup " + shell + "`");
     return 0;
 }
 
