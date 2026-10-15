@@ -3,6 +3,7 @@
 #include <set>
 
 #include "app/failure.hpp"
+#include "commands/build.hpp"
 #include "commands/commands.hpp"
 #include "commands/plan_output.hpp"
 #include "commands/run.hpp"
@@ -25,6 +26,7 @@ int run_node(app::Context& ctx, const std::string& ref) {
         return 0;
     }
     const config::Instance& inst = plan.instances.front();
+    bool built = build_for(ctx, { plan });
 
     std::set<std::string> taken;
     mesh::Client mesh(ctx.domain());
@@ -47,7 +49,8 @@ int run_node(app::Context& ctx, const std::string& ref) {
     }
     Summary summary(ctx, "");
     summary.add(started_row(rec));
-    return bring_up(ctx, summary, { rec }, "", "started");
+    int code = bring_up(ctx, summary, { rec }, "", "started");
+    return built ? code : 1;
 }
 
 static void group_help(app::Context& ctx, const std::string& group) {
@@ -109,6 +112,13 @@ int run_group(app::Context& ctx, const std::string& group, const std::vector<std
         actions.push_back("started");
     }
 
+    /* only what starts is built: a running node's program may be in use */
+    config::Plan starting = plan;
+    starting.instances.clear();
+    for (size_t i = 0; i < plan.instances.size(); i++)
+        if (actions[i] == "started") starting.instances.push_back(plan.instances[i]);
+    bool built = build_for(ctx, { starting });
+
     if (!s.state().root(root.key())) s.state().roots.push_back(root);
     std::string shown;
     for (auto& [k, v] : plan.params) shown += (shown.empty() ? "" : " ") + k + "=" + v;
@@ -141,7 +151,8 @@ int run_group(app::Context& ctx, const std::string& group, const std::vector<std
     }
     s.save();
     held.reset();    /* unlocks the state before the watch */
-    return bring_up(ctx, summary, started, plan.group, "started");
+    int code = bring_up(ctx, summary, started, plan.group, "started");
+    return built ? code : 1;
 }
 
 static void fail_with(app::Context& ctx, const std::vector<config::Diagnostic>& diagnostics) {
@@ -194,7 +205,9 @@ static complete::Candidates complete_words(complete::Request& r) {
 app::Command run_() {
     app::Command c{ "run", "<group> [key=value...] | node <node>",
                     "start a group, or one node, detached, logging to the logs folder", app::Section::Workspace,
-                    { { "dry-run", 0, "", "show what would run without starting it" }, wait_option(), watch_option() }, run };
+                    { { "dry-run", 0, "", "show what would run without starting it" }, no_build_option(), wait_option(),
+                      watch_option() },
+                    run };
     c.own_help = true;
     c.complete = complete_words;
     return c;

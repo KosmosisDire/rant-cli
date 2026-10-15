@@ -132,6 +132,32 @@ int build_steps(app::Context& ctx, const config::Build& b) {
     return built;
 }
 
+bool build_for(app::Context& ctx, const std::vector<config::Plan>& plans) {
+    if (ctx.args.has("no-build")) return true;
+    const config::Workspace& ws = ctx.require_workspace(true);
+    std::vector<std::string> packages;
+    for (auto& plan : plans)
+        for (auto& i : plan.instances) {
+            std::string pkg = i.type.substr(0, i.type.find('/'));
+            bool known = std::any_of(ws.packages.begin(), ws.packages.end(), [&](const config::Package& p) { return p.name == pkg; });
+            if (known && std::find(packages.begin(), packages.end(), pkg) == packages.end()) packages.push_back(pkg);
+        }
+    if (packages.empty()) return true;
+    config::Build b = config::plan_build(ctx.cwd(), packages);
+    try {
+        require(ctx, b.diagnostics);
+        if (build_steps(ctx, b) > 0) ctx.out.line();
+        return true;
+    } catch (const app::Failure& e) {
+        if (*e.what()) ctx.out.error(std::string(e.what()) + ", starting the last build");
+        else ctx.out.error("the build could not be planned, starting the last build");
+        ctx.out.line();
+        return false;
+    }
+}
+
+app::OptionSpec no_build_option() { return { "no-build", 0, "", "start what is built already, without building first" }; }
+
 static int run(app::Context& ctx) {
     const config::Workspace& ws = ctx.require_workspace(true);
     config::Build b = config::plan_build(ctx.cwd(), ctx.args.words);

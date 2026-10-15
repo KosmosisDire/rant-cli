@@ -31,35 +31,6 @@ static config::Plan replan(app::Context& ctx, const state::Root& root, const sta
     return plan;
 }
 
-/* Builds the packages whose nodes the plans run, and what they depend on, so a restart runs
- * the code as it is now. It runs once the nodes have stopped, since a running program
- * cannot be overwritten on Windows. A failed build is reported and false, and the nodes
- * start again from what is on disk, the last build that worked. */
-static bool rebuild(app::Context& ctx, const std::vector<config::Plan>& plans) {
-    const config::Workspace& ws = ctx.require_workspace(true);
-    std::vector<std::string> packages;
-    for (auto& plan : plans)
-        for (auto& i : plan.instances) {
-            std::string pkg = i.type.substr(0, i.type.find('/'));
-            bool known = std::any_of(ws.packages.begin(), ws.packages.end(), [&](const config::Package& p) { return p.name == pkg; });
-            if (known && std::find(packages.begin(), packages.end(), pkg) == packages.end()) packages.push_back(pkg);
-        }
-    if (packages.empty()) return true;
-    config::Build b = config::plan_build(ctx.cwd(), packages);
-    try {
-        if (!b.diagnostics.empty()) {
-            for (auto& d : b.diagnostics) ctx.out.error(d.str());
-            throw app::Failure("the build could not be planned");
-        }
-        if (build_steps(ctx, b) > 0) ctx.out.line();
-        return true;
-    } catch (const app::Failure& e) {
-        ctx.out.error(std::string(e.what()) + ", starting the last build again");
-        ctx.out.line();
-        return false;
-    }
-}
-
 /* A restarted node's row, saying so when the old one had to be killed. */
 static Summary::Row restarted_row(const state::Instance& rec, process::Stopped how) {
     Summary::Row r = started_row(rec);
@@ -159,7 +130,7 @@ static bool restart(app::Context& ctx, run::Session& s, const std::vector<Target
         plans.push_back(t.plan);
         halted.push_back(halt_root(s, t));
     }
-    bool built = rebuild(ctx, plans);
+    bool built = build_for(ctx, plans);
     for (auto& h : halted) start_root(ctx, s, h, started, summary);
     return built;
 }
@@ -289,7 +260,7 @@ static complete::Candidates complete_words(complete::Request& r) {
 app::Command restart() {
     app::Command c{ "restart", "[<group> [key=value...] | <node>]",
                     "stop and start again as configured now, start what is not running, all of it when nothing is named",
-                    app::Section::Workspace, { wait_option(), watch_option() }, run };
+                    app::Section::Workspace, { no_build_option(), wait_option(), watch_option() }, run };
     c.complete = complete_words;
     return c;
 }

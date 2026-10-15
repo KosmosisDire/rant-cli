@@ -52,8 +52,20 @@ expect_match("${OUT}" "building demo\nrebuilt-demo\n")
 expect_match("${OUT}" "sensor +restarted +pid [0-9]+")
 file(WRITE "${SCRATCH}/demo/package.rant" "${demo}build = \"cmake -E false\"\n")
 rant(restart sensor FAILS)
-expect_match("${ERR}" "building demo failed: .* exited 1, starting the last build again")
+expect_match("${ERR}" "building demo failed: .* exited 1, starting the last build")
 expect_match("${OUT}" "sensor +restarted +pid [0-9]+")
+rant(restart sensor --no-build)
+expect_no_match("${OUT}" "building demo")
+file(WRITE "${SCRATCH}/demo/package.rant" "${demo}")
+
+# A node that is not running, one that crashed say, is built before it starts too, as run
+# builds what it starts.
+rant(stop sensor)
+file(WRITE "${SCRATCH}/demo/package.rant" "${demo}build = \"cmake -E echo rebuilt-demo\"\n")
+rant(restart sensor)
+expect_match("${ERR}" "`sensor` is not running, starting it")
+expect_match("${OUT}" "building demo\nrebuilt-demo\n")
+expect_match("${OUT}" "sensor +started +pid [0-9]+")
 file(WRITE "${SCRATCH}/demo/package.rant" "${demo}")
 
 rant(stop)
