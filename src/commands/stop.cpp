@@ -5,6 +5,7 @@
 #include "commands/commands.hpp"
 #include "commands/plan_output.hpp"
 #include "commands/run.hpp"
+#include "commands/summary.hpp"
 #include "complete/complete.hpp"
 #include "run/nodes.hpp"
 #include "ui/prompt.hpp"
@@ -18,17 +19,11 @@ static std::string list(const std::vector<std::string>& v) {
     return s;
 }
 
-static void report(app::Context& ctx, const std::string& name, process::Stopped how) {
-    switch (how) {
-    case process::Stopped::Gracefully:  ctx.out.line("stopped " + name); break;
-    case process::Stopped::Killed:
-        ctx.out.line("stopped " + name + ", killed after " + std::to_string(run::grace.count()) + " s");
-        break;
-    case process::Stopped::KilledAtOnce:
-        ctx.out.line("killed " + name + " (Windows cannot ask it to stop)");
-        break;
-    case process::Stopped::AlreadyGone: ctx.out.line(name + " had already exited"); break;
-    }
+/* Prints a stop's summary, closed by its counts. */
+static int done(Summary& summary) {
+    summary.closing = summary.counts();
+    summary.finish();
+    return 0;
 }
 
 /* The group names of an instance's roots, for a question before stopping it alone. */
@@ -72,11 +67,12 @@ static int stop_workspace(app::Context& ctx, const config::Workspace& ws) {
     ctx.out.line("nodes:  " + list(names));
     std::string n = std::to_string(names.size());
     if (!ui::confirm("Stop all " + n + (names.size() == 1 ? " node?" : " nodes?"), ctx.yes)) return 1;
-    for (auto it = st.instances.rbegin(); it != st.instances.rend(); ++it) report(ctx, it->name, run::halt(*it));
+    Summary summary(ctx, "");
+    for (auto it = st.instances.rbegin(); it != st.instances.rend(); ++it) summary.add(stopped_row(it->name, run::halt(*it)));
     st.instances.clear();
     st.roots.clear();
     s.save();
-    return 0;
+    return done(summary);
 }
 
 /* One workspace's state, locked until this command ends. */
@@ -167,15 +163,16 @@ static int stop_everything(app::Context& ctx) {
     for (auto& r : rows) ctx.out.line(r.first + ":" + std::string(width - r.first.size() + 2, ' ') + r.second);
     if (!ui::confirm("Stop all " + std::to_string(count) + (count == 1 ? " node?" : " nodes?"), ctx.yes)) return 1;
 
+    Summary summary(ctx, "");
     for (auto& h : held) {
         auto& st = h.state();
-        for (auto it = st.instances.rbegin(); it != st.instances.rend(); ++it) report(ctx, it->name, run::halt(*it));
+        for (auto it = st.instances.rbegin(); it != st.instances.rend(); ++it) summary.add(stopped_row(it->name, run::halt(*it)));
         st.instances.clear();
         st.roots.clear();
         h.store->save();
     }
-    for (auto& l : loose) report(ctx, l.name, process::stop_pid(l.pid, run::grace));
-    return 0;
+    for (auto& l : loose) summary.add(stopped_row(l.name, process::stop_pid(l.pid, run::grace)));
+    return done(summary);
 }
 
 /* Stops one node wherever on this machine it was started: by this workspace first, then by
@@ -201,18 +198,26 @@ static int stop_node(app::Context& ctx, const std::string& name) {
         std::string in = own(*h) ? "" : " in " + ctx.shown(h->root);
         if (!groups.empty() && !ui::confirm("`" + name + "` belongs to the running group " + list(groups) + in + ". Stop it anyway?", ctx.yes))
             return 1;
-        process::Stopped how = run::halt(*inst);
+    }
+    Summary summary(ctx, "");
+    for (auto& [h, inst] : found) {
+        Summary::Row row = stopped_row(name, run::halt(*inst));
+        if (!own(*h)) row.detail += (row.detail.empty() ? "" : ", ") + std::string("started in ") + ctx.shown(h->root);
         forget(h->state(), name);
         h->store->save();
-        report(ctx, name, how);
+        summary.add(row);
     }
-    if (!found.empty()) return 0;
+    if (!found.empty()) return done(summary);
 
     mesh::Client mesh(ctx.domain());
     mesh.settle();
     auto loose = loose_here(ctx, mesh, held, name);
-    for (auto& l : loose) report(ctx, l.name, process::stop_pid(l.pid, run::grace));
-    if (!loose.empty()) return 0;
+    for (auto& l : loose) {
+        Summary::Row row = stopped_row(l.name, process::stop_pid(l.pid, run::grace));
+        row.detail += (row.detail.empty() ? "" : ", ") + std::string("started outside rant");
+        summary.add(row);
+    }
+    if (!loose.empty()) return done(summary);
     for (auto& p : mesh.peers())
         if (p.name == name && !p.here)
             throw app::Failure("`" + name + "` is running on " + p.host() + ", rant only stops nodes on this machine");
@@ -251,14 +256,22 @@ static int stop_group(app::Context& ctx, const std::string& group, const std::ve
     run::Session s(ctx.require_workspace());
     auto roots = targets(ctx, s, group, params);
     if (roots.empty()) return 1;
+    std::string shown;
+    for (auto& [k, v] : roots.front().params) shown += (shown.empty() ? "" : " ") + k + "=" + v;
+    Summary summary(ctx, roots.front().name, roots.size() == 1 ? shown : "");
     for (auto& r : roots) {
         for (auto& rel : run::release_root(s, r.key())) {
-            if (rel.kept_for.empty()) report(ctx, rel.name, rel.how);
-            else ctx.out.line("kept " + rel.name + ", still needed by " + list(rel.kept_for));
+            if (rel.kept_for.empty()) {
+                summary.add(stopped_row(rel.name, rel.how));
+                continue;
+            }
+            std::vector<std::string> by;    /* group names, as the summary heads them */
+            for (auto& key : rel.kept_for) by.push_back(key.rfind("group ", 0) == 0 ? key.substr(6, key.find(' ', 6) - 6) : key);
+            summary.add({ rel.name, Summary::Mark::Running, "kept running", "still needed by " + list(by) });
         }
         s.save();
     }
-    return 0;
+    return done(summary);
 }
 
 static int run(app::Context& ctx) {

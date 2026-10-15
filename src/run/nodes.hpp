@@ -39,8 +39,14 @@ state::State snapshot(app::Context& ctx);
  * last run's log kept as <name>.log.1. Returns the record for the state, with no roots. */
 state::Instance spawn(const config::Workspace& ws, const config::Instance& inst, const std::string& name);
 
+/* An instance that exited, and how long after the watch began it was seen gone. */
+struct Exit {
+    const state::Instance*    instance;
+    std::chrono::milliseconds after;
+};
+
 /* The instances of started that exited within span, sooner once all of them have. */
-std::vector<const state::Instance*> exited_within(const std::vector<state::Instance>& started, std::chrono::milliseconds span);
+std::vector<Exit> exited_within(const std::vector<state::Instance>& started, std::chrono::milliseconds span);
 
 /* Stops an instance and everything it started: gracefully, then by force after grace. */
 process::Stopped halt(const state::Instance& inst);

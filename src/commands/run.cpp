@@ -2,98 +2,16 @@
 #include <optional>
 #include <set>
 
-#include <nlohmann/json.hpp>
-
 #include "app/failure.hpp"
 #include "commands/commands.hpp"
 #include "commands/plan_output.hpp"
 #include "commands/run.hpp"
+#include "commands/summary.hpp"
 #include "complete/complete.hpp"
-#include "run/logs.hpp"
 #include "run/nodes.hpp"
 #include "ui/prompt.hpp"
 
 namespace commands {
-
-using json = nlohmann::ordered_json;
-
-static std::string relative(const config::Workspace& ws, const std::string& path) {
-    std::error_code ec;
-    auto rel = config::fs::relative(config::from_utf8(path), ws.root, ec);
-    return ec || rel.empty() ? path : config::to_utf8(rel);
-}
-
-/* What run did for one node, printed as a line or a JSON object. */
-struct Outcome {
-    std::string name;
-    std::string action;    /* "started", "running", "shared" or "external" */
-    uint64_t    pid = 0;
-    std::string log;
-};
-
-static void report(app::Context& ctx, const config::Workspace& ws, const std::vector<Outcome>& done,
-                   const std::set<std::string>& exited = {}) {
-    if (ctx.json) {
-        json out = json::array();
-        for (auto& o : done) {
-            json j = { { "name", o.name }, { "action", o.action } };
-            if (o.action == "started") j["pid"] = o.pid, j["log"] = o.log, j["running"] = !exited.count(o.name);
-            out.push_back(j);
-        }
-        ctx.out.line(json{ { "nodes", out } }.dump(2));
-        return;
-    }
-    for (auto& o : done) {
-        if (o.action == "started")
-            ctx.out.line("started " + o.name + ", pid " + std::to_string(o.pid) + ", log " + relative(ws, o.log));
-        else if (o.action == "running")
-            ctx.out.line(o.name + " already running");
-        else if (o.action == "shared")
-            ctx.out.line(o.name + " already running, now shared");
-        else
-            ctx.out.line("using " + o.name + ", which rant did not start");
-    }
-}
-
-app::OptionSpec watch_option() {
-    return { "watch", 0, "S", "seconds to watch started nodes for an early exit, 2 by default, 0 for none" };
-}
-
-static std::string seconds(double s) {
-    std::string t = std::to_string(s);
-    t.erase(t.find_last_not_of('0') + 1);
-    if (t.back() == '.') t.pop_back();
-    return t;
-}
-
-int watch_started(app::Context& ctx, const config::Workspace& ws, const std::vector<state::Instance>& started,
-                  std::set<std::string>* exited) {
-    double span = 2;
-    if (auto w = ctx.args.get("watch")) {
-        char* end = nullptr;
-        span = std::strtod(w->c_str(), &end);
-        if (end == w->c_str() || *end || span < 0) throw app::UsageError("--watch takes seconds, 0 or more");
-    }
-    if (span == 0 || started.empty()) return 0;
-    auto gone = run::exited_within(started, std::chrono::milliseconds((long long)(span * 1000)));
-    for (auto* i : gone) {
-        if (exited) exited->insert(i->name);
-        ctx.out.error(i->name + " exited within " + seconds(span) + " s, the end of " + relative(ws, i->log) + ":");
-        for (auto& l : run::tail(config::from_utf8(i->log), 10)) ctx.out.note("  " + ctx.out.paint_err(ui::Style::Dim, l));
-    }
-    return gone.empty() ? 0 : 1;
-}
-
-/* Prints what run did, then watches what it started. The state is unlocked by then, so
- * other commands need not wait. */
-static int finish(app::Context& ctx, const config::Workspace& ws, const std::vector<Outcome>& done,
-                  const std::vector<state::Instance>& started) {
-    if (!ctx.json) report(ctx, ws, done);
-    std::set<std::string> exited;
-    int code = watch_started(ctx, ws, started, &exited);
-    if (ctx.json) report(ctx, ws, done, exited);
-    return code;
-}
 
 /* One node of a node type, named after it. Running the same type again gives the copy a
  * free name, talker_1, then talker_2, since two nodes of one name collide on the mesh. */
@@ -127,7 +45,9 @@ int run_node(app::Context& ctx, const std::string& ref) {
         s.state().instances.push_back(rec);
         s.save();
     }
-    return finish(ctx, *plan.workspace, { { rec.name, "started", rec.tracking.pid, rec.log } }, { rec });
+    Summary summary(ctx, "");
+    summary.add(started_row(rec));
+    return bring_up(ctx, summary, { rec }, "", "started");
 }
 
 static void group_help(app::Context& ctx, const std::string& group) {
@@ -190,7 +110,9 @@ int run_group(app::Context& ctx, const std::string& group, const std::vector<std
     }
 
     if (!s.state().root(root.key())) s.state().roots.push_back(root);
-    std::vector<Outcome> done;
+    std::string shown;
+    for (auto& [k, v] : plan.params) shown += (shown.empty() ? "" : " ") + k + "=" + v;
+    Summary summary(ctx, plan.group, shown);
     std::vector<state::Instance> started;
     try {
         for (size_t i = 0; i < plan.instances.size(); i++) {
@@ -200,23 +122,26 @@ int run_group(app::Context& ctx, const std::string& group, const std::vector<std
                 rec.roots.push_back(root.key());
                 s.state().instances.push_back(rec);
                 started.push_back(rec);
-                done.push_back({ inst.name, "started", rec.tracking.pid, rec.log });
+                summary.add(started_row(rec));
             } else if (actions[i] == "shared" || actions[i] == "running") {
                 state::Instance* running = s.state().instance(inst.name);
+                std::string with;
+                for (auto& key : running->roots)
+                    if (const state::Root* r = s.state().root(key)) with += (with.empty() ? "" : ", ") + r->name;
                 if (actions[i] == "shared") running->roots.push_back(root.key());
-                done.push_back({ inst.name, actions[i], running->tracking.pid, running->log });
+                summary.add({ inst.name, Summary::Mark::Running, "already running", actions[i] == "shared" ? "shared with " + with : "" });
             } else {
-                done.push_back({ inst.name, "external", 0, {} });
+                summary.add({ inst.name, Summary::Mark::Running, "already running", "started outside rant" });
             }
         }
     } catch (...) {
         s.save();    /* what did start stays tracked */
-        report(ctx, s.workspace(), done);
+        summary.finish();
         throw;
     }
     s.save();
     held.reset();    /* unlocks the state before the watch */
-    return finish(ctx, *plan.workspace, done, started);
+    return bring_up(ctx, summary, started, plan.group, "started");
 }
 
 static void fail_with(app::Context& ctx, const std::vector<config::Diagnostic>& diagnostics) {
@@ -269,7 +194,7 @@ static complete::Candidates complete_words(complete::Request& r) {
 app::Command run_() {
     app::Command c{ "run", "<group> [key=value...] | node <node>",
                     "start a group, or one node, detached, logging to the logs folder", app::Section::Workspace,
-                    { { "dry-run", 0, "", "show what would run without starting it" }, watch_option() }, run };
+                    { { "dry-run", 0, "", "show what would run without starting it" }, wait_option(), watch_option() }, run };
     c.own_help = true;
     c.complete = complete_words;
     return c;

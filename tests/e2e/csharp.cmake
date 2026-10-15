@@ -17,16 +17,17 @@ expect_match("${OUT}" "1. panel\n +dotnet build .*/panel/panel.csproj\n")
 rant(run node panel FAILS)
 expect_match("${ERR}" "`panel/panel` is not built yet, run `rant build panel` first")
 
-# Built, it is found, started, listed and stopped like any other node.
+# Built, it is found, started, listed and stopped like any other node. This stand in never
+# joins the mesh, so the run does not wait for it.
 rant(build)
 expect_match("${OUT}" "built 1 package")
 rant(build --dry-run)
 expect_match("${OUT}" "panel/panel +csharp +panel/bin/[^\n]*/panel")
-rant(run node panel)
-expect_match("${OUT}" "^started panel,")
+rant(run node panel --wait 0)
+expect_match("${OUT}" "panel +started")
 rant(ls nodes)
 expect_match("${OUT}" "NODES\n  panel\n")
 rant(stop panel)
-expect_match("${OUT}" "^stopped panel\n")
+expect_match("${OUT}" "panel +stopped\n")
 file(READ "${SCRATCH}/logs/panel.log" log)
 expect_match("${log}" "ready panel")

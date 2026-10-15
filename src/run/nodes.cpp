@@ -28,13 +28,14 @@ static std::string job_name(const config::fs::path& root, const std::string& nam
     return "Local\\rant-" + util::path_key(root).substr(0, 12) + "-" + safe;
 }
 
-std::vector<const state::Instance*> exited_within(const std::vector<state::Instance>& started, std::chrono::milliseconds span) {
-    auto end = std::chrono::steady_clock::now() + span;
+std::vector<Exit> exited_within(const std::vector<state::Instance>& started, std::chrono::milliseconds span) {
+    auto begin = std::chrono::steady_clock::now(), end = begin + span;
+    std::vector<Exit> out;
     for (;;) {
-        std::vector<const state::Instance*> out;
-        for (auto& i : started)
-            if (!process::alive(i.tracking)) out.push_back(&i);
         auto now = std::chrono::steady_clock::now();
+        for (auto& i : started)
+            if (std::none_of(out.begin(), out.end(), [&](const Exit& e) { return e.instance == &i; }) && !process::alive(i.tracking))
+                out.push_back({ &i, std::chrono::duration_cast<std::chrono::milliseconds>(now - begin) });
         if (out.size() == started.size() || now >= end) return out;
         std::this_thread::sleep_for(std::min<std::chrono::steady_clock::duration>(std::chrono::milliseconds(100), end - now));
     }

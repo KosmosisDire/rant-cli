@@ -4,6 +4,7 @@
 #include <nlohmann/json.hpp>
 
 #include "app/failure.hpp"
+#include "commands/build.hpp"
 #include "commands/commands.hpp"
 #include "commands/plan_output.hpp"
 #include "complete/complete.hpp"
@@ -114,14 +115,7 @@ static void run_command(const config::BuildStep& s, const std::vector<std::strin
         throw app::Failure("building " + s.package + " failed: `" + process::shown(argv) + "` exited " + std::to_string(code));
 }
 
-static int run(app::Context& ctx) {
-    const config::Workspace& ws = ctx.require_workspace(true);
-    config::Build b = config::plan_build(ctx.cwd(), ctx.args.words);
-    require(ctx, b.diagnostics);
-    if (ctx.args.has("dry-run")) {
-        dry_run(ctx, ws, b);
-        return 0;
-    }
+int build_steps(app::Context& ctx, const config::Build& b) {
     int built = 0;
     for (auto& s : b.steps) {
         if (s.configure.empty() && s.commands.empty()) continue;
@@ -135,6 +129,18 @@ static int run(app::Context& ctx) {
         for (auto& c : s.commands) run_command(s, c);
         built++;
     }
+    return built;
+}
+
+static int run(app::Context& ctx) {
+    const config::Workspace& ws = ctx.require_workspace(true);
+    config::Build b = config::plan_build(ctx.cwd(), ctx.args.words);
+    require(ctx, b.diagnostics);
+    if (ctx.args.has("dry-run")) {
+        dry_run(ctx, ws, b);
+        return 0;
+    }
+    int built = build_steps(ctx, b);
     if (built == 0) ctx.out.line("nothing to build: no package here has a build step");
     else ctx.out.line("built " + std::to_string(built) + (built == 1 ? " package" : " packages"));
     std::vector<std::string> groups, nodes;
