@@ -1,5 +1,7 @@
 #pragma once
 
+#include <filesystem>
+#include <functional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -21,5 +23,16 @@ std::vector<const Shell*> detected();
 /* Writes the hook under ~/.rant and makes the shell load it, once however often it runs.
  * Returns where it loads from. Throws app::Failure. */
 std::string install(const Shell& shell);
+
+/* One thing setup or an install script added outside ~/.rant: where it is, what part of
+ * that it is when not all of it, and how to take it out again. */
+struct Added {
+    std::filesystem::path path;
+    std::string           part;
+    std::function<void()> remove;
+};
+
+/* What is there now of the lines and files that load rant into shells and put it on PATH. */
+std::vector<Added> added();
 
 }

@@ -15,6 +15,11 @@ inline constexpr const char* rant_repo = "KosmosisDire/Rant";
 /* The Rant release asked for, the latest when version is empty. Throws app::Failure. */
 net::Release release(const std::string& version);
 
+/* The local NuGet feed under ~/.rant that C# packages get Rant from, and whether dotnet's
+ * user config names it. */
+std::filesystem::path nuget_feed();
+bool nuget_feed_added();
+
 /* Adds the release to the build files of dir that do not use Rant yet. Prints a line per
  * file and returns false when any failed. Throws app::Failure when dir has no build file. */
 bool install(const app::Context& ctx, const std::filesystem::path& dir, const net::Release& r);

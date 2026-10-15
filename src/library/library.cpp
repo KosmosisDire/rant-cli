@@ -69,21 +69,27 @@ static fs::path nuget_config() {
 #endif
 }
 
+fs::path nuget_feed() { return (util::rant_home() / "nuget").make_preferred(); }
+
+bool nuget_feed_added() {
+    std::string text;
+    {    /* closed before dotnet writes it, which Windows refuses while it is open */
+        std::ifstream in(nuget_config(), std::ios::binary);
+        text.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+    }
+    fs::path feed = nuget_feed();
+    return text.find(feed.u8string()) != std::string::npos || text.find(config::to_utf8(feed)) != std::string::npos;
+}
+
 /* The Rant package is not on nuget.org yet, so it goes to a feed under ~/.rant that dotnet
  * is told about once. */
 static void install_nupkg(const app::Context& ctx, const net::Release& r) {
     std::string name = "Rant." + r.version + ".nupkg";
     const net::Asset* a = r.asset(name);
     if (!a) throw app::Failure("Rant " + r.version + " has no " + name);
-    fs::path feed = (util::rant_home() / "nuget").make_preferred();
+    fs::path feed = nuget_feed();
     if (!fs::exists(feed / name)) net::download(a->url, feed / name);
-
-    std::string text;
-    {    /* closed before dotnet writes it, which Windows refuses while it is open */
-        std::ifstream in(nuget_config(), std::ios::binary);
-        text.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
-    }
-    if (text.find(feed.u8string()) != std::string::npos || text.find(config::to_utf8(feed)) != std::string::npos) return;
+    if (nuget_feed_added()) return;
     if (!process::find_program("dotnet", ctx.cwd())) throw app::Failure("dotnet not found, install the .NET SDK");
     ctx.out.note("adding the NuGet feed " + config::to_utf8(feed));
     if (process::run({ { "dotnet", "nuget", "add", "source", feed.u8string(), "--name", "rant" }, ctx.cwd(), {} }) != 0)

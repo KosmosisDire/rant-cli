@@ -18,6 +18,9 @@ struct Agent {
 /* The agents whose folder is in the home folder. */
 std::vector<Agent> detected();
 
+/* Every folder of skills any known agent reads, found or not, each once. */
+std::vector<fs::path> skill_folders();
+
 /* Writes the skill as rant/ in skills, replacing what an older one left. Returns where.
  * Throws app::Failure. */
 fs::path install(const fs::path& skills);

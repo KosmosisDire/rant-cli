@@ -30,5 +30,6 @@ app::Command setup();
 app::Command lib();
 app::Command explore();
 app::Command update();
+app::Command uninstall();
 
 }

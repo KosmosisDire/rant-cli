@@ -193,6 +193,90 @@ static std::string install_powershell(const Shell& shell, const fs::path& hook) 
     return "loads from its profile";
 }
 
+/* Drops the lines of a file that drop matches, each with a blank line right before it,
+ * which the install script writes, and puts the rest in rest when given. False when
+ * nothing matched. */
+static bool drop_lines(const fs::path& file, const std::function<bool(const std::string&)>& drop, std::string* rest) {
+    std::ifstream in(file, std::ios::binary);
+    if (!in) return false;
+    std::vector<std::string> lines;
+    for (std::string l; std::getline(in, l);) lines.push_back(l);
+    bool any = false;
+    std::vector<std::string> kept;
+    for (auto& l : lines) {
+        std::string bare = !l.empty() && l.back() == '\r' ? l.substr(0, l.size() - 1) : l;
+        if (!drop(bare)) {
+            kept.push_back(l);
+            continue;
+        }
+        any = true;
+        if (!kept.empty() && (kept.back().empty() || kept.back() == "\r")) kept.pop_back();
+    }
+    if (rest)
+        for (auto& l : kept) *rest += l + "\n";
+    return any;
+}
+
+/* A file whose matching lines go when the remover runs. */
+static void lines_in(std::vector<Added>& out, const fs::path& file, std::function<bool(const std::string&)> drop) {
+    if (!drop_lines(file, drop, nullptr)) return;
+    out.push_back({ file, "its rant lines", [file, drop] {
+                       std::string rest;
+                       drop_lines(file, drop, &rest);
+                       std::ofstream o(file, std::ios::binary | std::ios::trunc);
+                       o << rest;
+                       if (!o) throw app::Failure("cannot write " + file.u8string());
+                   } });
+}
+
+/* A file that is wholly rant's, when what it holds shows that. */
+static void file_of_rant(std::vector<Added>& out, const fs::path& file, const std::string& mark) {
+    std::ifstream in(file, std::ios::binary);
+    std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    if (text.find(mark) == std::string::npos) return;
+    out.push_back({ file, "", [file] {
+                       std::error_code ec;
+                       if (!fs::remove(file, ec) && ec) throw app::Failure("cannot remove " + file.u8string());
+                   } });
+}
+
+std::vector<Added> added() {
+    std::vector<Added> out;
+    fs::path h = util::home_dir();
+    if (h.empty()) return out;
+    /* the install script marks its PATH line, setup writes its hook line exactly so */
+    auto posix = [&](const std::string& hook_name) {
+        fs::path hook = hook_file(hook_name);
+        std::string line = "[ -f " + sh_quoted(hook) + " ] && . " + sh_quoted(hook);
+        return [line](const std::string& l) {
+            return l == line || (l.find("export PATH=") == 0 && l.size() > 10 && l.compare(l.size() - 10, 10, "# rant-cli") == 0);
+        };
+    };
+    fs::path zdot = util::env_path("ZDOTDIR");
+    lines_in(out, h / ".bashrc", posix("rant.bash"));
+    lines_in(out, (zdot.empty() ? h : zdot) / ".zshrc", posix("rant.zsh"));
+    lines_in(out, h / ".profile", posix("rant.bash"));
+    fs::path config = util::env_path("XDG_CONFIG_HOME");
+    if (config.empty()) config = h / ".config";
+    file_of_rant(out, config / "fish" / "conf.d" / "rant.fish", "# rant-cli");
+    file_of_rant(out, config / "fish" / "completions" / "rant.fish", "rant __complete");
+#ifdef _WIN32
+    /* only PowerShell knows where its profile is, and it is asked as setup asks it */
+    std::string line = "if (Test-Path " + ps_quoted(hook_file("rant.ps1").u8string()) + ") { . " + ps_quoted(hook_file("rant.ps1").u8string()) + " }";
+    for (const char* exe : { "powershell", "pwsh" }) {
+        if (!process::find_program(exe, fs::temp_directory_path())) continue;
+        auto profile = process::output({ { exe, "-NoProfile", "-NoLogo", "-NonInteractive", "-Command", "$PROFILE" },
+                                         fs::temp_directory_path(), {}, { "PSModulePath" } });
+        if (!profile) continue;
+        std::string p = *profile;
+        while (!p.empty() && (p.back() == '\n' || p.back() == '\r')) p.pop_back();
+        if (p.empty()) continue;
+        lines_in(out, fs::u8path(p), [line](const std::string& l) { return l == line; });
+    }
+#endif
+    return out;
+}
+
 std::string install(const Shell& shell) {
     if (shell.name == "fish") {
         fs::path config = util::env_path("XDG_CONFIG_HOME");

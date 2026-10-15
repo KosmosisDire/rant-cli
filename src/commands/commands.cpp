@@ -23,6 +23,7 @@ const std::vector<app::Command>& all() {
         setup(),
         lib(),
         update(),
+        uninstall(),
         explore(),
     };
     return list;
