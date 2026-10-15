@@ -20,7 +20,7 @@ expect_match("${ERR}" "param `speed` takes a float")
 rant(run nav colour=red FAILS)
 expect_match("${ERR}" "group `nav` has no param `colour`")
 rant(run nowhere FAILS)
-expect_match("${ERR}" "no group or node named `nowhere`")
+expect_match("${ERR}" "no group named `nowhere`, see `rant ls groups`")
 
 # Two groups share lidar and odom. A group named against the convention is noted.
 rant(run nav)
@@ -51,7 +51,7 @@ file(COPY "${SCRATCH}/demo" DESTINATION "${OTHER}")
 file(WRITE "${OTHER}/workspace.rant" "")
 file(WRITE "${OTHER}/demo/package.rant"
      "name = \"demo\"\nnode \"planner\" {\n  run = [\"./bin/test_node\", \"--life\", \"60\"]\n}\n")
-rant(run planner IN "${OTHER}")
+rant(run node planner IN "${OTHER}")
 rant(run nav)
 expect_match("${ERR}" "`planner` already runs on the mesh, but rant did not start it. Use it for nav\\? \\[y/N\\] y")
 expect_match("${OUT}" "using planner, which rant did not start")

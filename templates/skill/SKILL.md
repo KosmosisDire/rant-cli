@@ -41,11 +41,11 @@ to override something. A folder may be a workspace and a package, with both file
 | new project | `rant new workspace [folder] --lang cpp\|python\|csharp` (talker, listener, group) |
 | new package or node | `rant new package [folder] --lang L`, `rant new node [name]`, `rant new group [name]` |
 | build | `rant build [package...]`, `--dry-run` shows order and commands |
-| run | `rant run <group> key=value...` or `rant run <node>`, `--dry-run` first. It watches for 2 s and fails with the log of a node that exited |
+| run | `rant run <Group> key=value...`, one node alone with `rant run node <node>`, `--dry-run` first. It watches for 2 s and fails with the log of a node that exited |
 | stop, restart | `rant stop [name]` (nothing named: all this workspace started), `rant stop --all` (every node on this machine), `rant restart [name]` |
 | node output | `rant log [name...]`, `-f` to follow, `-n N` lines, a group shows all its nodes |
-| see the mesh | `rant ls [nodes\|entities\|topics\|variables\|functions\|tasks\|packages\|groups]` |
-| explain one thing | `rant info [kind] <name>` |
+| see the mesh | `rant ls [nodes\|entities\|topics\|variables\|functions\|tasks\|types\|packages\|groups]` |
+| explain one thing | `rant info [kind] <name>`, a type shows its fields and who uses it |
 | read and write | `rant sub <topic> -n 1`, `rant pub <topic> <value>`, `rant get <var>`, `rant set <var> <value>`, `rant call <fn> [value]` |
 | Rant version in packages | `rant lib [folder]` shows it, `rant lib install [folder]` adds it, `rant lib update [folder]` moves it, both take `--version V` |
 | update | `rant update`: the CLI, the explorer and the skill where installed, then the workspace's packages |
@@ -204,6 +204,7 @@ rant_queue_dispatch(q, 0, 100);              /* on the thread that runs them */
   - Entities and namespaces are PascalCase, `/` between levels: `FrontLidar/JointState`,
     `Line1/Conveyor`. So are types and enum options.
   - Groups are PascalCase and end in Group: `NavGroup.rungroup`, run as `rant run NavGroup`.
+    A group is how a system starts, so give every system one, even of one node.
     `rant new group` names them so.
   - Fields are snake_case on the wire. Write them in the language's style (`frame_id` in
     Python, `FrameId` in C#) and Rant converts, so both are `frame_id`.

@@ -14,7 +14,7 @@ expect_match("${OUT}" "panel/panel +csharp +panel/panel.csproj")
 expect_match("${OUT}" "1. panel\n +dotnet build .*/panel/panel.csproj\n")
 
 # It cannot start before it is built.
-rant(run panel FAILS)
+rant(run node panel FAILS)
 expect_match("${ERR}" "`panel/panel` is not built yet, run `rant build panel` first")
 
 # Built, it is found, started, listed and stopped like any other node.
@@ -22,7 +22,7 @@ rant(build)
 expect_match("${OUT}" "built 1 package")
 rant(build --dry-run)
 expect_match("${OUT}" "panel/panel +csharp +panel/bin/[^\n]*/panel")
-rant(run panel)
+rant(run node panel)
 expect_match("${OUT}" "^started panel,")
 rant(ls nodes)
 expect_match("${OUT}" "NODES\n  panel\n")

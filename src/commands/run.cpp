@@ -232,34 +232,41 @@ bool names_group(app::Context& ctx, const std::string& name) {
     return false;
 }
 
+/* A group is what a system runs as, so a bare name is a group. One node alone is asked for
+ * with the word node, for trying it out. */
 static int run(app::Context& ctx) {
     auto& w = ctx.args.words;
+    bool node = !w.empty() && w[0] == "node";
     std::optional<config::Named> n;
-    if (!w.empty()) n = config::named(ctx.cwd(), w[0]);
-    if (ctx.args.has("help") && !(n && n->group && !n->node)) {
+    if (!w.empty() && !node) n = config::named(ctx.cwd(), w[0]);
+    if (ctx.args.has("help") && !(n && n->group)) {
         ctx.out.line(app::command_help(run_()));
         return 0;
     }
-    if (!n) throw app::UsageError("say what to run: `rant run <group> [key=value...]` or `rant run <node>`");
-    if (n->group == n->node) fail_with(ctx, n->diagnostics);
+    if (w.empty()) throw app::UsageError("say which group to run: `rant run <group>`, or one node with `rant run node <node>`");
+    if (node) {
+        if (w.size() != 2) throw app::UsageError("run node takes one node, such as `rant run node talker`");
+        return run_node(ctx, w[1]);
+    }
     if (n->group) return run_group(ctx, w[0], { w.begin() + 1, w.end() });
-    if (w.size() != 1) throw app::UsageError("a node takes no key=value, only a group does");
-    return run_node(ctx, w[0]);
+    if (n->node) throw app::UsageError("`" + w[0] + "` is a node, run it in a group or alone with `rant run node " + w[0] + "`");
+    throw app::Failure("no group named `" + w[0] + "`, see `rant ls groups`");
 }
 
 static complete::Candidates complete_words(complete::Request& r) {
     auto& w = r.words;
     if (w.empty()) {
         std::vector<std::string> out = r.groups();
-        for (auto& n : r.node_types()) out.push_back(n);
+        out.push_back("node");
         return { out };
     }
+    if (w[0] == "node") return { w.size() == 1 ? r.node_types() : std::vector<std::string>{} };
     return { complete::params(r.group(w[0]), r.partial, { w.begin() + 1, w.end() }) };
 }
 
 app::Command run_() {
-    app::Command c{ "run", "<group> [key=value...] | <node>",
-                    "start a group or a node, detached, logging to the logs folder", app::Section::Workspace,
+    app::Command c{ "run", "<group> [key=value...] | node <node>",
+                    "start a group, or one node, detached, logging to the logs folder", app::Section::Workspace,
                     { { "dry-run", 0, "", "show what would run without starting it" }, watch_option() }, run };
     c.own_help = true;
     c.complete = complete_words;

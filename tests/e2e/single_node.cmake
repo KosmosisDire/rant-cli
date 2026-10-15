@@ -4,7 +4,7 @@ use_fixture(nodes)
 install_test_node("demo/bin")
 
 # A node starts detached and shows in ls.
-rant(run chatty)
+rant(run node chatty)
 expect_match("${OUT}" "^started chatty, pid [0-9]+, log logs/chatty.log")
 rant(ls nodes)
 expect_match("${OUT}" "NODES\n  chatty\n")
@@ -12,7 +12,7 @@ rant(sub chatter --count 2)
 expect_match("${OUT}" "seq")
 
 # Starting the same type again gives the copy a free name.
-rant(run chatty)
+rant(run node chatty)
 expect_match("${OUT}" "^started chatty_1,")
 rant(stop chatty_1)
 expect_match("${OUT}" "stopped chatty_1")
@@ -25,13 +25,13 @@ expect_match("${log}" "ready")
 expect_match("${log}" "stopped")
 
 # A node that ignores the request is killed after the grace period.
-rant(run stubborn)
+rant(run node stubborn)
 rant(stop stubborn)
 expect_match("${OUT}" "killed after")
 
 # A node that exits within the watch fails the run with the end of its log, and is pruned
 # at the next command.
-rant(run brief FAILS)
+rant(run node brief FAILS)
 expect_match("${ERR}" "brief exited within 2 s, the end of logs/brief[.]log:")
 rant(ls)
 expect_no_match("${OUT}" "brief")
@@ -39,10 +39,12 @@ rant(stop brief FAILS)
 expect_match("${ERR}" "no node `brief` on domain")
 
 # Mistakes are named.
-rant(run nope FAILS)
-expect_match("${ERR}" "no group or node named `nope`")
+rant(run node nope FAILS)
+expect_match("${ERR}" "no node named `nope`")
+rant(run chatty FAILS)
+expect_match("${ERR}" "`chatty` is a node, run it in a group or alone with `rant run node chatty`")
 rant(run FAILS)
-expect_match("${ERR}" "say what to run")
+expect_match("${ERR}" "say which group to run")
 
 file(READ "${SCRATCH}/.rant/state" st)
 expect_match("${st}" "\"instances\": \\[\\]")
@@ -51,7 +53,7 @@ expect_match("${st}" "\"instances\": \\[\\]")
 file(MAKE_DIRECTORY "${OTHER}")
 file(COPY "${SCRATCH}/demo" DESTINATION "${OTHER}")
 file(WRITE "${OTHER}/workspace.rant" "")
-rant(run chatty IN "${OTHER}")
+rant(run node chatty IN "${OTHER}")
 rant(stop chatty)
 expect_match("${OUT}" "^stopped chatty\n")
 rant(ls IN "${OTHER}")
@@ -63,12 +65,12 @@ expect_match("${OUT}" "(stopped|killed) handmade")
 
 # --all stops every node on the machine, whichever workspace started it, and so does a
 # bare stop outside any workspace.
-rant(run chatty IN "${OTHER}")
-rant(run chatty)
+rant(run node chatty IN "${OTHER}")
+rant(run node chatty)
 rant(stop --all)
 expect_match("${OUT}" "-other: +chatty\n")
 expect_match("${ERR}" "Stop all 2 nodes")
-rant(run chatty IN "${OTHER}")
+rant(run node chatty IN "${OTHER}")
 set(outside "${SCRATCH}-outside")
 file(MAKE_DIRECTORY "${outside}")
 rant(stop IN "${outside}")
