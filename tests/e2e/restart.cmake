@@ -17,9 +17,9 @@ rant(ls nodes)
 expect_match("${OUT}" "NODES\n  nav:\n    lidar\n    odom\n    planner\n\nNOT RUNNING")
 
 # A group restarts as it is configured now: an edit is picked up, a dropped node stops.
-file(READ "${SCRATCH}/nav.rungroup" nav)
+file(READ "${SCRATCH}/nav.run" nav)
 string(REPLACE "\"--fn\", \"speed_\${param.speed}\"" "\"--fn\", \"turn\"" nav "${nav}")
-file(WRITE "${SCRATCH}/nav.rungroup" "${nav}")
+file(WRITE "${SCRATCH}/nav.run" "${nav}")
 rant(restart nav)
 expect_match("${OUT}" "lidar +restarted +pid [0-9]+.*\n.*odom +restarted +pid [0-9]+.*\n.*planner +restarted +pid [0-9]+")
 rant(info node planner)

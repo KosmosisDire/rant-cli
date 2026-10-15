@@ -1,5 +1,5 @@
 //! The walk that finds packages, group files and Python nodes: every directory under the
-//! workspace root that has a `package.rant` or a manifest that uses Rant, every `.rungroup`
+//! workspace root that has a `package.rant` or a manifest that uses Rant, every `.run`
 //! file, and every Python file that is a node, skipping gitignored paths and the workspace
 //! `ignore` globs.
 

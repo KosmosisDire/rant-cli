@@ -1,6 +1,6 @@
 ---
 name: rant
-description: Rant robotics middleware and the rant CLI. Use when a project uses Rant (workspace.rant, package.rant, *.rungroup, rant.hpp, import rant, using Rant) or the user asks to make, build, run, debug or inspect Rant nodes, topics, variables, functions or tasks.
+description: Rant robotics middleware and the rant CLI. Use when a project uses Rant (workspace.rant, package.rant, *.run, rant.hpp, import rant, using Rant) or the user asks to make, build, run, debug or inspect Rant nodes, topics, variables, functions or tasks.
 ---
 
 # Rant
@@ -23,7 +23,7 @@ writes the mesh. Full docs: https://docs.rantlib.dev/llms.txt (fetch the page yo
 ```
 cell/                     workspace: the folder holding workspace.rant
   workspace.rant
-  CellGroup.rungroup      a group: which nodes run together, and how
+  CellGroup.run           a group: which nodes run together, and how
   drivers/                a package: CMakeLists.txt, pyproject.toml or a .csproj that uses Rant
     CMakeLists.txt
     lidar.cpp             a node: one program
@@ -70,7 +70,7 @@ package.rant in a package: `name`, `build` (commands replacing the default),
 `depend` (package names built first), `ignore`, `python` (the interpreter), and
 `node "name" { run = "./tool --flag" }` for programs rant cannot find itself.
 
-A group is `<Name>Group.rungroup`:
+A group is `<Name>Group.run`:
 
 ```hcl
 description = "Both arms"
@@ -203,7 +203,7 @@ rant_queue_dispatch(q, 0, 100);              /* on the thread that runs them */
     node for what it is (`lidar`, not `lidar_node`).
   - Entities and namespaces are PascalCase, `/` between levels: `FrontLidar/JointState`,
     `Line1/Conveyor`. So are types and enum options.
-  - Groups are PascalCase and end in Group: `NavGroup.rungroup`, run as `rant run NavGroup`.
+  - Groups are PascalCase and end in Group: `NavGroup.run`, run as `rant run NavGroup`.
     A group is how a system starts, so give every system one, even of one node.
     `rant new group` names them so.
   - Fields are snake_case on the wire. Write them in the language's style (`frame_id` in

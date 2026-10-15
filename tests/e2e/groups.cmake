@@ -79,7 +79,7 @@ expect_match("${OUT}" "nothing started here is running")
 
 # Placement: prefixes join from the workspace in, and the node prefix is part of the name.
 file(WRITE "${SCRATCH}/workspace.rant" "prefix = \"plant\"\n")
-file(WRITE "${SCRATCH}/cell.rungroup"
+file(WRITE "${SCRATCH}/cell.run"
      "node_prefix = \"left\"\nprefix      = \"left\"\nnode \"sensor\" {\n  name = \"lidar\"\n}\n")
 rant(run cell --dry-run --json)
 expect_match("${OUT}" "\"name\": \"left/lidar\"")

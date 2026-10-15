@@ -21,8 +21,8 @@ use crate::param::{self, Param};
 use crate::placement::{self, Placement};
 use crate::source::{one_label, Fields, Loc, Source};
 
-/// What makes a file a group: `Nav.rungroup` is the group `Nav`.
-pub const SUFFIX: &str = ".rungroup";
+/// What makes a file a group: `Nav.run` is the group `Nav`.
+pub const SUFFIX: &str = ".run";
 
 /// A group file and the name it goes by: `package/stem` inside a package, else `stem`.
 #[derive(Debug, Clone)]

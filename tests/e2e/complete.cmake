@@ -17,7 +17,7 @@ endfunction()
 
 use_fixture(groups)
 install_test_node(demo/bin)
-file(WRITE "${SCRATCH}/opts.rungroup" [[
+file(WRITE "${SCRATCH}/opts.run" [[
 param "target" {
   type    = string
   default = "red_bin"
