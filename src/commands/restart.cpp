@@ -32,8 +32,10 @@ static config::Plan replan(app::Context& ctx, const state::Root& root, const sta
 }
 
 /* Builds the packages whose nodes the plans run, and what they depend on, so a restart runs
- * the code as it is now. A failed build throws before anything stops. */
-static void rebuild(app::Context& ctx, const std::vector<config::Plan>& plans) {
+ * the code as it is now. It runs once the nodes have stopped, since a running program
+ * cannot be overwritten on Windows. A failed build is reported and false, and the nodes
+ * start again from what is on disk, the last build that worked. */
+static bool rebuild(app::Context& ctx, const std::vector<config::Plan>& plans) {
     const config::Workspace& ws = ctx.require_workspace(true);
     std::vector<std::string> packages;
     for (auto& plan : plans)
@@ -42,16 +44,19 @@ static void rebuild(app::Context& ctx, const std::vector<config::Plan>& plans) {
             bool known = std::any_of(ws.packages.begin(), ws.packages.end(), [&](const config::Package& p) { return p.name == pkg; });
             if (known && std::find(packages.begin(), packages.end(), pkg) == packages.end()) packages.push_back(pkg);
         }
-    if (packages.empty()) return;
+    if (packages.empty()) return true;
     config::Build b = config::plan_build(ctx.cwd(), packages);
-    if (!b.diagnostics.empty()) {
-        for (auto& d : b.diagnostics) ctx.out.error(d.str());
-        throw app::Failure("nothing was restarted");
-    }
     try {
+        if (!b.diagnostics.empty()) {
+            for (auto& d : b.diagnostics) ctx.out.error(d.str());
+            throw app::Failure("the build could not be planned");
+        }
         if (build_steps(ctx, b) > 0) ctx.out.line();
+        return true;
     } catch (const app::Failure& e) {
-        throw app::Failure(std::string(e.what()) + ", nothing was restarted");
+        ctx.out.error(std::string(e.what()) + ", starting the last build again");
+        ctx.out.line();
+        return false;
     }
 }
 
@@ -62,72 +67,63 @@ static Summary::Row restarted_row(const state::Instance& rec, process::Stopped h
     return r;
 }
 
-/* Restarts one node under its name and roots, with the spec its first root plans now. */
-static state::Instance restart_instance(run::Session& s, const std::string& name, const config::Instance& planned,
-                                        Summary& summary) {
-    state::Instance* inst = s.state().instance(name);
-    process::Stopped how = run::halt(*inst);
-    std::vector<std::string> roots = inst->roots;
-    state::Instance rec = run::spawn(s.workspace(), planned, name);
-    rec.roots = roots;
-    *s.state().instance(name) = rec;
-    s.save();
-    summary.add(restarted_row(rec, how));
-    return rec;
-}
+/* A root to restart: its plan as configured now, and the one node of it when only that. */
+struct Target {
+    state::Root  root;
+    config::Plan plan;
+    std::string  only;
+};
 
-/* The restarted node, returned once the state is unlocked again. */
-static state::Instance restart_node(app::Context& ctx, const std::string& name, Summary& summary) {
-    run::Session s(ctx.require_workspace());
-    state::Instance* inst = s.state().instance(name);
-    if (!inst) throw app::Failure("no node `" + name + "` started here, see `rant ls nodes`");
-    const state::Root* root = s.state().root(inst->roots.front());
-    if (!root) throw app::Failure("rant lost track of `" + name + "`, stop and start it again");
-    config::Plan plan = replan(ctx, *root, inst);
-    const config::Instance* planned = nullptr;
-    for (auto& i : plan.instances)
-        if (root->kind == "node" || i.name == name) planned = &i;
-    if (!planned) throw app::Failure("`" + name + "` is no longer in " + root->key().substr(6) + ", stop it instead");
-    return restart_instance(s, name, *planned, summary);
-}
+/* What a restart stopped of one root, to start again once the build is done. */
+struct Halted {
+    Target                                  target;
+    std::map<std::string, process::Stopped> how;
+    std::vector<Summary::Row>               dropped;    /* nodes the plan no longer has */
+};
 
-/* Restarts every node of one group root: its nodes stop last started first, then the plan
- * starts in order. A node the plan has dropped stops for good unless another root needs it. */
-static void restart_root(app::Context& ctx, run::Session& s, const state::Root& root, std::vector<state::Instance>& started,
-                         Summary& summary) {
-    config::Plan plan = replan(ctx, root, nullptr);
+/* Stops a root's nodes, last started first. A node the plan has dropped stops for good
+ * unless another root needs it. */
+static Halted halt_root(run::Session& s, const Target& t) {
+    Halted h{ t, {}, {} };
     state::State& st = s.state();
-    std::string key = root.key();
+    std::string key = t.root.key();
     std::vector<std::string> mine;
     for (auto& i : st.instances)
-        if (std::count(i.roots.begin(), i.roots.end(), key)) mine.push_back(i.name);
-    std::map<std::string, process::Stopped> how;
+        if (std::count(i.roots.begin(), i.roots.end(), key) && (t.only.empty() || i.name == t.only)) mine.push_back(i.name);
     for (auto it = mine.rbegin(); it != mine.rend(); ++it) {
         state::Instance* inst = st.instance(*it);
-        bool planned = std::any_of(plan.instances.begin(), plan.instances.end(), [&](const config::Instance& p) { return p.name == *it; });
+        bool planned = std::any_of(t.plan.instances.begin(), t.plan.instances.end(), [&](const config::Instance& p) { return p.name == *it; });
         if (!planned && inst->roots.size() > 1) {
             inst->roots.erase(std::remove(inst->roots.begin(), inst->roots.end(), key), inst->roots.end());
             continue;    /* another root still needs it as it is */
         }
-        how[*it] = run::halt(*inst);
+        h.how[*it] = run::halt(*inst);
         if (!planned) {
             st.instances.erase(std::remove_if(st.instances.begin(), st.instances.end(), [&](const state::Instance& i) { return i.name == *it; }),
                                st.instances.end());
-            summary.add({ *it, Summary::Mark::Stopped, "stopped", "no longer in " + root.name });
+            h.dropped.push_back({ *it, Summary::Mark::Stopped, "stopped", "no longer in " + t.root.name });
         }
     }
     s.save();
+    return h;
+}
 
+/* Starts a halted root's plan in order, each node under its old name and roots. */
+static void start_root(app::Context& ctx, run::Session& s, const Halted& h, std::vector<state::Instance>& started, Summary& summary) {
+    for (auto& r : h.dropped) summary.add(r);
+    state::State& st = s.state();
+    std::string key = h.target.root.key();
+    const auto& planned = h.target.plan.instances;
     /* a node the plan has that rant does not run may run on the mesh without rant */
     std::set<std::string> elsewhere;
-    if (std::any_of(plan.instances.begin(), plan.instances.end(), [&](const config::Instance& p) { return !st.instance(p.name); })) {
+    if (std::any_of(planned.begin(), planned.end(), [&](const config::Instance& p) { return !st.instance(p.name); })) {
         mesh::Client mesh(ctx.domain());
         mesh.settle();
         auto managed = run::managed_peers(mesh, st);
         for (auto& peer : mesh.peers())
             if (!managed.count(peer.id)) elsewhere.insert(peer.name);
     }
-    for (auto& p : plan.instances) {
+    for (auto& p : planned) {
         state::Instance* inst = st.instance(p.name);
         if (inst && !std::count(inst->roots.begin(), inst->roots.end(), key)) {
             std::string with;
@@ -148,9 +144,24 @@ static void restart_root(app::Context& ctx, run::Session& s, const state::Root& 
         else st.instances.push_back(rec);
         s.save();
         started.push_back(rec);
-        auto stopped = how.find(p.name);
-        summary.add(restarted_row(rec, stopped == how.end() ? process::Stopped::AlreadyGone : stopped->second));
+        auto stopped = h.how.find(p.name);
+        summary.add(restarted_row(rec, stopped == h.how.end() ? process::Stopped::AlreadyGone : stopped->second));
     }
+}
+
+/* Stops the targets, builds them, then starts them again, with the state locked throughout
+ * so nothing else starts these nodes meanwhile. Returns whether the build worked. */
+static bool restart(app::Context& ctx, run::Session& s, const std::vector<Target>& targets, std::vector<state::Instance>& started,
+                    Summary& summary) {
+    std::vector<Halted> halted;
+    std::vector<config::Plan> plans;
+    for (auto& t : targets) {
+        plans.push_back(t.plan);
+        halted.push_back(halt_root(s, t));
+    }
+    bool built = rebuild(ctx, plans);
+    for (auto& h : halted) start_root(ctx, s, h, started, summary);
+    return built;
 }
 
 /* The running roots of a group: the one its params name, else every one of it. Empty when
@@ -173,6 +184,8 @@ static std::vector<state::Root> group_roots(app::Context& ctx, const state::Stat
     return out;
 }
 
+/* Every root this workspace started, each planned before anything stops, so a broken
+ * config stops nothing. */
 static int restart_all(app::Context& ctx) {
     state::State now = run::snapshot(ctx);
     if (now.roots.empty()) {
@@ -183,34 +196,51 @@ static int restart_all(app::Context& ctx) {
     for (auto& r : now.roots) list += (list.empty() ? "" : ", ") + r.key();
     ctx.out.line("roots: " + list);
     if (!ui::confirm("Restart all " + std::to_string(now.instances.size()) + " nodes?", ctx.yes)) return 1;
-    std::vector<config::Plan> plans;
-    for (auto& r : now.roots) {
-        const state::Instance* first = nullptr;
-        for (auto& i : now.instances)
-            if (!first && i.roots.front() == r.key()) first = &i;
-        if (r.kind == "group" || first) plans.push_back(replan(ctx, r, first));
-    }
-    rebuild(ctx, plans);
 
     std::vector<state::Instance> started;
     Summary summary(ctx, "");
+    bool built;
     {
         run::Session s(ctx.require_workspace());
-        std::vector<state::Root> roots = s.state().roots;
-        for (auto& r : roots) {
+        std::vector<Target> targets;
+        for (auto& r : s.state().roots) {
             if (r.kind == "group") {
-                restart_root(ctx, s, r, started, summary);
+                targets.push_back({ r, replan(ctx, r, nullptr), "" });
                 continue;
             }
             for (auto& i : s.state().instances)
                 if (i.roots.front() == r.key()) {
-                    config::Plan plan = replan(ctx, r, &i);
-                    started.push_back(restart_instance(s, i.name, plan.instances.front(), summary));
+                    targets.push_back({ r, replan(ctx, r, &i), i.name });
                     break;
                 }
         }
+        built = restart(ctx, s, targets, started, summary);
+    }    /* the state unlocks before the wait, so other commands need not wait */
+    int code = bring_up(ctx, summary, started, "", "restarted");
+    return built ? code : 1;
+}
+
+/* One running node alone, under its name and roots. */
+static int restart_one(app::Context& ctx, const std::string& name) {
+    std::vector<state::Instance> started;
+    Summary summary(ctx, "");
+    bool built;
+    {
+        run::Session s(ctx.require_workspace());
+        state::Instance* inst = s.state().instance(name);
+        if (!inst) throw app::Failure("no node `" + name + "` started here, see `rant ls nodes`");
+        const state::Root* root = s.state().root(inst->roots.front());
+        if (!root) throw app::Failure("rant lost track of `" + name + "`, stop and start it again");
+        config::Plan plan = replan(ctx, *root, inst);
+        if (root->kind == "group")
+            plan.instances.erase(std::remove_if(plan.instances.begin(), plan.instances.end(),
+                                                [&](const config::Instance& i) { return i.name != name; }),
+                                 plan.instances.end());
+        if (plan.instances.empty()) throw app::Failure("`" + name + "` is no longer in " + root->key().substr(6) + ", stop it instead");
+        built = restart(ctx, s, { { *root, plan, name } }, started, summary);
     }
-    return bring_up(ctx, summary, started, "", "restarted");
+    int code = bring_up(ctx, summary, started, "", "restarted");
+    return built ? code : 1;
 }
 
 static int run(app::Context& ctx) {
@@ -219,13 +249,7 @@ static int run(app::Context& ctx) {
     /* what is not running starts, looked up first without holding the state, which run takes */
     if (!names_group(ctx, w[0])) {
         if (w.size() != 1) throw app::UsageError("a node takes no key=value, only a group does");
-        state::State now = run::snapshot(ctx);
-        if (const state::Instance* inst = now.instance(w[0])) {
-            if (const state::Root* root = now.root(inst->roots.front())) rebuild(ctx, { replan(ctx, *root, inst) });
-            Summary summary(ctx, "");
-            state::Instance rec = restart_node(ctx, w[0], summary);
-            return bring_up(ctx, summary, { rec }, "", "restarted");
-        }
+        if (run::snapshot(ctx).instance(w[0])) return restart_one(ctx, w[0]);
         ctx.out.note("`" + w[0] + "` is not running, starting it");
         return run_node(ctx, w[0]);
     }
@@ -234,22 +258,21 @@ static int run(app::Context& ctx) {
         ctx.out.note("group `" + w[0] + "` is not running, starting it");
         return run_group(ctx, w[0], params);
     }
-    {
-        std::vector<config::Plan> plans;
-        for (auto& r : group_roots(ctx, run::snapshot(ctx), w[0], params)) plans.push_back(replan(ctx, r, nullptr));
-        rebuild(ctx, plans);
-    }
     std::vector<state::Instance> started;
     std::optional<Summary> summary;
     std::string group;
+    bool built;
     {
         run::Session s(ctx.require_workspace());
         auto roots = group_roots(ctx, s.state(), w[0], params);
         group = roots.front().name;
+        std::vector<Target> targets;
+        for (auto& r : roots) targets.push_back({ r, replan(ctx, r, nullptr), "" });
         summary.emplace(ctx, group);
-        for (auto& r : roots) restart_root(ctx, s, r, started, *summary);
-    }    /* the state unlocks before the watch, so other commands need not wait */
-    return bring_up(ctx, *summary, started, group, "restarted");
+        built = restart(ctx, s, targets, started, *summary);
+    }    /* the state unlocks before the wait, so other commands need not wait */
+    int code = bring_up(ctx, *summary, started, group, "restarted");
+    return built ? code : 1;
 }
 
 static complete::Candidates complete_words(complete::Request& r) {

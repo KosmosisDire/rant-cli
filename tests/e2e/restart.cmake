@@ -43,4 +43,17 @@ rant(restart sensor)
 expect_match("${ERR}" "`sensor` is not running, starting it")
 expect_match("${OUT}" "sensor +started +pid [0-9]+")
 
+# A restart builds the node's package once it has stopped. A failed build starts the last
+# build again and fails the restart.
+file(READ "${SCRATCH}/demo/package.rant" demo)
+file(WRITE "${SCRATCH}/demo/package.rant" "${demo}build = \"cmake -E echo rebuilt-demo\"\n")
+rant(restart sensor)
+expect_match("${OUT}" "building demo\nrebuilt-demo\n")
+expect_match("${OUT}" "sensor +restarted +pid [0-9]+")
+file(WRITE "${SCRATCH}/demo/package.rant" "${demo}build = \"cmake -E false\"\n")
+rant(restart sensor FAILS)
+expect_match("${ERR}" "building demo failed: .* exited 1, starting the last build again")
+expect_match("${OUT}" "sensor +restarted +pid [0-9]+")
+file(WRITE "${SCRATCH}/demo/package.rant" "${demo}")
+
 rant(stop)
