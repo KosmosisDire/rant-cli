@@ -53,7 +53,7 @@ struct Halted {
 };
 
 /* Stops a root's nodes, last started first. A node the plan has dropped stops for good
- * unless another root needs it. */
+ * unless another group needs it. */
 static Halted halt_root(run::Session& s, const Target& t) {
     Halted h{ t, {}, {} };
     state::State& st = s.state();
@@ -64,14 +64,13 @@ static Halted halt_root(run::Session& s, const Target& t) {
     for (auto it = mine.rbegin(); it != mine.rend(); ++it) {
         state::Instance* inst = st.instance(*it);
         bool planned = std::any_of(t.plan.instances.begin(), t.plan.instances.end(), [&](const config::Instance& p) { return p.name == *it; });
-        if (!planned && inst->roots.size() > 1) {
+        if (!planned) {
             inst->roots.erase(std::remove(inst->roots.begin(), inst->roots.end(), key), inst->roots.end());
-            continue;    /* another root still needs it as it is */
+            if (run::held_by_group(*inst)) continue;    /* another group still needs it as it is */
         }
         h.how[*it] = run::halt(*inst);
         if (!planned) {
-            st.instances.erase(std::remove_if(st.instances.begin(), st.instances.end(), [&](const state::Instance& i) { return i.name == *it; }),
-                               st.instances.end());
+            run::forget(st, *it);
             h.dropped.push_back({ *it, Summary::Mark::Stopped, "stopped", "no longer in " + t.root.name });
         }
     }

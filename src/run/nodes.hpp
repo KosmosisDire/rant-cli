@@ -54,6 +54,13 @@ process::Stopped halt(const state::Instance& inst);
 /* A running instance is the plan's node: same type, argv, env and working directory. */
 bool same_spec(const state::Instance& running, const config::Instance& planned);
 
+/* Whether a group holds the instance. Its own start does not count, so the last group holding
+ * a node stops it. */
+bool held_by_group(const state::Instance& inst);
+
+/* Drops a stopped instance from its state, with the node root that started it. */
+void forget(state::State& st, const std::string& name);
+
 /* What releasing a root did to one of its nodes. */
 struct Released {
     std::string              name;
@@ -61,8 +68,8 @@ struct Released {
     process::Stopped         how = process::Stopped::AlreadyGone;
 };
 
-/* Drops a root. Each of its nodes no other root needs stops, last started first, and a
- * node another root still needs keeps running. */
+/* Drops a group's root. Each of its nodes no other group needs stops, last started first,
+ * even one also started on its own, and a node another group still needs keeps running. */
 std::vector<Released> release_root(Session& s, const std::string& key);
 
 /* The live mesh peers that are instances rant started, by peer id, each with the instance

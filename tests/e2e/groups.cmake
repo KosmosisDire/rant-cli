@@ -76,15 +76,20 @@ expect_match("${OUT}" "arm +stopped\n.*odom +stopped\n.*lidar +stopped\n")
 rant(ls nodes)
 expect_match("${OUT}" "NODES\n  [(]none[)]")
 
-# A node started on its own and then shared by a group outlives the group, and says why.
+# A node started on its own and then taken into groups stops with the last group holding it.
 file(WRITE "${SCRATCH}/SoloGroup.run" "node \"demo/sensor\" {}\n")
+file(WRITE "${SCRATCH}/DuoGroup.run" "node \"demo/sensor\" {}\n")
 rant(run node sensor)
 rant(run SoloGroup)
 expect_match("${OUT}" "sensor +already running +started on its own\n")
+rant(run DuoGroup)
+expect_match("${OUT}" "sensor +already running +started on its own, shared with SoloGroup\n")
 rant(stop SoloGroup)
-expect_match("${OUT}" "sensor +kept running +started on its own\n")
-rant(stop sensor)
+expect_match("${OUT}" "sensor +kept running +started on its own, still needed by DuoGroup\n")
+rant(stop DuoGroup)
 expect_match("${OUT}" "sensor +stopped")
+rant(ls nodes)
+expect_match("${OUT}" "NODES\n  [(]none[)]")
 
 # A bare stop lists everything rant started and stops it all after a question.
 rant(run nav)

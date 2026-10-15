@@ -80,6 +80,19 @@ bool same_spec(const state::Instance& running, const config::Instance& planned) 
            running.cwd == config::to_utf8(planned.cwd);
 }
 
+bool held_by_group(const state::Instance& inst) {
+    return std::any_of(inst.roots.begin(), inst.roots.end(), [](const std::string& k) { return k.rfind("group ", 0) == 0; });
+}
+
+void forget(state::State& st, const std::string& name) {
+    st.instances.erase(std::remove_if(st.instances.begin(), st.instances.end(),
+                                      [&](const state::Instance& i) { return i.name == name; }),
+                       st.instances.end());
+    st.roots.erase(std::remove_if(st.roots.begin(), st.roots.end(),
+                                  [&](const state::Root& r) { return r.kind == "node" && r.name == name; }),
+                   st.roots.end());
+}
+
 std::vector<Released> release_root(Session& s, const std::string& key) {
     state::State& st = s.state();
     st.roots.erase(std::remove_if(st.roots.begin(), st.roots.end(), [&](const state::Root& r) { return r.key() == key; }),
@@ -90,12 +103,12 @@ std::vector<Released> release_root(Session& s, const std::string& key) {
         auto it = std::find(inst.roots.begin(), inst.roots.end(), key);
         if (it == inst.roots.end()) continue;
         inst.roots.erase(it);
-        if (!inst.roots.empty()) {
+        if (held_by_group(inst)) {
             out.push_back({ inst.name, inst.roots, process::Stopped::AlreadyGone });
             continue;
         }
         Released r{ inst.name, {}, halt(inst) };
-        st.instances.erase(st.instances.begin() + (long)i);
+        forget(st, r.name);
         out.push_back(r);
     }
     return out;

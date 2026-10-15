@@ -34,16 +34,6 @@ static std::vector<std::string> groups_of(const state::Instance& inst) {
     return out;
 }
 
-/* Drops a stopped instance from its state, with the node root that started it. */
-static void forget(state::State& st, const std::string& name) {
-    st.instances.erase(std::remove_if(st.instances.begin(), st.instances.end(),
-                                      [&](const state::Instance& i) { return i.name == name; }),
-                       st.instances.end());
-    st.roots.erase(std::remove_if(st.roots.begin(), st.roots.end(),
-                                  [&](const state::Root& r) { return r.kind == "node" && r.name == name; }),
-                   st.roots.end());
-}
-
 /* Stops everything rant started in this workspace, last started first, once the list has
  * been shown and the question answered. */
 static int stop_workspace(app::Context& ctx, const config::Workspace& ws) {
@@ -203,7 +193,7 @@ static int stop_node(app::Context& ctx, const std::string& name) {
     for (auto& [h, inst] : found) {
         Summary::Row row = stopped_row(name, run::halt(*inst));
         if (!own(*h)) row.detail += (row.detail.empty() ? "" : ", ") + std::string("started in ") + ctx.shown(h->root);
-        forget(h->state(), name);
+        run::forget(h->state(), name);
         h->store->save();
         summary.add(row);
     }
