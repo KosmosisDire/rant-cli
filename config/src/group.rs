@@ -193,6 +193,11 @@ impl<'m> Groups<'m> {
         Ok(def)
     }
 
+    /// The groups a group includes, by full name in the order it writes them.
+    pub fn includes(&self, def: &GroupDef) -> Result<Vec<String>, Diag> {
+        def.includes().map(|(_, inc)| Ok(self.included(def, inc)?.file.name.clone())).collect()
+    }
+
     fn included(&self, def: &GroupDef, inc: &Include) -> Result<Rc<GroupDef>, Diag> {
         let file = self.find(&inc.group, def.file.package.as_deref()).map_err(|e| inc.at.diag(e))?;
         self.load(file)
@@ -369,7 +374,7 @@ impl<'m> Groups<'m> {
         // the shell, workspace and package, then the groups, then the node itself
         let placed = self.model.placement_of(&node).inner(chain).inner(&Placement::read(src, &fields.attrs, scope)?);
         let name = placed.apply(&name, &mut env).map_err(|e| src.diag_at(b, e))?;
-        Ok(Instance { name, cwd: node.cwd.clone(), argv, env, node })
+        Ok(Instance { name, cwd: node.cwd.clone(), argv, env, node, group: Some(def.file.name.clone()) })
     }
 }
 

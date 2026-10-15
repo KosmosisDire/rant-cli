@@ -120,6 +120,8 @@ pub struct RantConfigInstance {
     pub env: *const RantConfigPair,
     pub env_count: usize,
     pub cwd: *const c_char,
+    /// The group whose own node block makes it, NULL for a node run alone.
+    pub group: *const c_char,
 }
 
 /// A resolved plan in start order, every path absolute. Empty when diagnostics are not.
@@ -267,6 +269,7 @@ impl Store {
             env,
             env_count,
             cwd: self.path(&i.cwd),
+            group: i.group.as_deref().map(|g| self.str(g)).unwrap_or(std::ptr::null()),
         }
     }
 
@@ -589,6 +592,9 @@ pub struct RantConfigGroupView {
     pub description: *const c_char,
     pub params: *const RantConfigParam,
     pub param_count: usize,
+    /// The groups it includes, by full name.
+    pub includes: *const *const c_char,
+    pub include_count: usize,
     pub diagnostics: *const RantConfigDiagnostic,
     pub diagnostic_count: usize,
 }
@@ -617,22 +623,28 @@ pub unsafe extern "C" fn rant_config_group(start_dir: *const c_char, group: *con
         description: std::ptr::null(),
         params: std::ptr::null(),
         param_count: 0,
+        includes: std::ptr::null(),
+        include_count: 0,
         diagnostics: std::ptr::null(),
         diagnostic_count: 0,
     };
     let described = match &loaded.model {
         Some(m) => {
             let groups = Groups::new(m);
-            group_def(&groups, m, &start, &arg_str(group))
+            group_def(&groups, m, &start, &arg_str(group)).and_then(|(def, iface)| {
+                let includes = groups.includes(&def)?;
+                Ok((def, iface, includes))
+            })
         }
         None => Err(no_workspace()),
     };
     match described {
-        Ok((def, iface)) if diags.is_empty() => {
+        Ok((def, iface, includes)) if diags.is_empty() => {
             view.name = store.str(&def.file.name);
             view.file = store.path(&def.file.path);
             view.description = def.description.as_deref().map(|d| store.str(d)).unwrap_or(std::ptr::null());
             (view.params, view.param_count) = store.params(&iface);
+            (view.includes, view.include_count) = store.strs(&includes);
         }
         Ok(_) => {}
         Err(d) => diags.push(d),

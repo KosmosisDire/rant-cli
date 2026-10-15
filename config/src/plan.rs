@@ -18,6 +18,8 @@ pub struct Instance {
     pub argv: Vec<String>,
     pub env: BTreeMap<String, String>,
     pub cwd: PathBuf,
+    /// The group whose own node block makes it, none for a node run alone.
+    pub group: Option<String>,
 }
 
 impl Instance {
@@ -81,6 +83,6 @@ pub fn single(model: &Model, reference: &str, from_dir: &Path) -> Result<Plan, D
     runnable(&node).map_err(Diag::plain)?;
     let mut env = BTreeMap::new();
     let name = model.placement_of(&node).apply(&node.name, &mut env).map_err(Diag::plain)?;
-    let instance = Instance { name, argv: node.run.clone(), env, cwd: node.cwd.clone(), node };
+    let instance = Instance { name, argv: node.run.clone(), env, cwd: node.cwd.clone(), node, group: None };
     Ok(Plan { instances: vec![instance] })
 }

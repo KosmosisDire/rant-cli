@@ -98,6 +98,7 @@ static Plan read_plan(const RantConfigPlanView* v) {
         inst.argv = strs(in.argv, in.argc);
         for (size_t e = 0; e < in.env_count; e++) inst.env[str(in.env[e].name)] = str(in.env[e].value);
         inst.cwd = from_utf8(str(in.cwd));
+        inst.group = str(in.group);
         out.instances.push_back(std::move(inst));
     }
     return out;
@@ -146,6 +147,7 @@ GroupInfo describe_group(const fs::path& start, const std::string& group) {
     if (v->file) out.file = from_utf8(v->file);
     out.description = str(v->description);
     out.params = params_of(v->params, v->param_count);
+    out.includes = strs(v->includes, v->include_count);
     return out;
 }
 

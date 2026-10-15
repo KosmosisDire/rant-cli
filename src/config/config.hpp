@@ -79,6 +79,7 @@ struct Instance {
     std::vector<std::string>           argv;
     std::map<std::string, std::string> env;
     fs::path                           cwd;
+    std::string                        group;    /* the group whose own node block makes it, empty for a node run alone */
 };
 
 /* A resolved plan in start order. instances is empty whenever diagnostics is not. A group
@@ -117,11 +118,12 @@ struct Param {
 
 /* A group with every param it takes, own and exposed, for help. */
 struct GroupInfo {
-    std::string             name;
-    fs::path                file;
-    std::string             description;
-    std::vector<Param>      params;
-    std::vector<Diagnostic> diagnostics;
+    std::string              name;
+    fs::path                 file;
+    std::string              description;
+    std::vector<Param>       params;
+    std::vector<std::string> includes;    /* the groups it includes, by full name */
+    std::vector<Diagnostic>  diagnostics;
 };
 
 GroupInfo describe_group(const fs::path& start, const std::string& group);

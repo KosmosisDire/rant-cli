@@ -26,6 +26,7 @@ using mesh::json;
 struct Row {
     std::string         name;
     std::optional<bool> on_mesh;
+    std::string         type;    /* the node type of one rant started, else empty */
 };
 
 /* The running nodes as ls shows them: each group root with its nodes, then every node
@@ -47,7 +48,7 @@ static Listing list_nodes(app::Context& ctx, mesh::Client* mesh, const std::stri
     std::set<std::string> on_mesh;
     for (auto& [_, name] : managed) on_mesh.insert(name);
     auto row = [&](const state::Instance& i) {
-        return Row{ i.name, mesh ? std::optional<bool>(on_mesh.count(i.name) > 0) : std::nullopt };
+        return Row{ i.name, mesh ? std::optional<bool>(on_mesh.count(i.name) > 0) : std::nullopt, i.type };
     };
 
     Listing out;
@@ -160,6 +161,7 @@ static int list_mesh(app::Context& ctx, std::optional<Kind> kind, const std::str
             json a = json::array();
             for (auto& r : v) {
                 json row = { { "name", r.name } };
+                if (!r.type.empty()) row["type"] = r.type;
                 if (r.on_mesh) row["on_mesh"] = *r.on_mesh;
                 a.push_back(row);
             }
@@ -271,8 +273,16 @@ static int list_workspace(app::Context& ctx, Kind kind, const std::string& patte
         for (auto& g : ws.groups) {
             if (!util::name_matches(pattern, g.name)) continue;
             config::GroupInfo info = config::describe_group(ctx.cwd(), g.name);
-            out.push_back({ { "name", g.name }, { "file", config::to_utf8(g.file) }, { "description", info.description },
-                            { "params", params_short(info) } });
+            json item = { { "name", g.name }, { "file", config::to_utf8(g.file) }, { "description", info.description },
+                          { "params", params_short(info) }, { "includes", info.includes } };
+            if (ctx.json) {
+                /* its own nodes as the defaults name them, none when a param has no default */
+                json nodes = json::array();
+                for (auto& i : config::plan_group(ctx.cwd(), g.name, {}).instances)
+                    if (i.group == g.name) nodes.push_back({ { "name", i.name }, { "type", i.type } });
+                item["nodes"] = nodes;
+            }
+            out.push_back(item);
             t.row({ g.name, dim(params_short(info)), info.description });
         }
     }

@@ -124,6 +124,28 @@ fn a_group_expands_depth_first_in_written_order() {
 }
 
 #[test]
+fn each_node_knows_its_own_group_and_includes_resolve() {
+    let t = workspace_with(&[]);
+    let m = model(&t);
+    let (p, _) = plan(&m, "nav", &[]).unwrap();
+    let own: Vec<(&str, Option<&str>)> = p.instances.iter().map(|i| (i.name.as_str(), i.group.as_deref())).collect();
+    assert_eq!(
+        own,
+        [
+            ("lidar", Some("base")),
+            ("odom", Some("base")),
+            ("camera_left", Some("drivers/cameras")),
+            ("camera_right", Some("drivers/cameras")),
+            ("planner", Some("nav")),
+        ]
+    );
+    let groups = Groups::new(&m);
+    let nav = groups.load(groups.find("nav", None).unwrap()).unwrap();
+    assert_eq!(groups.includes(&nav).unwrap(), ["base", "drivers/cameras", "drivers/cameras"]);
+    assert_eq!(plan::single(&m, "drivers/lidar", t.root()).unwrap().instances[0].group, None);
+}
+
+#[test]
 fn exposed_params_reach_the_included_group() {
     let t = workspace_with(&[]);
     let (p, _) = plan(&model(&t), "nav", &[("lidar_args", "--range 5")]).unwrap();
