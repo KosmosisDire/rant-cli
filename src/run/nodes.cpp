@@ -66,6 +66,7 @@ state::Instance spawn(const config::Workspace& ws, const config::Instance& inst,
     rec.env = inst.env;
     rec.cwd = config::to_utf8(inst.cwd);
     rec.log = config::to_utf8(log);
+    rec.group = inst.group;
     rec.tracking = process::start_detached(c, log, job_name(ws.root, name));
     state::remember(ws.data);
     return rec;
@@ -78,6 +79,13 @@ process::Stopped halt(const state::Instance& inst) {
 bool same_spec(const state::Instance& running, const config::Instance& planned) {
     return running.type == planned.type && running.argv == planned.argv && running.env == planned.env &&
            running.cwd == config::to_utf8(planned.cwd);
+}
+
+std::vector<std::string> made_by(const state::State& st, const std::string& group) {
+    std::vector<std::string> out;
+    for (auto& i : st.instances)
+        if (i.group == group) out.push_back(i.name);
+    return out;
 }
 
 bool held_by_group(const state::Instance& inst) {

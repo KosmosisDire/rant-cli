@@ -226,8 +226,7 @@ static std::vector<state::Root> targets(app::Context& ctx, run::Session& s, cons
         if (!s.state().root(root.key())) throw app::Failure("`" + root.key().substr(6) + "` is not running, see `rant ls`");
         return { root };
     }
-    config::GroupInfo info = config::describe_group(ctx.cwd(), group);
-    std::string name = info.diagnostics.empty() ? info.name : group;
+    std::string name = group_name(ctx, group);
     std::vector<state::Root> out;
     for (auto& r : s.state().roots)
         if (r.kind == "group" && r.name == name) out.push_back(r);
@@ -241,9 +240,32 @@ static std::vector<state::Root> targets(app::Context& ctx, run::Session& s, cons
     return out;
 }
 
-/* Stops what the group started. A node of the same name it did not start keeps running. */
+/* Stops the nodes a group's own blocks made inside the runs of the groups that include it,
+ * last started first, whichever of them hold the nodes. */
+static int stop_inside(app::Context& ctx, run::Session& s, const std::string& group, const std::vector<std::string>& names) {
+    Summary summary(ctx, group);
+    state::State& st = s.state();
+    for (auto it = names.rbegin(); it != names.rend(); ++it) {
+        const state::Instance* inst = st.instance(*it);
+        Summary::Row row = stopped_row(*it, run::halt(*inst));
+        if (row.detail.empty()) row.detail = held_by(inst->roots, "inside");
+        run::forget(st, *it);
+        summary.add(row);
+    }
+    s.save();
+    return done(summary);
+}
+
+/* Stops what the group started. A node of the same name it did not start keeps running. A
+ * group that runs only inside others stops its own nodes there. */
 static int stop_group(app::Context& ctx, const std::string& group, const std::vector<std::string>& params) {
     run::Session s(ctx.require_workspace());
+    if (params.empty()) {
+        std::string name = group_name(ctx, group);
+        bool own = std::any_of(s.state().roots.begin(), s.state().roots.end(), [&](const state::Root& r) { return r.kind == "group" && r.name == name; });
+        auto inside = run::made_by(s.state(), name);
+        if (!own && !inside.empty()) return stop_inside(ctx, s, name, inside);
+    }
     auto roots = targets(ctx, s, group, params);
     if (roots.empty()) return 1;
     std::string shown;

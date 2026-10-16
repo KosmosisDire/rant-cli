@@ -137,6 +137,7 @@ int run_group(app::Context& ctx, const std::string& group, const std::vector<std
                 state::Instance* running = s.state().instance(inst.name);
                 std::string with = actions[i] == "shared" ? held_by(running->roots, "shared with") : "";
                 if (actions[i] == "shared") running->roots.push_back(root.key());
+                if (running->group.empty()) running->group = inst.group;
                 summary.add({ inst.name, Summary::Mark::Running, "already running", with });
             } else {
                 summary.add({ inst.name, Summary::Mark::Running, "already running", "started outside rant" });
@@ -156,6 +157,11 @@ int run_group(app::Context& ctx, const std::string& group, const std::vector<std
 static void fail_with(app::Context& ctx, const std::vector<config::Diagnostic>& diagnostics) {
     for (auto& d : diagnostics) ctx.out.error(d.str());
     throw app::Failure("");
+}
+
+std::string group_name(app::Context& ctx, const std::string& group) {
+    config::GroupInfo info = config::describe_group(ctx.cwd(), group);
+    return info.diagnostics.empty() ? info.name : group;
 }
 
 bool names_group(app::Context& ctx, const std::string& name) {

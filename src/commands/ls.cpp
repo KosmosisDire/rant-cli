@@ -29,6 +29,7 @@ struct Row {
     std::optional<bool>     on_mesh;
     std::string             type;      /* the node type of one rant started, else empty */
     std::optional<uint16_t> domain;    /* the domain of one rant started */
+    std::string             group;     /* the group whose own block made one rant started */
 };
 
 /* The domain a started node joined: the RANT_DOMAIN rant gave it, else Rant's 0. */
@@ -43,6 +44,7 @@ struct Listing {
     struct Group {
         std::string      header;    /* "nav" or "nav target=red_bin" */
         std::vector<Row> nodes;
+        bool             inside = false;    /* a group the one above includes */
     };
     std::vector<Group> groups;
     std::vector<Row>   loose;
@@ -56,7 +58,7 @@ static Listing list_nodes(app::Context& ctx, mesh::Client* mesh, const std::stri
     std::set<std::string> on_mesh;
     for (auto& [_, name] : managed) on_mesh.insert(name);
     auto row = [&](const state::Instance& i) {
-        return Row{ i.name, mesh ? std::optional<bool>(on_mesh.count(i.name) > 0) : std::nullopt, i.type, started_domain(i) };
+        return Row{ i.name, mesh ? std::optional<bool>(on_mesh.count(i.name) > 0) : std::nullopt, i.type, started_domain(i), i.group };
     };
 
     Listing out;
@@ -65,10 +67,21 @@ static Listing list_nodes(app::Context& ctx, mesh::Client* mesh, const std::stri
         /* the params show only when the group runs more than once */
         size_t runs = std::count_if(st.roots.begin(), st.roots.end(), [&](const state::Root& o) { return o.kind == "group" && o.name == r.name; });
         Listing::Group g{ runs > 1 ? r.key().substr(6) : r.name, {} };
-        for (auto& i : st.instances)
-            if (std::count(i.roots.begin(), i.roots.end(), r.key()) && util::name_matches(pattern, i.name))
+        /* the nodes of groups it includes go under those groups, in the order they first come */
+        std::vector<Listing::Group> inside;
+        for (auto& i : st.instances) {
+            if (!std::count(i.roots.begin(), i.roots.end(), r.key()) || !util::name_matches(pattern, i.name)) continue;
+            if (i.group.empty() || i.group == r.name) {
                 g.nodes.push_back(row(i));
-        if (!g.nodes.empty()) out.groups.push_back(g);
+                continue;
+            }
+            auto it = std::find_if(inside.begin(), inside.end(), [&](const Listing::Group& x) { return x.header == i.group; });
+            if (it == inside.end()) it = inside.insert(inside.end(), { i.group, {}, true });
+            it->nodes.push_back(row(i));
+        }
+        if (g.nodes.empty() && inside.empty()) continue;
+        out.groups.push_back(g);
+        out.groups.insert(out.groups.end(), inside.begin(), inside.end());
     }
     for (auto& i : st.instances) {
         bool in_group = std::any_of(i.roots.begin(), i.roots.end(), [](const std::string& k) { return k.rfind("group ", 0) == 0; });
@@ -171,6 +184,7 @@ static int list_mesh(app::Context& ctx, std::optional<Kind> kind, const std::str
                 json row = { { "name", r.name } };
                 if (!r.type.empty()) row["type"] = r.type;
                 if (r.domain) row["domain"] = *r.domain;
+                if (!r.group.empty()) row["group"] = r.group;
                 if (r.on_mesh) row["on_mesh"] = *r.on_mesh;
                 a.push_back(row);
             }
@@ -180,7 +194,14 @@ static int list_mesh(app::Context& ctx, std::optional<Kind> kind, const std::str
             /* the mesh this listing reads, the workspace's, so a tool can join the same one */
             out["domain"] = ctx.domain();
             out["groups"] = json::array();
-            for (auto& g : nodes.groups) out["groups"].push_back({ { "group", g.header }, { "nodes", rows(g.nodes) } });
+            /* a group a run includes is part of that run, its nodes there with their own `group` */
+            for (size_t i = 0; i < nodes.groups.size(); i++) {
+                if (nodes.groups[i].inside) continue;
+                json n = rows(nodes.groups[i].nodes);
+                for (size_t k = i + 1; k < nodes.groups.size() && nodes.groups[k].inside; k++)
+                    for (auto& r : rows(nodes.groups[k].nodes)) n.push_back(r);
+                out["groups"].push_back({ { "group", nodes.groups[i].header }, { "nodes", n } });
+            }
             out["nodes"] = rows(nodes.loose);
         }
         if (all) {
@@ -219,8 +240,10 @@ static int list_mesh(app::Context& ctx, std::optional<Kind> kind, const std::str
         std::vector<std::string> lines;
         auto laid = ui::columns(lists, width(), grouped ? "    " : "  ");
         for (size_t i = 0; i < laid.size(); i++) {
-            if (grouped) lines.push_back("  " + ctx.out.paint(ui::Style::Faint, headers[i] + ":"));
-            for (auto& l : laid[i]) lines.push_back(l);
+            /* a group a run includes sits one step in, under that run */
+            std::string in = i < nodes.groups.size() && nodes.groups[i].inside ? "  " : "";
+            if (grouped) lines.push_back("  " + in + ctx.out.paint(ui::Style::Faint, headers[i] + ":"));
+            for (auto& l : laid[i]) lines.push_back(in + l);
         }
         section(ctx, "NODES", lines);
     }

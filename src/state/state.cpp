@@ -66,6 +66,7 @@ static State from_json(const json& j) {
         in.tracking.start_time = i.at("start_time");
         in.tracking.job = i.at("job");
         in.roots = i.at("roots").get<std::vector<std::string>>();
+        in.group = i.value("group", "");
         s.instances.push_back(std::move(in));
     }
     return s;
@@ -84,7 +85,8 @@ static json to_json(const State& s) {
                               { "pid", i.tracking.pid },
                               { "start_time", i.tracking.start_time },
                               { "job", i.tracking.job },
-                              { "roots", i.roots } });
+                              { "roots", i.roots },
+                              { "group", i.group } });
     return { { "format", FORMAT }, { "roots", roots }, { "instances", instances } };
 }
 

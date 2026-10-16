@@ -54,6 +54,10 @@ process::Stopped halt(const state::Instance& inst);
 /* A running instance is the plan's node: same type, argv, env and working directory. */
 bool same_spec(const state::Instance& running, const config::Instance& planned);
 
+/* The nodes a group's own node blocks made, in start order, whichever run started them: its
+ * own, or another group's that includes it. */
+std::vector<std::string> made_by(const state::State& st, const std::string& group);
+
 /* Whether a group holds the instance. Its own start does not count, so the last group holding
  * a node stops it. */
 bool held_by_group(const state::Instance& inst);

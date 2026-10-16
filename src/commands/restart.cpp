@@ -145,8 +145,7 @@ static std::vector<state::Root> group_roots(app::Context& ctx, const state::Stat
             if (r.key() == root.key()) out.push_back(r);
         return out;
     }
-    config::GroupInfo info = config::describe_group(ctx.cwd(), group);
-    std::string name = info.diagnostics.empty() ? info.name : group;
+    std::string name = group_name(ctx, group);
     for (auto& r : st.roots)
         if (r.kind == "group" && r.name == name) out.push_back(r);
     return out;
@@ -188,26 +187,35 @@ static int restart_all(app::Context& ctx) {
     return built ? code : 1;
 }
 
-/* One running node alone, under its name and roots. */
-static int restart_one(app::Context& ctx, const std::string& name) {
+/* A running node alone, as the root that started it plans it now. */
+static Target node_target(app::Context& ctx, state::State& st, const state::Instance& inst) {
+    const state::Root* root = st.root(inst.roots.front());
+    if (!root) throw app::Failure("rant lost track of `" + inst.name + "`, stop and start it again");
+    config::Plan plan = replan(ctx, *root, &inst);
+    if (root->kind == "group")
+        plan.instances.erase(std::remove_if(plan.instances.begin(), plan.instances.end(),
+                                            [&](const config::Instance& i) { return i.name != inst.name; }),
+                             plan.instances.end());
+    if (plan.instances.empty()) throw app::Failure("`" + inst.name + "` is no longer in " + root->key().substr(6) + ", stop it instead");
+    return { *root, plan, inst.name };
+}
+
+/* Running nodes by name, each under its name and roots. header heads the summary. */
+static int restart_nodes(app::Context& ctx, const std::vector<std::string>& names, const std::string& header) {
     std::vector<state::Instance> started;
-    Summary summary(ctx, "");
+    Summary summary(ctx, header);
     bool built;
     {
         run::Session s(ctx.require_workspace());
-        state::Instance* inst = s.state().instance(name);
-        if (!inst) throw app::Failure("no node `" + name + "` started here, see `rant ls nodes`");
-        const state::Root* root = s.state().root(inst->roots.front());
-        if (!root) throw app::Failure("rant lost track of `" + name + "`, stop and start it again");
-        config::Plan plan = replan(ctx, *root, inst);
-        if (root->kind == "group")
-            plan.instances.erase(std::remove_if(plan.instances.begin(), plan.instances.end(),
-                                                [&](const config::Instance& i) { return i.name != name; }),
-                                 plan.instances.end());
-        if (plan.instances.empty()) throw app::Failure("`" + name + "` is no longer in " + root->key().substr(6) + ", stop it instead");
-        built = restart(ctx, s, { { *root, plan, name } }, started, summary);
-    }
-    int code = bring_up(ctx, summary, started, "", "restarted");
+        std::vector<Target> targets;
+        for (auto& name : names) {
+            state::Instance* inst = s.state().instance(name);
+            if (!inst) throw app::Failure("no node `" + name + "` started here, see `rant ls nodes`");
+            targets.push_back(node_target(ctx, s.state(), *inst));
+        }
+        built = restart(ctx, s, targets, started, summary);
+    }    /* the state unlocks before the wait, so other commands need not wait */
+    int code = bring_up(ctx, summary, started, header, "restarted");
     return built ? code : 1;
 }
 
@@ -217,12 +225,16 @@ static int run(app::Context& ctx) {
     /* what is not running starts, looked up first without holding the state, which run takes */
     if (!names_group(ctx, w[0])) {
         if (w.size() != 1) throw app::UsageError("a node takes no key=value, only a group does");
-        if (run::snapshot(ctx).instance(w[0])) return restart_one(ctx, w[0]);
+        if (run::snapshot(ctx).instance(w[0])) return restart_nodes(ctx, { w[0] }, "");
         ctx.out.note("`" + w[0] + "` is not running, starting it");
         return run_node(ctx, w[0]);
     }
     std::vector<std::string> params(w.begin() + 1, w.end());
     if (group_roots(ctx, run::snapshot(ctx), w[0], params).empty()) {
+        /* a group that runs only inside others restarts its own nodes there */
+        std::string name = group_name(ctx, w[0]);
+        auto inside = run::made_by(run::snapshot(ctx), name);
+        if (params.empty() && !inside.empty()) return restart_nodes(ctx, inside, name);
         ctx.out.note("group `" + w[0] + "` is not running, starting it");
         return run_group(ctx, w[0], params);
     }
