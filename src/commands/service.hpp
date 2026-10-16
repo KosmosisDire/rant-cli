@@ -81,6 +81,9 @@ std::string version_of(const std::filesystem::path& exe);
  * first, and records its version. Throws app::Failure. */
 void install_from(app::Context& ctx, const Service& s, const std::string& from);
 
+/* On Linux without lingering, says how a service starts at boot rather than at login. */
+void note_linger(const app::Context& ctx);
+
 /* Throws app::Failure naming the enable subcommand when the program is not installed. */
 void require_installed(const Service& s);
 

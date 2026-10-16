@@ -6,6 +6,7 @@
 #include "app/failure.hpp"
 #include "commands/bridge.hpp"
 #include "commands/vscode.hpp"
+#include "commands/web.hpp"
 #include "commands/commands.hpp"
 #include "complete/shells.hpp"
 #include "library/library.hpp"
@@ -161,6 +162,8 @@ static int run(app::Context& ctx) {
         steps.push_back({ {}, "the VS Code extension, through " + editor->u8string(), [ed = *editor] { vscode::remove(ed); } });
     if (service::enabled(bridge::service()) || service::running(bridge::service()))
         steps.push_back({ bridge::installed(), "stopped and no longer started at login", [] { service::disable(bridge::service()); } });
+    if (service::enabled(web::service()) || service::running(web::service()))
+        steps.push_back({ {}, "the web explorer, stopped and no longer started at login", [] { service::disable(web::service()); } });
     std::error_code ec;
     bool config_only = fs::exists(bridge::config_path(), ec) && removable(home).empty();
     if (fs::exists(home, ec) && !config_only) steps.push_back({ home, "", [home] { remove_home(home); } });

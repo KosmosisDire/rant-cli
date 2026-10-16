@@ -36,6 +36,7 @@ add_library(rant_cli_core STATIC
   commands/uninstall.cpp
   commands/update.cpp
   commands/vscode.cpp
+  commands/web.cpp
   complete/complete.cpp
   complete/shells.cpp
   config/config.cpp

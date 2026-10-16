@@ -33,6 +33,7 @@ e2e_test(restart)
 e2e_test(log)
 e2e_test(uninstall)
 e2e_test(bridge)
+e2e_test(web)
 e2e_test(vscode)
 
 # The C# test needs the .NET SDK, the library and new tests GitHub. Each says SKIPPED without.

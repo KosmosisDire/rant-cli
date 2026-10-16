@@ -338,6 +338,16 @@ void install_from(app::Context& ctx, const Service& s, const std::string& from) 
     ctx.out.note("installed " + s.name + " " + version + " as " + u8(s.exe));
 }
 
+void note_linger(const app::Context& ctx) {
+#if !defined(_WIN32) && !defined(__APPLE__)
+    std::optional<std::string> linger = process::output({ { "loginctl", "show-user", std::to_string(getuid()), "-p", "Linger" }, fs::temp_directory_path(), {} });
+    if (linger && linger->find("Linger=no") != std::string::npos)
+        ctx.out.note("to start it at boot without a login, run `sudo loginctl enable-linger $USER`");
+#else
+    (void)ctx;
+#endif
+}
+
 void require_installed(const Service& s) {
     if (!fs::is_regular_file(s.exe)) throw app::Failure(s.name + " is not installed, run `rant " + s.command + " enable`");
 }

@@ -11,10 +11,6 @@
 #include "process/command.hpp"
 #include "util/home.hpp"
 
-#ifndef _WIN32
-#include <unistd.h>
-#endif
-
 namespace commands {
 
 namespace fs = std::filesystem;
@@ -98,11 +94,7 @@ static int bridge_enable(app::Context& ctx, const service::Service& s) {
     if (!service::running(s)) service::start(s);
     service::State st = service::wait_listening(s, 0);
     ctx.out.note("enabled the bridge, it starts when you log in");
-#if !defined(_WIN32) && !defined(__APPLE__)
-    std::optional<std::string> linger = process::output({ { "loginctl", "show-user", std::to_string(getuid()), "-p", "Linger" }, fs::temp_directory_path(), {} });
-    if (linger && linger->find("Linger=no") != std::string::npos)
-        ctx.out.note("to start it at boot without a login, run `sudo loginctl enable-linger $USER`");
-#endif
+    service::note_linger(ctx);
     print_value(ctx, json{ { "url", st.url }, { "config", u8(bridge::config_path()) } });
     return 0;
 }

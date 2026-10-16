@@ -9,6 +9,7 @@
 #include "commands/commands.hpp"
 #include "commands/explore.hpp"
 #include "commands/vscode.hpp"
+#include "commands/web.hpp"
 #include "config/config.hpp"
 #include "library/library.hpp"
 #include "library/uses.hpp"
@@ -33,6 +34,16 @@ static std::vector<long> numbers(const std::string& v) {
         at = dot + 1;
     }
     return out;
+}
+
+/* A service that ran the program just replaced starts again on the new one. */
+static void restart_updated(app::Context& ctx, const service::Service& s) {
+    try {
+        service::restart(s);
+        ctx.out.note("restarted " + s.name);
+    } catch (const app::Failure& e) {
+        ctx.out.warn(s.name + " was not restarted: " + e.what());
+    }
 }
 
 /* Replaces this binary, the explorer, the bridge and the VS Code extension rant installed
@@ -99,19 +110,16 @@ static int update_programs(app::Context& ctx) {
     if (!names.empty()) ctx.out.line("  the rant skill for " + names);
     if (!ui::confirm("Update?", ctx.yes)) return 1;
 
-    if (ex) explorer::install(ctx, *ex);
+    if (ex) {
+        bool serving = service::running(web::service()).has_value();
+        explorer::install(ctx, *ex);
+        if (serving) restart_updated(ctx, web::service());
+    }
     if (vs) vscode::install(ctx, *editor, *vs);
     if (br) {
         bool was_running = service::running(bridge::service()).has_value();
         bridge::install(ctx, *br);
-        if (was_running) {
-            try {
-                service::restart(bridge::service());
-                ctx.out.note("restarted the bridge");
-            } catch (const app::Failure& e) {
-                ctx.out.warn(std::string("the bridge was not restarted: ") + e.what());
-            }
-        }
+        if (was_running) restart_updated(ctx, bridge::service());
     }
     if (!a) return 0;
     net::download(a->url, self, true);

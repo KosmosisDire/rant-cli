@@ -7,11 +7,14 @@
 #include "net/github.hpp"
 
 /* The explorer rant installs into ~/.rant/bin, shared by explore, which installs it when
- * missing, and update, which keeps it current. */
+ * missing, web, which serves its page, and update, which keeps it current. */
 namespace commands::explorer {
 
 /* Where rant installs the explorer, whether or not it is there. */
 std::filesystem::path installed();
+
+/* Where rant records the version it installed. */
+std::filesystem::path version_file();
 
 /* The version rant installed, empty when it installed none. */
 std::string installed_version();

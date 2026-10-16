@@ -26,7 +26,7 @@ static const char* exe_name = "rant-explorer";
 namespace explorer {
 
 fs::path installed() { return util::rant_home() / "bin" / exe_name; }
-static fs::path version_file() { return util::rant_home() / "bin" / "rant-explorer.version"; }
+fs::path version_file() { return util::rant_home() / "bin" / "rant-explorer.version"; }
 
 std::string installed_version() {
     std::ifstream in(version_file());
