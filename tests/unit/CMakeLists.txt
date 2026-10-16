@@ -10,7 +10,7 @@ function(unit_test name)
 endfunction()
 
 unit_test(args)
-unit_test(bridge)
+unit_test(service)
 unit_test(complete)
 unit_test(formats)
 unit_test(net)

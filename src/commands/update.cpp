@@ -53,7 +53,7 @@ static int update_programs(app::Context& ctx) {
         if (ex->version == ex_had) ex.reset();
     }
     std::optional<net::Release> br;
-    std::string br_had = bridge::installed_version();
+    std::string br_had = service::installed_version(bridge::service());
     if (config::fs::is_regular_file(bridge::installed())) {
         try {
             net::Release latest = bridge::latest();
@@ -102,11 +102,11 @@ static int update_programs(app::Context& ctx) {
     if (ex) explorer::install(ctx, *ex);
     if (vs) vscode::install(ctx, *editor, *vs);
     if (br) {
-        bool was_running = bridge::running().has_value();
+        bool was_running = service::running(bridge::service()).has_value();
         bridge::install(ctx, *br);
         if (was_running) {
             try {
-                bridge::restart();
+                service::restart(bridge::service());
                 ctx.out.note("restarted the bridge");
             } catch (const app::Failure& e) {
                 ctx.out.warn(std::string("the bridge was not restarted: ") + e.what());

@@ -159,8 +159,8 @@ static int run(app::Context& ctx) {
                          } });
     if (auto editor = vscode::recorded_editor(); editor && !vscode::installed_version(*editor).empty())
         steps.push_back({ {}, "the VS Code extension, through " + editor->u8string(), [ed = *editor] { vscode::remove(ed); } });
-    if (bridge::enabled() || bridge::running())
-        steps.push_back({ bridge::installed(), "stopped and no longer started at login", [] { bridge::disable(); } });
+    if (service::enabled(bridge::service()) || service::running(bridge::service()))
+        steps.push_back({ bridge::installed(), "stopped and no longer started at login", [] { service::disable(bridge::service()); } });
     std::error_code ec;
     bool config_only = fs::exists(bridge::config_path(), ec) && removable(home).empty();
     if (fs::exists(home, ec) && !config_only) steps.push_back({ home, "", [home] { remove_home(home); } });
