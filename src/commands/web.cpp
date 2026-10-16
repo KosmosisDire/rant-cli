@@ -9,7 +9,6 @@
 #include "commands/explore.hpp"
 #include "commands/format.hpp"
 #include "commands/web.hpp"
-#include "complete/complete.hpp"
 #include "config/config.hpp"
 #include "process/command.hpp"
 #include "util/home.hpp"
@@ -26,7 +25,7 @@ static std::string native(const fs::path& p) { return p.u8string(); }
 
 namespace web {
 
-/* Where the server listens, as rant web enable saved it: one line, the bind address and the port. */
+/* Where the server listens, as `rant explore web enable` saved it: one line, the bind address and the port. */
 struct Address {
     std::string bind = "0.0.0.0";
     int         port = 8090;
@@ -45,7 +44,7 @@ static Address saved() {
 static service::Service service_at(const Address& a) {
     service::Service s;
     s.name = "the web explorer";
-    s.command = "web";
+    s.command = "explore web";
     s.description = "Rant web explorer";
     s.exe = explorer::installed();
     s.version_file = explorer::version_file();
@@ -94,7 +93,7 @@ static void ensure_explorer(app::Context& ctx, const service::Service& s) {
         try {
             r = explorer::latest();
         } catch (const app::Failure& e) {
-            throw app::Failure(std::string(e.what()) + ". To use an explorer you built, run `rant web enable --from PATH`");
+            throw app::Failure(std::string(e.what()) + ". To use an explorer you built, run `rant explore web enable --from PATH`");
         }
         explorer::install(ctx, r);
     }
@@ -142,35 +141,25 @@ static int web_status(app::Context& ctx, const service::Service& s) {
                { "bind", a.bind },
                { "port", a.port } };
     print_value(ctx, j);
-    if (!installed && !ctx.json) ctx.out.note("the explorer is not installed, run `rant web enable`");
+    if (!installed && !ctx.json) ctx.out.note("the explorer is not installed, run `rant explore web enable`");
     return 0;
 }
 
-static int run(app::Context& ctx) {
-    service::Service s = web::service();
-    service::check_usage(ctx, s, { "from", "port", "bind" });
-    const std::string& name = ctx.args.words[0];
-    if (name == "enable") return web_enable(ctx);
-    if (name == "status") return web_status(ctx, s);
-    return *service::run_shared(ctx, s, name);
+namespace web {
+
+const std::vector<std::string>& options() {
+    static const std::vector<std::string> list = { "from", "port", "bind" };
+    return list;
 }
 
-static complete::Candidates complete_words(complete::Request& r) {
-    if (!r.words.empty()) return {};
-    return { service::subcommands() };
+int run(app::Context& ctx, const std::vector<std::string>& words) {
+    service::Service s = service();
+    service::check_usage(ctx, s, words, options());
+    if (words[0] == "enable") return web_enable(ctx);
+    if (words[0] == "status") return web_status(ctx, s);
+    return *service::run_shared(ctx, s, words);
 }
 
-app::Command web_() {
-    app::Command c{ "web", "enable | disable | start | stop | restart | status | logs | run [-- args...]",
-                    "serve the explorer as a web page in the background, for any browser on the network",
-                    app::Section::Setup,
-                    { { "from", 0, "PATH", "with enable: install this rant-explorer instead of downloading the newest release" },
-                      { "port", 0, "N", "with enable: the port to serve on, 8090 unless set before" },
-                      { "bind", 0, "IP", "with enable: the address to serve on, 0.0.0.0 (every address) unless set before" },
-                      { "follow", 'f', "", "with logs: keep printing new lines until Ctrl-C" } },
-                    run };
-    c.complete = complete_words;
-    return c;
 }
 
 }

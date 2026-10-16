@@ -16,7 +16,7 @@ namespace commands::service {
 
 struct Service {
     std::string              name;            /* "the bridge", as messages name it */
-    std::string              command;         /* "bridge", the rant command that manages it */
+    std::string              command;         /* "bridge", the rant words that manage it */
     std::string              description;     /* the unit's Description, "Rant bridge" */
     std::filesystem::path    exe;             /* where rant installs the program */
     std::filesystem::path    version_file;    /* the version rant installed */
@@ -97,12 +97,13 @@ std::string launchd_plist(const Service& s);
 /* The subcommands, in the order help lists them. */
 const std::vector<std::string>& subcommands();
 
-/* Refuses words and options a subcommand does not take. enable_options are those only
- * enable takes. Throws app::UsageError. */
-void check_usage(const app::Context& ctx, const Service& s, const std::vector<std::string>& enable_options);
+/* Refuses words and options a subcommand does not take. words start at the subcommand, and
+ * enable_options are those only enable takes. Throws app::UsageError. */
+void check_usage(const app::Context& ctx, const Service& s, const std::vector<std::string>& words,
+                 const std::vector<std::string>& enable_options);
 
-/* Runs disable, start, stop, restart, logs or run, which every service has alike. nullopt
- * for another name. */
-std::optional<int> run_shared(app::Context& ctx, const Service& s, const std::string& sub);
+/* Runs disable, start, stop, restart, logs or run, which every service has alike. words
+ * start at the subcommand. nullopt for another subcommand. */
+std::optional<int> run_shared(app::Context& ctx, const Service& s, const std::vector<std::string>& words);
 
 }

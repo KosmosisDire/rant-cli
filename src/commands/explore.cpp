@@ -5,6 +5,8 @@
 #include "app/failure.hpp"
 #include "commands/commands.hpp"
 #include "commands/explore.hpp"
+#include "commands/web.hpp"
+#include "complete/complete.hpp"
 #include "config/config.hpp"
 #include "net/github.hpp"
 #include "process/supervisor.hpp"
@@ -63,7 +65,12 @@ static std::optional<fs::path> locate(const app::Context& ctx) {
 }
 
 static int run(app::Context& ctx) {
-    if (!ctx.args.words.empty()) throw app::UsageError("explore takes no arguments");
+    auto& w = ctx.args.words;
+    if (!w.empty() && w[0] == "web") return web::run(ctx, { w.begin() + 1, w.end() });
+    if (!w.empty()) throw app::UsageError("explore takes no arguments but `web`, see `rant explore --help`");
+    for (auto& o : web::options())
+        if (ctx.args.has(o)) throw app::UsageError("--" + o + " goes with `rant explore web enable`");
+    if (ctx.args.has("follow")) throw app::UsageError("--follow goes with `rant explore web logs`");
     std::optional<fs::path> exe = locate(ctx);
     if (!exe) {
         net::Release r = explorer::latest();
@@ -84,10 +91,24 @@ static int run(app::Context& ctx) {
     return 0;
 }
 
+static complete::Candidates complete_words(complete::Request& r) {
+    if (r.words.empty()) return { { "web" } };
+    if (r.words.size() == 1 && r.words[0] == "web") return { service::subcommands() };
+    return {};
+}
+
 app::Command explore() {
-    app::Command c{ "explore", "", "open the explorer, installing it first when it is missing, `rant update` updates it",
-                    app::Section::Setup, {}, run };
+    app::Command c{ "explore", "[web enable | disable | start | stop | restart | status | logs | run [-- args...]]",
+                    "open the explorer, installing it first when it is missing, `rant update` updates it. "
+                    "`web` serves it as a page in the background, for any browser on the network",
+                    app::Section::Setup,
+                    { { "from", 0, "PATH", "with web enable: install this rant-explorer instead of downloading the newest release" },
+                      { "port", 0, "N", "with web enable: the port to serve on, 8090 unless set before" },
+                      { "bind", 0, "IP", "with web enable: the address to serve on, 0.0.0.0 (every address) unless set before" },
+                      { "follow", 'f', "", "with web logs: keep printing new lines until Ctrl-C" } },
+                    run };
     c.aliases = { "explorer" };
+    c.complete = complete_words;
     return c;
 }
 

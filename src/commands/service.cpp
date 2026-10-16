@@ -357,13 +357,21 @@ const std::vector<std::string>& subcommands() {
     return list;
 }
 
-void check_usage(const app::Context& ctx, const Service& s, const std::vector<std::string>& enable_options) {
-    auto& w = ctx.args.words;
-    if (w.empty()) throw app::UsageError(s.command + " needs a command, see `rant " + s.command + " --help`");
+/* "enable, disable, ... or run" */
+static std::string listed() {
+    std::string out;
+    auto& subs = subcommands();
+    for (size_t i = 0; i < subs.size(); i++) out += (i == 0 ? "" : i + 1 == subs.size() ? " or " : ", ") + subs[i];
+    return out;
+}
+
+void check_usage(const app::Context& ctx, const Service& s, const std::vector<std::string>& w,
+                 const std::vector<std::string>& enable_options) {
+    if (w.empty()) throw app::UsageError(s.command + " needs a command: " + listed());
     const std::string& name = w[0];
     bool known = false;
     for (auto& sub : subcommands()) known = known || sub == name;
-    if (!known) throw app::UsageError("unknown " + s.command + " command `" + name + "`, see `rant " + s.command + " --help`");
+    if (!known) throw app::UsageError("unknown " + s.command + " command `" + name + "`, it takes " + listed());
     for (auto& o : enable_options)
         if (name != "enable" && ctx.args.has(o)) throw app::UsageError("--" + o + " goes with `rant " + s.command + " enable`");
     if (name != "logs" && ctx.args.has("follow")) throw app::UsageError("--follow goes with `rant " + s.command + " logs`");
@@ -427,22 +435,23 @@ static int logs_command(app::Context& ctx, const Service& s) {
 }
 
 /* The program in the foreground with its service arguments, then the words after `--`. */
-static int run_command(app::Context& ctx, const Service& s) {
+static int run_command(app::Context& ctx, const Service& s, const std::vector<std::string>& words) {
     require_installed(s);
     std::vector<std::string> argv = { native(s.exe) };
     argv.insert(argv.end(), s.args.begin(), s.args.end());
-    argv.insert(argv.end(), ctx.args.words.begin() + 1, ctx.args.words.end());
+    argv.insert(argv.end(), words.begin() + 1, words.end());
     util::catch_interrupt();
     return process::run({ argv, ctx.cwd(), {} });
 }
 
-std::optional<int> run_shared(app::Context& ctx, const Service& s, const std::string& sub) {
+std::optional<int> run_shared(app::Context& ctx, const Service& s, const std::vector<std::string>& words) {
+    const std::string& sub = words[0];
     if (sub == "disable") return disable_command(ctx, s);
     if (sub == "start") return start_command(ctx, s);
     if (sub == "stop") return stop_command(ctx, s);
     if (sub == "restart") return restart_command(ctx, s);
     if (sub == "logs") return logs_command(ctx, s);
-    if (sub == "run") return run_command(ctx, s);
+    if (sub == "run") return run_command(ctx, s, words);
     return std::nullopt;
 }
 

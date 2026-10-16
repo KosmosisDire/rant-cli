@@ -118,11 +118,11 @@ static int bridge_status(app::Context& ctx, const service::Service& s) {
 
 static int run(app::Context& ctx) {
     service::Service s = bridge::service();
-    service::check_usage(ctx, s, { "from" });
-    const std::string& name = ctx.args.words[0];
-    if (name == "enable") return bridge_enable(ctx, s);
-    if (name == "status") return bridge_status(ctx, s);
-    return *service::run_shared(ctx, s, name);
+    auto& w = ctx.args.words;
+    service::check_usage(ctx, s, w, { "from" });
+    if (w[0] == "enable") return bridge_enable(ctx, s);
+    if (w[0] == "status") return bridge_status(ctx, s);
+    return *service::run_shared(ctx, s, w);
 }
 
 static complete::Candidates complete_words(complete::Request& r) {

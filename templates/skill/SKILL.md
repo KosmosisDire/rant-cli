@@ -51,7 +51,7 @@ to override something. A folder may be a workspace and a package, with both file
 | update | `rant update`: the CLI, the explorer, the bridge, the VS Code extension and the skill where installed, then the workspace's packages |
 | visual debugger | `rant explore` |
 | web frontends | `rant bridge enable`, see Bridge |
-| explorer in a browser | `rant web enable`, see Web explorer |
+| explorer in a browser | `rant explore web enable`, see Web explorer |
 | VS Code | `rant vscode install` (`--editor cursor` for another editor, `--from PATH` for a built .vsix), `rant vscode uninstall`. In a remote terminal it installs on that remote. Its Mesh view needs the bridge |
 
 Values on the command line are forgiving JSON: `{x: 1, y: 2}`, `[1, 2]`, or field words
@@ -131,17 +131,17 @@ await node.subscriber("Pose", types.Pose2D, (p) => draw(p));
 
 ## Web explorer
 
-`rant web` serves the explorer as a web page, so any browser on the network opens it. It
+`rant explore web` serves the explorer as a web page, so any browser on the network opens it. It
 runs the installed explorer with `--web-server`, as a service of the user like the bridge.
 The page reaches the mesh through the bridge on the same host, so enable both.
 
 | goal | command |
 |---|---|
-| install, start now and at every login | `rant web enable` (prints the url), `--port N` and `--bind IP` set where it listens (8090 on every address unless set before), `--from PATH` uses an explorer you built |
-| stop it and stop it starting at login | `rant web disable` (the explorer stays) |
-| control | `rant web start`, `stop`, `restart`, `status` (`--json` for tools) |
-| output | `rant web logs`, `-f` to follow |
-| in the foreground | `rant web run [-- explorer args]` |
+| install, start now and at every login | `rant explore web enable` (prints the url), `--port N` and `--bind IP` set where it listens (8090 on every address unless set before), `--from PATH` uses an explorer you built |
+| stop it and stop it starting at login | `rant explore web disable` (the explorer stays) |
+| control | `rant explore web start`, `stop`, `restart`, `status` (`--json` for tools) |
+| output | `rant explore web logs`, `-f` to follow |
+| in the foreground | `rant explore web run [-- explorer args]` |
 
 ## Writing nodes
 

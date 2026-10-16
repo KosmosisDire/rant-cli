@@ -30,7 +30,6 @@ app::Command setup();
 app::Command lib();
 app::Command explore();
 app::Command bridge_();
-app::Command web_();
 app::Command vscode_();
 app::Command update();
 app::Command uninstall();
