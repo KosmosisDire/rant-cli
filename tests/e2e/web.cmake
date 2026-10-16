@@ -70,10 +70,17 @@ if(EXISTS "${home}/bin")
   message(FATAL_ERROR "a refused file was installed")
 endif()
 
-# A program that runs but serves no page, as an explorer from before the web server, is
-# refused before the service is defined. The CLI itself stands in for one.
-rant(web enable --from "${RANT}" FAILS)
-expect_match("${ERR}" "has no web server, `rant update` installs the newest explorer")
+# An installed explorer from before the web server refuses --version, as the test node
+# does, and is refused before the service is defined.
+get_filename_component(ext "${RANT}" LAST_EXT)
+if(NOT ext STREQUAL ".exe")
+  set(ext "")
+endif()
+file(MAKE_DIRECTORY "${home}/bin")
+file(COPY_FILE "${TEST_NODE}" "${home}/bin/rant-explorer${ext}")
+file(WRITE "${home}/bin/rant-explorer.version" "0.0.10\n")
+rant(web enable FAILS)
+expect_match("${ERR}" "the explorer 0[.]0[.]10 has no web server, `rant update` installs the newest explorer")
 rant(web status --json)
 string(JSON value GET "${OUT}" enabled)
 if(NOT value STREQUAL "OFF")

@@ -84,7 +84,8 @@ static web::Address requested(const app::Context& ctx) {
 }
 
 /* The explorer in place, the file given, else the one installed, else the newest release.
- * One from before the web server cannot serve. */
+ * --version came in the same release as --web-server, so an explorer that refuses it
+ * cannot serve. */
 static void ensure_explorer(app::Context& ctx, const service::Service& s) {
     if (auto from = ctx.args.get("from")) {
         service::install_from(ctx, s, *from);
@@ -97,8 +98,7 @@ static void ensure_explorer(app::Context& ctx, const service::Service& s) {
         }
         explorer::install(ctx, r);
     }
-    std::optional<std::string> help = process::output({ { native(s.exe), "--help" }, fs::temp_directory_path(), {} });
-    if (!help || help->find("--web-server") == std::string::npos) {
+    if (!process::output({ { native(s.exe), "--version" }, fs::temp_directory_path(), {} })) {
         std::string version = service::installed_version(s);
         throw app::Failure("the explorer" + (version.empty() ? "" : " " + version) +
                            " has no web server, `rant update` installs the newest explorer");
