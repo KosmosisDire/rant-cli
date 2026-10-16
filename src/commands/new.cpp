@@ -1,4 +1,6 @@
 #include <algorithm>
+#include <fstream>
+#include <iterator>
 #include <optional>
 #include <set>
 #include <sstream>
@@ -16,7 +18,7 @@ namespace commands {
 
 namespace fs = std::filesystem;
 
-static const std::vector<std::string> languages = { "cpp", "python", "csharp" };
+static const std::vector<std::string> languages = { "cpp", "python", "csharp", "rust" };
 static const std::vector<std::string> kinds = { "workspace", "package", "node", "group" };
 
 /* The language of the package around the working directory, from its build files. */
@@ -25,6 +27,7 @@ static std::string language_here(app::Context& ctx) {
     for (fs::path dir = ctx.cwd();; dir = dir.parent_path()) {
         if (fs::exists(dir / "CMakeLists.txt")) return "cpp";
         if (fs::exists(dir / "pyproject.toml")) return "python";
+        if (fs::exists(dir / "Cargo.toml")) return "rust";
         std::error_code ec;
         for (auto& e : fs::directory_iterator(dir, ec)) {
             if (e.path().extension() == ".csproj") return "csharp";
@@ -42,6 +45,19 @@ static fs::path cmake_project(app::Context& ctx, const std::string& name) {
         if (fs::is_regular_file(dir / "CMakeLists.txt")) return dir / "CMakeLists.txt";
         if ((ws && dir == ws->root) || dir == dir.parent_path())
             throw app::Failure("no CMakeLists.txt here or above to add `" + name + "` to, make a package with `rant new package --lang cpp`");
+    }
+}
+
+/* The Cargo package a Rust node made here joins: the nearest Cargo.toml with a [package],
+ * here or above, inside the workspace. Its new src/bin file is a program Cargo finds itself. */
+static fs::path cargo_package(app::Context& ctx, const std::string& name) {
+    const config::Workspace* ws = ctx.workspace();
+    for (fs::path dir = ctx.cwd();; dir = dir.parent_path()) {
+        std::ifstream in(dir / "Cargo.toml", std::ios::binary);
+        std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        if (text.find("[package]") != std::string::npos) return dir;
+        if ((ws && dir == ws->root) || dir == dir.parent_path())
+            throw app::Failure("no Cargo package here or above to add `" + name + "` to, make one with `rant new package --lang rust`");
     }
 }
 
@@ -74,6 +90,13 @@ static void require_tools(app::Context& ctx, const std::string& lang, bool venv)
             python.insert(python.end(), { "-c", "import importlib.util as u, sys; sys.exit(u.find_spec('ensurepip') is None)" });
             if (!process::output({ python, fs::temp_directory_path(), {} })) missing.push_back("its venv module");
         }
+    } else if (lang == "rust") {
+        /* the Rant crate compiles its packed C sources */
+        shown = "Rust", apt = "build-essential";
+        if (!have("cargo")) missing.push_back("cargo (from https://rustup.rs)");
+#ifndef _WIN32
+        if (!have("cc") && !have("gcc") && !have("clang")) missing.push_back("a C compiler");
+#endif
     } else {
         shown = "C#", apt = "dotnet-sdk-10.0";
         if (!have("dotnet") || process::output({ { "dotnet", "--list-sdks" }, fs::temp_directory_path(), {} }).value_or("").empty())
@@ -100,9 +123,9 @@ static std::string dotnet_framework() {
 static std::string chosen(app::Context& ctx, const std::string& kind) {
     if (kind == "group") return "group";
     std::string lang = ctx.args.get("lang").value_or(kind == "node" ? language_here(ctx) : "");
-    if (lang.empty()) throw app::UsageError("say which language with --lang cpp, python or csharp");
+    if (lang.empty()) throw app::UsageError("say which language with --lang cpp, python, csharp or rust");
     if (std::find(languages.begin(), languages.end(), lang) == languages.end())
-        throw app::UsageError("unknown language `" + lang + "`, use cpp, python or csharp");
+        throw app::UsageError("unknown language `" + lang + "`, use cpp, python, csharp or rust");
     require_tools(ctx, lang, kind != "node");
     if (kind == "workspace") return "workspace-" + lang;
     return (kind == "node" && lang != "csharp" ? "node-" : "package-") + lang;
@@ -124,6 +147,9 @@ static int run(app::Context& ctx) {
     if (!dest.has_filename()) dest = dest.parent_path();
     std::string name = !folder && w.size() == 2 ? w[1] : config::to_utf8(dest.filename());
     if (kind == "group") name = util::group_name(name);
+    /* a Rust node is a src/bin file of the Cargo package around it, which Cargo finds itself */
+    std::optional<fs::path> crate;
+    if (preset == "node-rust") dest = *(crate = cargo_package(ctx, name));
     scaffold::Values values{ { "name", name }, { "Name", util::pascal(name) }, { "group", util::group_name(name) } };
     if (preset.find("csharp") != std::string::npos) values["framework"] = dotnet_framework();
     scaffold::Files files = scaffold::plan(preset, dest, values);
@@ -139,17 +165,19 @@ static int run(app::Context& ctx) {
     for (auto& [f, _] : files) ctx.out.line("created " + ctx.shown(f));
     if (project) ctx.out.line("added " + name + " to " + ctx.shown(*project));
 
-    /* every folder given a build file, or a CMake project that lacks it, takes the newest
-     * Rant the same way `rant lib install` adds it, since the presets name no version */
+    /* every folder given a build file, or a CMake project or Cargo package that lacks it, takes
+     * the newest Rant the same way `rant lib install` adds it, since the presets name no version */
     std::set<fs::path> needs;
     for (auto& [f, _] : files)
-        if (f.filename() == "CMakeLists.txt" || f.filename() == "pyproject.toml" || f.extension() == ".csproj")
+        if (f.filename() == "CMakeLists.txt" || f.filename() == "pyproject.toml" || f.filename() == "Cargo.toml" ||
+            f.extension() == ".csproj")
             needs.insert(f.parent_path());
-    if (project) {
-        auto uses = library::in_folder(project->parent_path());
-        auto cmake = [](const library::Use& u) { return u.kind == library::Kind::CMake; };
-        if (!std::any_of(uses.begin(), uses.end(), cmake)) needs.insert(project->parent_path());
-    }
+    auto lacks = [&](const fs::path& dir, library::Kind kind) {
+        auto uses = library::in_folder(dir);
+        if (!std::any_of(uses.begin(), uses.end(), [&](const library::Use& u) { return u.kind == kind; })) needs.insert(dir);
+    };
+    if (project) lacks(project->parent_path(), library::Kind::CMake);
+    if (crate) lacks(*crate, library::Kind::Rust);
     if (needs.empty()) return 0;
     bool ok = true;
     try {
@@ -172,7 +200,7 @@ app::Command new_() {
     app::Command c{ "new", "workspace|package [folder] | node|group [name]",
                     "make a workspace or package here or in a folder, or a node or group here",
                     app::Section::Workspace,
-                    { { "lang", 0, "L", "cpp, python or csharp, for a node the package's own by default" } },
+                    { { "lang", 0, "L", "cpp, python, csharp or rust, for a node the package's own by default" } },
                     run };
     c.complete = complete_words;
     return c;

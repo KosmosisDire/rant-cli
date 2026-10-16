@@ -14,12 +14,12 @@ namespace library {
 
 namespace fs = std::filesystem;
 
-enum class Kind { CMake, Python, CSharp };
-const char* kind_name(Kind k);    /* "cmake", "python", "csharp" */
+enum class Kind { CMake, Python, CSharp, Rust };
+const char* kind_name(Kind k);    /* "cmake", "python", "csharp", "rust" */
 
 /* One place a package takes Rant from. how says which, and so whether rant can move it:
- * "CPM", "FetchContent", "find_package", "pyproject", "venv", "PackageReference" or
- * "ProjectReference". */
+ * "CPM", "FetchContent", "find_package", "pyproject", "venv", "PackageReference",
+ * "ProjectReference", "Cargo", "Cargo workspace" or "Cargo path". */
 struct Use {
     Kind                       kind = Kind::CMake;
     std::string                how;
@@ -40,11 +40,11 @@ std::vector<Use> in_folder(const fs::path& dir);
  * workspace's ignore globs, and a venv is listed once, under the folder that holds it. */
 std::vector<Use> under(const fs::path& start);
 
-/* Moves the Rant version a CMakeLists, pyproject or C# project names. Throws app::Failure. */
+/* Moves the Rant version a CMakeLists, pyproject, C# project or Cargo.toml names. Throws app::Failure. */
 void set_version(const fs::path& file, const std::string& version);
 
-/* Adds Rant at version to a CMakeLists or a C# project. Returns a line still to add by
- * hand, empty when there is none. Throws app::Failure. */
+/* Adds Rant at version to a CMakeLists, a C# project or a Cargo.toml. Returns a line still to
+ * add by hand, empty when there is none. Throws app::Failure. */
 std::string add(Kind kind, const fs::path& file, const std::string& version);
 
 /* Adds a node to a CMakeLists: its own executable built from source, a path from the
@@ -52,7 +52,7 @@ std::string add(Kind kind, const fs::path& file, const std::string& version);
 void add_node(const fs::path& cmakelists, const std::string& name, const std::string& source);
 
 /* The file a node is written in: a Python node's own file, the first source of the CMake
- * target named after it, the C# file holding its Main. nullopt when none is found. */
+ * target named after it, the C# file holding its Main, a Rust program's source. */
 std::optional<fs::path> node_source(const config::NodeType& n);
 
 /* The first source a CMakeLists gives target, as written: from add_executable, else
@@ -68,7 +68,10 @@ std::string cmake_add_node(const std::string& text, const std::string& name, con
 std::string pyproject_set(const std::string& text, const std::string& version);
 std::string csharp_set(const std::string& text, const std::string& version);
 std::string csharp_add(const std::string& text, const std::string& version);
+std::string cargo_set(const std::string& text, const std::string& version);
+std::string cargo_add(const std::string& text, const std::string& version);
 std::optional<Use> cmake_use(const std::string& text);
 std::optional<Use> csharp_use(const std::string& text);
+std::optional<Use> cargo_use(const std::string& text);
 
 }

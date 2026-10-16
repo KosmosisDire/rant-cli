@@ -3,6 +3,7 @@
 #include <fstream>
 #include <iterator>
 #include <optional>
+#include <sstream>
 #include <utility>
 #include <vector>
 
@@ -98,9 +99,29 @@ static void install_nupkg(const app::Context& ctx, const net::Release& r) {
 
 net::Release release(const std::string& version) { return net::release(rant_repo, version); }
 
-/* A use the release would change. An unpinned pyproject dependency takes what its venv has. */
+/* The first Rant release with a crate-v tag, the packaged Rust crate a Cargo package fetches. */
+static const char* first_rust_release = "0.0.24";
+
+/* a before b, for dotted versions such as 0.0.23 */
+static bool older(const std::string& a, const std::string& b) {
+    std::istringstream x(a), y(b);
+    for (std::string p, q;;) {
+        bool more_a = (bool)std::getline(x, p, '.'), more_b = (bool)std::getline(y, q, '.');
+        if (!more_a || !more_b) return !more_a && more_b;
+        long m = std::strtol(p.c_str(), nullptr, 10), n = std::strtol(q.c_str(), nullptr, 10);
+        if (m != n) return m < n;
+    }
+}
+
+static void require_rust(const net::Release& r) {
+    if (older(r.version, first_rust_release))
+        throw app::Failure("Rant " + r.version + " has no Rust crate, Rust needs Rant " + first_rust_release + " or later");
+}
+
+/* A use the release would change. An unpinned pyproject dependency takes what its venv has,
+ * and an unpinned Cargo one what its source has. */
 static bool changes(const Use& u, const net::Release& r) {
-    return u.wanted && u.version != r.version && !(u.how == "pyproject" && !u.version);
+    return u.wanted && u.version != r.version && !((u.how == "pyproject" || u.how == "Cargo") && !u.version);
 }
 
 /* Brings one use to the release. Returns what it did, empty when there was nothing to do. */
@@ -110,6 +131,7 @@ static std::string bring(const app::Context& ctx, const Use& u, const net::Relea
         return "";
     }
     std::string from = (u.version ? *u.version : "none") + " -> " + r.version;
+    if (u.kind == Kind::Rust) require_rust(r);
     if (u.how == "venv") {
         install_python(ctx, u, r);
         return from + " in " + ctx.shown(u.file);
@@ -132,6 +154,8 @@ static std::vector<std::pair<Kind, fs::path>> missing(const fs::path& dir, const
     std::error_code ec;
     for (auto& e : fs::directory_iterator(dir, ec))
         if (e.path().extension() == ".csproj" && !used(e.path())) out.push_back({ Kind::CSharp, e.path() });
+    fs::path cargo = dir / "Cargo.toml";
+    if (fs::is_regular_file(cargo) && !used(cargo)) out.push_back({ Kind::Rust, cargo });
     return out;
 }
 
@@ -142,7 +166,7 @@ static void report(const app::Context& ctx, const fs::path& d, Kind k, const std
 bool install(const app::Context& ctx, const fs::path& dir, const net::Release& r) {
     std::vector<Use> uses = in_folder(dir);
     auto adds = missing(dir, uses);
-    if (uses.empty() && adds.empty()) throw app::Failure("no CMakeLists.txt, C# project or Python file in " + ctx.shown(dir));
+    if (uses.empty() && adds.empty()) throw app::Failure("no CMakeLists.txt, C# project, Cargo.toml or Python file in " + ctx.shown(dir));
     /* a use with no version yet, such as a venv without Rant, is installed too */
     std::vector<const Use*> bare;
     for (auto& u : uses)
@@ -152,7 +176,7 @@ bool install(const app::Context& ctx, const fs::path& dir, const net::Release& r
         return true;
     }
     ctx.out.line(ctx.out.paint(ui::Style::Bold, "Rant " + r.version));
-    bool ok = true, cmake = false;
+    bool ok = true, cmake = false, cargo = false;
     for (auto* u : bare) {
         try {
             report(ctx, u->dir, u->kind, bring(ctx, *u, r));
@@ -163,17 +187,20 @@ bool install(const app::Context& ctx, const fs::path& dir, const net::Release& r
     }
     for (auto& [kind, file] : adds) {
         try {
+            if (kind == Kind::Rust) require_rust(r);
             std::string hint = add(kind, file, r.version);
             if (kind == Kind::CSharp) install_nupkg(ctx, r);
             report(ctx, dir, kind, "added to " + ctx.shown(file));
             if (!hint.empty()) ctx.out.note("    link it to your target: " + hint);
             cmake |= kind == Kind::CMake;
+            cargo |= kind == Kind::Rust;
         } catch (const app::Failure& e) {
             ctx.out.warn(ctx.shown(dir) + " " + kind_name(kind) + ": " + e.what());
             ok = false;
         }
     }
     if (cmake) ctx.out.note("CMake fetches it on the next configure, which `rant build` runs");
+    if (cargo) ctx.out.note("Cargo fetches it on the next build, which `rant build` runs");
     return ok;
 }
 
@@ -196,13 +223,14 @@ bool update(const app::Context& ctx, const fs::path& dir, const net::Release& r)
         return false;
     }
 
-    bool ok = true, cmake = false;
+    bool ok = true, cmake = false, cargo = false;
     size_t done = 0;
     for (auto& u : uses) {
         try {
             if (bring(ctx, u, r).empty()) continue;
             done++;
             cmake |= u.kind == Kind::CMake;
+            cargo |= u.kind == Kind::Rust;
         } catch (const app::Failure& e) {
             ctx.out.warn(ctx.shown(u.dir) + " " + kind_name(u.kind) + ": " + e.what());
             ok = false;
@@ -210,6 +238,7 @@ bool update(const app::Context& ctx, const fs::path& dir, const net::Release& r)
     }
     if (done) ctx.out.line("updated " + std::to_string(done) + (done == 1 ? " package" : " packages"));
     if (cmake) ctx.out.note("CMake fetches it on the next configure, which `rant build` runs");
+    if (cargo) ctx.out.note("Cargo fetches it on the next build, which `rant build` runs");
     return ok;
 }
 

@@ -19,6 +19,7 @@ const char* kind_name(NodeKind k) {
     case NodeKind::Python:   return "python";
     case NodeKind::CSharp:   return "csharp";
     case NodeKind::Declared: return "declared";
+    case NodeKind::Rust:     return "rust";
     }
     return "?";
 }
@@ -48,6 +49,7 @@ static NodeType node_type(const RantConfigNodeType& n) {
     if (n.path) t.path = from_utf8(n.path);
     t.run = strs(n.run, n.run_count);
     t.cwd = from_utf8(str(n.cwd));
+    if (n.source) t.source = from_utf8(n.source);
     return t;
 }
 

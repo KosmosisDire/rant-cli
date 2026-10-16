@@ -23,8 +23,8 @@ expect_match("${OUT}" "py/camera +python +py/camera[.]py")
 
 rant(new node arm FAILS)
 expect_match("${ERR}" "say which language with --lang")
-rant(new node arm --lang rust FAILS)
-expect_match("${ERR}" "unknown language `rust`")
+rant(new node arm --lang cobol FAILS)
+expect_match("${ERR}" "unknown language `cobol`, use cpp, python, csharp or rust")
 rant(new thing x FAILS)
 expect_match("${ERR}" "say what to make")
 rant(new workspace demo FAILS)
@@ -41,6 +41,33 @@ file(READ "${SCRATCH}/robot/CMakeLists.txt" robot)
 expect_match("${robot}" "add_executable[(]base base[.]cpp[)]\nadd_executable[(]arm nodes/arm[.]cpp[)]\ntarget_link_libraries[(]arm PRIVATE rant::rant_host[)]\n")
 rant(new node arm --lang cpp IN "${SCRATCH}/robot" FAILS)
 expect_match("${ERR}" "target `arm` already, nothing was written")
+
+# A Rust node is a program file of the Cargo package around it, and needs one.
+find_program(CARGO cargo)
+if(CARGO)
+  rant(new node motor --lang rust FAILS)
+  expect_match("${ERR}" "no Cargo package here or above to add `motor` to")
+  file(WRITE "${SCRATCH}/drive/Cargo.toml" "[package]
+name = \"drive\"
+
+[dependencies]
+rant-middleware = \"0.0.24\"
+")
+  file(MAKE_DIRECTORY "${SCRATCH}/drive/src")
+  rant(new node motor IN "${SCRATCH}/drive/src")
+  expect_match("${OUT}" "created bin/motor[.]rs
+")
+  rant(build --dry-run)
+  expect_match("${OUT}" "drive/motor +rust +drive/src/bin/motor[.]rs")
+  rant(new workspace rusty --lang rust MAY_FAIL)
+  expect_match("${OUT}" "created rusty/src/bin/listener[.]rs
+created rusty/src/bin/talker[.]rs
+created rusty/workspace[.]rant
+created rusty/RustyGroup[.]run
+created rusty/[.]gitignore
+created rusty/Cargo[.]toml
+")
+endif()
 
 # A workspace holds a talker, a listener and a group of both. Its CMake package knows its
 # nodes once built.

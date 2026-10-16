@@ -24,7 +24,7 @@ writes the mesh. Full docs: https://docs.rantlib.dev/llms.txt (fetch the page yo
 cell/                     workspace: the folder holding workspace.rant
   workspace.rant
   CellGroup.run           a group: which nodes run together, and how
-  drivers/                a package: CMakeLists.txt, pyproject.toml or a .csproj that uses Rant
+  drivers/                a package: CMakeLists.txt, pyproject.toml, a .csproj or Cargo.toml that uses Rant
     CMakeLists.txt
     lidar.cpp             a node: one program
   logs/                   each started node's output, <node>.log, read with rant log
@@ -38,7 +38,7 @@ to override something. A folder may be a workspace and a package, with both file
 
 | goal | command |
 |---|---|
-| new project | `rant new workspace [folder] --lang cpp\|python\|csharp` (talker, listener, group) |
+| new project | `rant new workspace [folder] --lang cpp\|python\|csharp\|rust` (talker, listener, group) |
 | new package or node | `rant new package [folder] --lang L`, `rant new node [name]`, `rant new group [name]` |
 | build | `rant build [package...]`, `--dry-run` shows order and commands, `--clean` removes the build output first. A CMake build folder made in another place, after the package moved or was renamed, is removed and configured again after a question |
 | run | `rant run <Group> key=value...`, one node alone with `rant run node <node>`, `--dry-run` first. It builds what it starts (`--no-build` skips that), waits up to 10 s for the nodes to come up (`--wait S`), watches them 2 s more (`--watch S`) and fails with the log of one that exited or never came up |
@@ -154,6 +154,14 @@ var pose = node.Publisher<Pose2D>("Pose");
 node.Subscriber<Pose2D>("Pose", p => Console.WriteLine(p.Angle));
 ```
 
+```rust
+use rant::types::{Double2, Pose2D};   // a program in src/bin, Rant added with rant lib install
+let node = rant::Node::new("talker", rant::NodeOptions::new())?;
+let pose = node.publisher::<Pose2D>("Pose", rant::Qos::new())?;
+pose.send(&Pose2D { position: Double2 { x: 1.0, y: 2.0 }, angle: 0.5 })?;
+let _sub = node.subscriber::<Pose2D>("Pose", rant::Qos::new(), |p| println!("{}", p.angle))?;
+```
+
 ```c
 #define RANT_IMPLEMENTATION   /* in exactly one .c file */
 #include "rant.h"
@@ -212,6 +220,13 @@ var q = node.CreateQueue();
 node.Subscriber<Pose2D>("Pose", handler, new Qos { Queue = q });                        // q.Dispatch(0, 100)
 ```
 
+```rust
+let node = Node::new("talker", NodeOptions::new().threading(Threading::Manual))?;    // node.poll(Duration::from_millis(10))
+let node = Node::new("talker", NodeOptions::new().threading(Threading::Dispatch))?;  // node.dispatch(0, Duration::ZERO)
+let q = node.create_queue()?;
+let sub = node.subscriber::<Pose2D>("Pose", Qos::new().queue(&q), handler)?;        // q.dispatch(0, Duration::from_millis(100))
+```
+
 ```c
 rant_node_start(n);                          /* service thread, stop with rant_node_stop */
 while (running) rant_node_poll(n, 10);       /* or manual, without start */
@@ -229,15 +244,15 @@ rant_queue_dispatch(q, 0, 100);              /* on the thread that runs them */
   one owner, a function for a quick question, a task for a long job with progress or cancel.
 - Names are snake_case where they meet code and PascalCase everywhere else:
   - Nodes are snake_case and named like their file: `arm_controller.py`, a C++ target
-    `arm_controller`, a C# `ArmController.csproj` with `<AssemblyName>arm_controller`. Name a
-    node for what it is (`lidar`, not `lidar_node`).
+    `arm_controller`, a C# `ArmController.csproj` with `<AssemblyName>arm_controller`, a Rust
+    `src/bin/arm_controller.rs`. Name a node for what it is (`lidar`, not `lidar_node`).
   - Entities and namespaces are PascalCase, `/` between levels: `FrontLidar/JointState`,
     `Line1/Conveyor`. So are types and enum options.
   - Groups are PascalCase and end in Group: `NavGroup.run`, run as `rant run NavGroup`.
     A group is how a system starts, so give every system one, even of one node.
     `rant new group` names them so.
   - Fields are snake_case on the wire. Write them in the language's style (`frame_id` in
-    Python, `FrameId` in C#) and Rant converts, so both are `frame_id`.
+    Python and Rust, `FrameId` in C#) and Rant converts, so both are `frame_id`.
   - `rant run` and `rant build` note each group or node name that breaks this.
 - Units are SI: meters, seconds, m/s, N, radians. Time is a `Timestamp`, microseconds since
   the Unix epoch.

@@ -24,7 +24,7 @@ pub struct Step {
     /// Where the CMake cache was made when that is not the build folder: the package moved
     /// or was renamed, and CMake refuses a cache from elsewhere.
     pub moved_from: Option<PathBuf>,
-    /// What a clean build removes first: the CMake build folder and C# bin and obj.
+    /// What a clean build removes first: the CMake build folder, C# bin and obj, a cargo target.
     pub clean: Vec<PathBuf>,
     pub commands: Vec<Vec<String>>,
 }
@@ -47,8 +47,8 @@ fn slash(p: &Path) -> String {
     crate::eval::slash(p)
 }
 
-/// What building a package runs: its `build` when set, else the default of its manifest.
-fn step(pkg: &Package) -> Step {
+/// What building a package runs: its `build` when set, else the default of its manifests.
+fn step(pkg: &Package, root: &Path) -> Step {
     let mut s = Step { package: pkg.name.clone(), dir: pkg.dir.clone(), ..Step::default() };
     if let Some(build) = pkg.block.as_ref().and_then(|b| b.build.clone()) {
         s.commands = build;
@@ -70,6 +70,14 @@ fn step(pkg: &Package) -> Step {
         s.clean.insert(0, build.clone());
         s.build_dir = Some(build);
         s.commands.push(vec!["cmake".into(), "--build".into(), "build".into()]);
+    }
+    if pkg.manifests.iter().any(|m| m.kind == ManifestKind::Rust) {
+        s.commands.push(vec!["cargo".into(), "build".into()]);
+        // a target folder outside the workspace, such as a shared CARGO_TARGET_DIR, is never removed
+        let target = crate::model::cargo_target(&pkg.dir, root);
+        if paths::within(&target, root) {
+            s.clean.push(target);
+        }
     }
     s
 }
@@ -109,7 +117,7 @@ pub fn edges(model: &Model) -> Result<Vec<Edge>, Diag> {
             let file = shown(&m.path, root);
             for mention in &m.depends {
                 let target = match m.kind {
-                    ManifestKind::CMake | ManifestKind::CSharp => model.package(&mention.name),
+                    ManifestKind::CMake | ManifestKind::CSharp | ManifestKind::Rust => model.package(&mention.name),
                     ManifestKind::Python => model.packages.iter().find(|p| python_name(&p.name) == mention.name),
                 };
                 if let Some(t) = target {
@@ -180,7 +188,7 @@ pub fn plan(model: &Model, wanted: &[String]) -> Result<BuildPlan, Diag> {
         .into_iter()
         .filter(|e| order.iter().any(|&i| model.packages[i].name == e.from))
         .collect();
-    Ok(BuildPlan { steps: order.into_iter().map(|i| step(&model.packages[i])).collect(), edges: used })
+    Ok(BuildPlan { steps: order.into_iter().map(|i| step(&model.packages[i], &model.config.root)).collect(), edges: used })
 }
 
 /// The error for a dependency cycle, naming every edge on it and where each came from.

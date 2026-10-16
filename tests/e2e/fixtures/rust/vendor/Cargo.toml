@@ -1,0 +1,6 @@
+# A stand in for the Rant Rust binding: a dependency on a crate named rant-middleware is what
+# marks a Cargo package as one that uses Rant, and this one builds offline.
+[package]
+name = "rant-middleware"
+version = "0.0.0"
+edition = "2021"

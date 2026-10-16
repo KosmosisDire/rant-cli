@@ -38,6 +38,7 @@ pub enum RantConfigNodeKind {
     Python,
     CSharp,
     Declared,
+    Rust,
 }
 
 /// A runnable node type. path is NULL for a node declared in package.rant.
@@ -50,14 +51,16 @@ pub struct RantConfigNodeType {
     pub run: *const *const c_char,
     pub run_count: usize,
     pub cwd: *const c_char,
+    /// The file it is written in when the manifest says, as for a Rust program, else NULL.
+    pub source: *const c_char,
 }
 
 #[repr(C)]
 pub struct RantConfigPackage {
     pub name: *const c_char,
     pub dir: *const c_char,
-    /// What makes it a package: "cmake", "python", "csharp" for its manifests, "package.rant"
-    /// for its own settings.
+    /// What makes it a package: "cmake", "python", "csharp", "rust" for its manifests,
+    /// "package.rant" for its own settings.
     pub kinds: *const *const c_char,
     pub kind_count: usize,
     /// Its build files, then its package.rant if it has one.
@@ -226,6 +229,7 @@ impl Store {
             run,
             run_count,
             cwd: self.path(&n.cwd),
+            source: self.opt_path(n.source.as_deref()),
         }
     }
 
@@ -239,6 +243,7 @@ impl Store {
                 ManifestKind::CMake => "cmake",
                 ManifestKind::Python => "python",
                 ManifestKind::CSharp => "csharp",
+                ManifestKind::Rust => "rust",
             })
             .map(str::to_string)
             .collect();
@@ -288,6 +293,7 @@ fn kind(k: NodeKind) -> RantConfigNodeKind {
         NodeKind::Python => RantConfigNodeKind::Python,
         NodeKind::CSharp => RantConfigNodeKind::CSharp,
         NodeKind::Declared => RantConfigNodeKind::Declared,
+        NodeKind::Rust => RantConfigNodeKind::Rust,
     }
 }
 

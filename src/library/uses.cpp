@@ -15,12 +15,14 @@ static const char* rant_git = "https://github.com/KosmosisDire/Rant.git";
 static const char* python_package = "rant-middleware";
 static const char* dist_info_prefix = "rant_middleware-";
 static const char* dotnet_package = "Rant";
+static const char* rust_crate = "rant-middleware";
 
 const char* kind_name(Kind k) {
     switch (k) {
     case Kind::CMake:  return "cmake";
     case Kind::Python: return "python";
     case Kind::CSharp: return "csharp";
+    case Kind::Rust:   return "rust";
     }
     return "?";
 }
@@ -365,6 +367,8 @@ std::optional<fs::path> node_source(const config::NodeType& n) {
         return cmake_node_source(n);
     case config::NodeKind::CSharp:
         return csharp_node_source(n);
+    case config::NodeKind::Rust:
+        return n.source;
     default:
         return std::nullopt;
     }
@@ -516,6 +520,121 @@ std::string csharp_add(const std::string& text, const std::string& version) {
     return text.substr(0, end) + "  <ItemGroup>\n    " + reference + "\n  </ItemGroup>\n" + text.substr(end);
 }
 
+// ---- Rust ----
+
+static bool ends_with(const std::string& s, const std::string& tail) {
+    return s.size() >= tail.size() && s.compare(s.size() - tail.size(), tail.size(), tail) == 0;
+}
+
+/* [dependencies], [workspace.dependencies] or [target.'cfg(unix)'.dependencies] */
+static bool dependency_table(const std::string& section) { return section == "dependencies" || ends_with(section, ".dependencies"); }
+
+/* The Rant dependency of a Cargo.toml as the text it spans: a `rant-middleware = ...` line, or
+ * a [dependencies.rant-middleware] table, also renamed with `package`. */
+static std::optional<std::pair<size_t, size_t>> cargo_entry(const std::string& text) {
+    static const std::regex renamed = icase(R"(\bpackage\s*=\s*"rant-middleware")");
+    static const std::regex key = icase(R"re(^\s*"?([A-Za-z0-9_-]+)"?\s*=)re");
+    std::string section;
+    std::optional<size_t> table;    /* the start of an open [*.dependencies.<name>] table */
+    std::string table_name;
+    size_t at = 0;
+    while (at <= text.size()) {
+        size_t end = std::min(text.find('\n', at), text.size());
+        std::string line = text.substr(at, end - at);
+        size_t first = line.find_first_not_of(" \t");
+        bool header = first != std::string::npos && line[first] == '[';
+        if (header && table) {
+            std::string body = text.substr(*table, at - *table);
+            if (table_name == rust_crate || std::regex_search(body, renamed)) return std::make_pair(*table, at);
+            table.reset();
+        }
+        if (header) {
+            size_t close = line.find(']', first);
+            section = line.substr(first + 1, close == std::string::npos ? std::string::npos : close - first - 1);
+            size_t dot = section.rfind('.');
+            if (dot != std::string::npos && dependency_table(section.substr(0, dot))) {
+                table = at;
+                table_name = section.substr(dot + 1);
+            }
+        } else if (!table && dependency_table(section)) {
+            std::smatch m;
+            if (std::regex_search(line, m, key) && (m[1].str() == rust_crate || std::regex_search(line, renamed)))
+                return std::make_pair(at, end);
+        }
+        if (end == text.size()) break;
+        at = end + 1;
+    }
+    if (table && (table_name == rust_crate || std::regex_search(text.substr(*table), renamed))) return std::make_pair(*table, text.size());
+    return std::nullopt;
+}
+
+/* Where a version sits in a Cargo entry: a git tag, crate-v as rant writes it or a plain v, a
+ * version key, or the entry's own string. */
+static const std::vector<std::regex>& cargo_versions() {
+    static const std::vector<std::regex> v = {
+        icase(R"((\btag\s*=\s*")((?:crate-)?v?)(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?))"),
+        icase(R"((\bversion\s*=\s*"[=^~]?)()(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?))"),
+        icase(R"((^\s*"?rant-middleware"?\s*=\s*"[=^~]?)()(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?))"),
+    };
+    return v;
+}
+
+std::optional<Use> cargo_use(const std::string& text) {
+    auto entry = cargo_entry(text);
+    if (!entry) return std::nullopt;
+    std::string body = text.substr(entry->first, entry->second - entry->first);
+    if (std::regex_search(body, icase(R"(\bworkspace\s*=\s*true\b)"))) {
+        Use u = use_of(Kind::Rust, "Cargo workspace", {}, {});
+        u.wanted = false;    /* its version is the Cargo workspace's to move */
+        return u;
+    }
+    if (std::regex_search(body, icase(R"(\bpath\s*=)"))) {
+        Use u = use_of(Kind::Rust, "Cargo path", {}, {});
+        u.wanted = false;
+        return u;
+    }
+    Use u = use_of(Kind::Rust, "Cargo", {}, {});
+    for (auto& re : cargo_versions()) {
+        std::smatch m;
+        if (std::regex_search(body, m, re)) {
+            u.version = m[3].str();
+            break;
+        }
+    }
+    return u;
+}
+
+std::string cargo_set(const std::string& text, const std::string& version) {
+    auto entry = cargo_entry(text);
+    if (!entry) throw app::Failure(std::string("it has no ") + rust_crate + " dependency to move");
+    std::string body = text.substr(entry->first, entry->second - entry->first);
+    if (std::regex_search(body, icase(R"(\bworkspace\s*=\s*true\b)")))
+        throw app::Failure("it takes Rant from its Cargo workspace, move the version in the workspace Cargo.toml");
+    if (std::regex_search(body, icase(R"(\bpath\s*=)"))) throw app::Failure("it uses a Rant checkout by path, update that checkout instead");
+    for (auto& re : cargo_versions())
+        if (std::regex_search(body, re))
+            return text.substr(0, entry->first) + with_version(body, re, version) + text.substr(entry->second);
+    throw app::Failure(std::string("its ") + rust_crate + " dependency names no version to move, set tag = \"crate-v" + version + "\" by hand");
+}
+
+std::string cargo_add(const std::string& text, const std::string& version) {
+    static const std::regex package = icase(R"((^|\n)\s*\[package\])");
+    if (!std::regex_search(text, package)) throw app::Failure("it is a Cargo workspace with no package, add Rant to a member");
+    /* the crate-v tag carries the packed C, so a build needs no cmake */
+    std::string line = std::string(rust_crate) + " = { git = \"" + rant_git + "\", tag = \"crate-v" + version + "\" }\n";
+    static const std::regex dependencies = icase(R"((^|\n)[ \t]*\[dependencies\][ \t]*(\r?\n|$))");
+    std::smatch m;
+    if (std::regex_search(text, m, dependencies)) {
+        size_t at = m.position(0) + m.length(0);
+        std::string head = text.substr(0, at);
+        if (at == text.size() && !head.empty() && head.back() != '\n') head += '\n';
+        return head + line + text.substr(at);
+    }
+    std::string out = text;
+    if (!out.empty() && out.back() != '\n') out += '\n';
+    return out + (out.empty() ? "" : "\n") + "[dependencies]\n" + line;
+}
+
 // ---- finding and editing ----
 
 static std::vector<Use> folder_uses(const fs::path& dir, bool explicit_folder) {
@@ -536,6 +655,13 @@ static std::vector<Use> folder_uses(const fs::path& dir, bool explicit_folder) {
         if (auto u = csharp_use(read_file(p))) {
             u->dir = dir;
             u->file = p;
+            out.push_back(*u);
+        }
+    fs::path cargo = dir / "Cargo.toml";
+    if (fs::is_regular_file(cargo))
+        if (auto u = cargo_use(read_file(cargo))) {
+            u->dir = dir;
+            u->file = cargo;
             out.push_back(*u);
         }
     python_uses(dir, explicit_folder, out);
@@ -584,6 +710,7 @@ void set_version(const fs::path& file, const std::string& version) {
     if (name == "cmakelists.txt") edit(file, cmake_set(text, version), text);
     else if (name == "pyproject.toml") edit(file, pyproject_set(text, version), text);
     else if (lower(file.extension().u8string()) == ".csproj") edit(file, csharp_set(text, version), text);
+    else if (name == "cargo.toml") edit(file, cargo_set(text, version), text);
     else throw app::Failure(file.u8string() + " names no Rant version rant can move");
 }
 
@@ -591,6 +718,7 @@ std::string add(Kind kind, const fs::path& file, const std::string& version) {
     std::string text = read_file(file), hint;
     if (kind == Kind::CMake) edit(file, cmake_add(text, version, &hint), text);
     else if (kind == Kind::CSharp) edit(file, csharp_add(text, version), text);
+    else if (kind == Kind::Rust) edit(file, cargo_add(text, version), text);
     else throw app::Failure("Python gets Rant in its venv, not its files");
     return hint;
 }

@@ -25,8 +25,8 @@ struct Diagnostic {
     std::string str() const;  /* "file:line:col: message" */
 };
 
-enum class NodeKind { Native, Python, CSharp, Declared };
-const char* kind_name(NodeKind k);    /* "native", "python", "csharp", "declared" */
+enum class NodeKind { Native, Python, CSharp, Declared, Rust };
+const char* kind_name(NodeKind k);    /* "native", "python", "csharp", "declared", "rust" */
 
 struct NodeType {
     std::string              package;
@@ -35,6 +35,7 @@ struct NodeType {
     std::optional<fs::path>  path;      /* the artifact or source, none when declared */
     std::vector<std::string> run;       /* argv, never run through a shell */
     fs::path                 cwd;       /* the package root, or a loose file's folder */
+    std::optional<fs::path>  source;    /* the file it is written in when the manifest says, as for Rust */
 
     std::string ref() const { return package.empty() ? name : package + "/" + name; }
 
@@ -45,7 +46,7 @@ struct NodeType {
 struct Package {
     std::string              name;
     fs::path                 dir;
-    std::vector<std::string> kinds;    /* "cmake", "python", "csharp", "package.rant" */
+    std::vector<std::string> kinds;    /* "cmake", "python", "csharp", "rust", "package.rant" */
     std::vector<fs::path>    files;    /* its build files, then its package.rant */
     std::vector<NodeType>    nodes;
 };

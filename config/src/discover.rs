@@ -57,9 +57,8 @@ fn build_tree(dir: &Path) -> bool {
     dir.join("CMakeCache.txt").is_file()
 }
 
-/// Every folder under start and every venv met on the way, which is not entered. Version
-/// control, rant's data, npm trees, fetched sources, build trees and the workspace's
-/// `ignore` globs are left out, gitignored paths are not, since a venv usually is one.
+/// Every folder under start and every venv met on the way, which is not entered. What a scan
+/// skips and the `ignore` globs are left out, gitignored paths are not, as venvs usually are.
 pub fn folders(start: &Path, config: Option<&WorkspaceConfig>) -> (Vec<PathBuf>, Vec<PathBuf>) {
     let ignore = config.and_then(|c| glob_set(&c.ignore, &c.root.join(WORKSPACE_FILE)).ok()).unwrap_or_else(GlobSet::empty);
     let root = config.map(|c| c.root.clone()).unwrap_or_else(|| start.to_path_buf());
@@ -71,7 +70,7 @@ pub fn folders(start: &Path, config: Option<&WorkspaceConfig>) -> (Vec<PathBuf>,
         .filter_entry(move |e| {
             let p = e.path();
             let is_dir = e.file_type().is_some_and(|t| t.is_dir());
-            p == top || !is_dir || !(build_tree(p) || ignored(&ignore, &root, p, true) || {
+            p == top || !is_dir || !(build_tree(p) || ignored(&ignore, &root, p, true) || crate::scan::cache_dir(p) || {
                 let name = p.file_name().map(|n| n.to_string_lossy()).unwrap_or_default();
                 name == ".git" || name == ".rant" || name == "node_modules" || name == "_deps"
             })

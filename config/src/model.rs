@@ -28,6 +28,8 @@ pub struct NodeType {
     pub cwd: PathBuf,
     /// Other artifacts with the same name that lost to the newest.
     pub shadowed: Vec<PathBuf>,
+    /// The file it is written in, when the manifest says: a Rust program's source.
+    pub source: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone)]
@@ -176,6 +178,7 @@ fn loose_node(path: PathBuf, root: &Path) -> NodeType {
         run,
         cwd: dir,
         shadowed: Vec::new(),
+        source: None,
     }
 }
 
@@ -200,7 +203,7 @@ fn node_types(pkg: &Package, mut found: Vec<scan::Found>, root: &Path) -> Vec<No
         };
         by_name.insert(
             name.clone(),
-            NodeType { package: pkg.name.clone(), name, kind: f.kind, path: Some(f.path), run, cwd: pkg.dir.clone(), shadowed: Vec::new() },
+            NodeType { package: pkg.name.clone(), name, kind: f.kind, path: Some(f.path), run, cwd: pkg.dir.clone(), shadowed: Vec::new(), source: None },
         );
     }
     for m in pkg.manifests.iter().filter(|m| m.kind == ManifestKind::CSharp && m.program && m.uses_rant) {
@@ -211,8 +214,28 @@ fn node_types(pkg: &Package, mut found: Vec<scan::Found>, root: &Path) -> Vec<No
         };
         by_name.insert(
             name.clone(),
-            NodeType { package: pkg.name.clone(), name, kind: NodeKind::CSharp, path: Some(path), run, cwd: pkg.dir.clone(), shadowed: Vec::new() },
+            NodeType { package: pkg.name.clone(), name, kind: NodeKind::CSharp, path: Some(path), run, cwd: pkg.dir.clone(), shadowed: Vec::new(), source: None },
         );
+    }
+    let target = cargo_target(&pkg.dir, root);
+    for m in pkg.manifests.iter().filter(|m| m.kind == ManifestKind::Rust && m.uses_rant) {
+        for (name, source) in &m.bins {
+            let (path, run) = match newest_program(&target, name) {
+                Some(exe) => (exe.clone(), vec![slash(&exe)]),
+                None => (source.clone(), Vec::new()),
+            };
+            let node = NodeType {
+                package: pkg.name.clone(),
+                name: name.clone(),
+                kind: NodeKind::Rust,
+                path: Some(path),
+                run,
+                cwd: pkg.dir.clone(),
+                shadowed: Vec::new(),
+                source: Some(source.clone()),
+            };
+            by_name.insert(name.clone(), node);
+        }
     }
     for d in pkg.block.iter().flat_map(|b| b.nodes.iter()) {
         by_name.insert(
@@ -225,10 +248,40 @@ fn node_types(pkg: &Package, mut found: Vec<scan::Found>, root: &Path) -> Vec<No
                 run: d.run.clone(),
                 cwd: pkg.dir.clone(),
                 shadowed: Vec::new(),
+                source: None,
             },
         );
     }
     by_name.into_values().collect()
+}
+
+/// Where cargo builds a package: CARGO_TARGET_DIR, else the target folder of the Cargo
+/// workspace around the package, up to the Rant workspace root, else its own.
+pub fn cargo_target(dir: &Path, root: &Path) -> PathBuf {
+    if let Some(t) = std::env::var_os("CARGO_TARGET_DIR").filter(|t| !t.is_empty()) {
+        return PathBuf::from(t);
+    }
+    for d in dir.ancestors() {
+        let text = std::fs::read_to_string(d.join("Cargo.toml")).unwrap_or_default();
+        if toml::from_str::<toml::Table>(&text).is_ok_and(|doc| doc.contains_key("workspace")) {
+            return d.join("target");
+        }
+        if paths::same(d, root) {
+            break;
+        }
+    }
+    dir.join("target")
+}
+
+/// The newest build of a Cargo program, debug or release, None until it has been built.
+fn newest_program(target: &Path, name: &str) -> Option<PathBuf> {
+    let file = if cfg!(windows) { format!("{name}.exe") } else { name.to_string() };
+    ["debug", "release"]
+        .iter()
+        .map(|profile| target.join(profile).join(&file))
+        .filter_map(|p| Some((std::fs::metadata(&p).ok()?.modified().ok()?, p)))
+        .max_by_key(|(t, _)| *t)
+        .map(|(_, p)| p)
 }
 
 /// The newest build of a C# program under the package's bin/: its apphost when there is one,

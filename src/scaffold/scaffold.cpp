@@ -20,10 +20,13 @@ static const std::vector<Preset> presets = {
     { "package-cpp", { "package-cpp", "node-cpp" } },
     { "package-python", { "package-python", "node-python" } },
     { "package-csharp", { "package-csharp" } },
+    { "node-rust", { "node-rust" } },
+    { "package-rust", { "package-rust", "node-rust" } },
     { "group", { "group" } },
     { "workspace-cpp", { "workspace-cpp" } },
     { "workspace-python", { "workspace-python" } },
     { "workspace-csharp", { "workspace-csharp" } },
+    { "workspace-rust", { "workspace-rust", "package-rust" } },
 };
 
 static std::string filled(std::string text, const Values& values) {

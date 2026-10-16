@@ -6,11 +6,14 @@ use std::sync::OnceLock;
 
 use regex::Regex;
 
+use crate::paths;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ManifestKind {
     CMake,
     Python,
     CSharp,
+    Rust,
 }
 
 #[derive(Debug, Clone)]
@@ -25,6 +28,8 @@ pub struct Manifest {
     pub depends: Vec<Mention>,
     /// Directories this manifest pulls in by path, each with the line that says so.
     pub subdirs: Vec<(PathBuf, String)>,
+    /// The programs a Cargo package builds: each binary target's name and source file.
+    pub bins: Vec<(String, PathBuf)>,
 }
 
 #[derive(Debug, Clone)]
@@ -53,6 +58,9 @@ pub fn in_dir(dir: &Path) -> Vec<Manifest> {
         .collect();
     projects.sort();
     out.extend(projects.iter().filter_map(|p| csproj(p)));
+    if let Some(m) = cargo(&dir.join("Cargo.toml")) {
+        out.push(m);
+    }
     out
 }
 
@@ -89,7 +97,7 @@ fn cmake(path: &Path) -> Option<Manifest> {
         .filter(|c| !c[1].contains('$'))
         .map(|c| (dir.join(&c[1]), format!("add_subdirectory({})", &c[1])))
         .collect();
-    Some(Manifest { kind: ManifestKind::CMake, path: path.to_path_buf(), name, uses_rant: uses, program: false, depends, subdirs })
+    Some(Manifest { kind: ManifestKind::CMake, path: path.to_path_buf(), name, uses_rant: uses, program: false, depends, subdirs , bins: Vec::new() })
 }
 
 /// PEP 503: case and runs of `-`, `_` and `.` do not matter in a distribution name.
@@ -150,7 +158,7 @@ fn pyproject(path: &Path) -> Option<Manifest> {
         .filter_map(|r| requirement_name(r).map(|n| Mention { name: n, source: format!("dependency {}", r.trim()) }))
         .collect();
     let uses_rant = depends.iter().any(|m| m.name == RANT_PYTHON_PACKAGE);
-    Some(Manifest { kind: ManifestKind::Python, path: path.to_path_buf(), name, uses_rant, program: false, depends, subdirs: Vec::new() })
+    Some(Manifest { kind: ManifestKind::Python, path: path.to_path_buf(), name, uses_rant, program: false, depends, subdirs: Vec::new() , bins: Vec::new() })
 }
 
 /// The .NET package the Rant C# binding ships as, and its project file.
@@ -186,7 +194,80 @@ fn csproj(path: &Path) -> Option<Manifest> {
         .map(|c| c[1].to_string())
         .or_else(|| path.file_stem().map(|s| s.to_string_lossy().into_owned()));
     let program = re(&EXE, r"(?i)<OutputType>\s*(Exe|WinExe)\s*</OutputType>").is_match(&text);
-    Some(Manifest { kind: ManifestKind::CSharp, path: path.to_path_buf(), name, uses_rant, program, depends: Vec::new(), subdirs })
+    Some(Manifest { kind: ManifestKind::CSharp, path: path.to_path_buf(), name, uses_rant, program, depends: Vec::new(), subdirs , bins: Vec::new() })
+}
+
+/// The crate the Rant Rust binding ships as.
+pub const RANT_RUST_CRATE: &str = "rant-middleware";
+
+/// A Cargo package uses Rant when a dependency is the Rant crate, under its own name or
+/// renamed with `package`. Its other dependencies name packages, path ones by folder too.
+fn cargo(path: &Path) -> Option<Manifest> {
+    let text = std::fs::read_to_string(path).ok()?;
+    let doc: toml::Table = toml::from_str(&text).ok()?;
+    let dir = path.parent().unwrap_or(Path::new("."));
+    let package = doc.get("package").and_then(|v| v.as_table());
+    let name = package.and_then(|p| p.get("name")).and_then(|v| v.as_str()).map(str::to_string);
+
+    let mut tables: Vec<&toml::Table> = doc.get("dependencies").and_then(|v| v.as_table()).into_iter().collect();
+    if let Some(targets) = doc.get("target").and_then(|v| v.as_table()) {
+        tables.extend(targets.values().filter_map(|t| t.get("dependencies")).filter_map(|d| d.as_table()));
+    }
+    let (mut uses_rant, mut depends, mut subdirs) = (false, Vec::new(), Vec::new());
+    for (key, value) in tables.into_iter().flatten() {
+        let table = value.as_table();
+        let krate = table.and_then(|t| t.get("package")).and_then(|v| v.as_str()).unwrap_or(key);
+        uses_rant |= krate == RANT_RUST_CRATE;
+        depends.push(Mention { name: krate.to_string(), source: format!("dependency {key}") });
+        if let Some(p) = table.and_then(|t| t.get("path")).and_then(|v| v.as_str()) {
+            subdirs.push((dir.join(p), format!("path dependency {key}")));
+        }
+    }
+    let bins = package.zip(name.as_deref()).map(|(p, n)| cargo_bins(dir, p, n, &doc)).unwrap_or_default();
+    Some(Manifest { kind: ManifestKind::Rust, path: path.to_path_buf(), name, uses_rant, program: !bins.is_empty(), depends, subdirs, bins })
+}
+
+/// The binary targets as Cargo finds them: each `[[bin]]`, then unless `autobins = false`
+/// src/main.rs named after the package, src/bin/x.rs and src/bin/x/main.rs named x.
+fn cargo_bins(dir: &Path, package: &toml::Table, package_name: &str, doc: &toml::Table) -> Vec<(String, PathBuf)> {
+    let src = dir.join("src");
+    let default_source = |name: &str| {
+        let candidates = [src.join("bin").join(format!("{name}.rs")), src.join("bin").join(name).join("main.rs")];
+        let main = (name == package_name).then(|| src.join("main.rs"));
+        main.into_iter().chain(candidates).find(|p| p.is_file())
+    };
+    let mut bins: Vec<(String, PathBuf)> = Vec::new();
+    for b in doc.get("bin").and_then(|v| v.as_array()).into_iter().flatten().filter_map(|b| b.as_table()) {
+        let Some(name) = b.get("name").and_then(|v| v.as_str()) else { continue };
+        let source = b.get("path").and_then(|v| v.as_str()).map(|p| dir.join(p)).or_else(|| default_source(name));
+        if let Some(source) = source {
+            bins.push((name.to_string(), source));
+        }
+    }
+    if package.get("autobins").and_then(|v| v.as_bool()) == Some(false) {
+        return bins;
+    }
+    let mut found: Vec<(String, PathBuf)> = Vec::new();
+    if src.join("main.rs").is_file() {
+        found.push((package_name.to_string(), src.join("main.rs")));
+    }
+    let mut entries: Vec<PathBuf> = std::fs::read_dir(src.join("bin")).into_iter().flatten().flatten().map(|e| e.path()).collect();
+    entries.sort();
+    for p in entries {
+        let stem = p.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+        if p.is_file() && p.extension().is_some_and(|e| e == "rs") {
+            found.push((stem, p));
+        } else if p.join("main.rs").is_file() {
+            found.push((stem, p.join("main.rs")));
+        }
+    }
+    for (name, source) in found {
+        let taken = bins.iter().any(|(n, s)| *n == name || paths::same(s, &source));
+        if !taken {
+            bins.push((name, source));
+        }
+    }
+    bins
 }
 
 #[cfg(test)]
@@ -240,6 +321,56 @@ mod tests {
         assert!(lib.uses_rant && !lib.program);
         assert_eq!(lib.name.as_deref(), Some("lib"));
         assert!(!in_dir(&t.path("other"))[0].uses_rant);
+    }
+
+    #[test]
+    fn cargo_packages_and_their_programs() {
+        let t = TestDir::new();
+        t.write(
+            "arm/Cargo.toml",
+            "[package]
+name = \"arm\"
+
+[dependencies]
+rant = { package = \"rant-middleware\", git = \"x\", tag = \"v0.0.24\" }
+shared = { path = \"../shared\" }
+
+[[bin]]
+name = \"jog\"
+path = \"tools/jog.rs\"
+",
+        );
+        t.write("arm/src/main.rs", "fn main() {}
+");
+        t.write("arm/src/bin/camera.rs", "fn main() {}
+");
+        t.write("arm/src/bin/planner/main.rs", "fn main() {}
+");
+        t.write("arm/src/bin/planner/util.rs", "");
+        t.write("lib/Cargo.toml", "[package]
+name = \"lib\"
+[target.'cfg(unix)'.dependencies]
+rant-middleware = { workspace = true }
+");
+        t.write("other/Cargo.toml", "[package]
+name = \"other\"
+autobins = false
+[dependencies]
+serde = \"1\"
+");
+        t.write("other/src/main.rs", "fn main() {}
+");
+        let arm = &in_dir(&t.path("arm"))[0];
+        assert!(arm.kind == ManifestKind::Rust && arm.uses_rant && arm.program);
+        assert_eq!(arm.name.as_deref(), Some("arm"));
+        let bins: Vec<(&str, bool)> = arm.bins.iter().map(|(n, s)| (n.as_str(), s.is_file() || n == "jog")).collect();
+        assert_eq!(bins, [("jog", true), ("arm", true), ("camera", true), ("planner", true)]);
+        assert!(arm.bins[3].1.ends_with("main.rs"), "a folder program is its main.rs");
+        assert!(arm.depends.iter().any(|d| d.name == "shared"));
+        assert_eq!(arm.subdirs[0].0, t.path("arm").join("../shared"));
+        assert!(in_dir(&t.path("lib"))[0].uses_rant, "a target dependency inherited from the workspace counts");
+        let other = &in_dir(&t.path("other"))[0];
+        assert!(!other.uses_rant && other.bins.is_empty(), "autobins = false finds nothing");
     }
 
     #[test]

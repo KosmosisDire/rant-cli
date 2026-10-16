@@ -17,6 +17,7 @@ pub enum NodeKind {
     Python,
     CSharp,
     Declared,
+    Rust,
 }
 
 /// A file the scan accepted as a node.
@@ -85,11 +86,16 @@ impl Cache {
     }
 }
 
-/// Directories no scan enters: version control, Rant's own data, virtualenvs, npm trees and
-/// the sources CMake fetches into a build tree, which belong to other projects.
+/// Directories no scan enters: version control, Rant's data, venvs, npm trees, the sources
+/// CMake fetches, and caches such as a cargo target folder, whose programs Cargo.toml names.
 pub fn skipped_dir(dir: &Path) -> bool {
     let name = dir.file_name().map(|n| n.to_string_lossy()).unwrap_or_default();
-    name == ".git" || name == ".rant" || name == "node_modules" || name == "_deps" || dir.join("pyvenv.cfg").is_file()
+    name == ".git" || name == ".rant" || name == "node_modules" || name == "_deps" || dir.join("pyvenv.cfg").is_file() || cache_dir(dir)
+}
+
+/// A folder tagged as a cache by the CACHEDIR.TAG convention, as cargo tags its target folder.
+pub fn cache_dir(dir: &Path) -> bool {
+    dir.join("CACHEDIR.TAG").is_file()
 }
 
 /// Scans `dir`, including build directories, but not the nested packages in `nested` nor

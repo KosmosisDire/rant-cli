@@ -114,6 +114,59 @@ fn a_csharp_program_runs_its_newest_build() {
 }
 
 #[test]
+fn a_rust_program_runs_its_newest_build_and_cargo_copies_are_no_nodes() {
+    let t = TestDir::new();
+    t.write("workspace.rant", "");
+    t.write("robot/Cargo.toml", "[package]
+name = \"robot\"
+[dependencies]
+rant-middleware = \"0.0.24\"
+");
+    t.write("robot/src/bin/talker.rs", "fn main() {}
+");
+    let m = load(&t);
+    let n = &m.package("robot").unwrap().nodes[0];
+    assert_eq!((n.name.as_str(), n.kind), ("talker", NodeKind::Rust));
+    assert!(n.run.is_empty(), "nothing to run before a build");
+    assert!(n.source.as_ref().unwrap().ends_with("src/bin/talker.rs"));
+
+    let exe = if cfg!(windows) { "talker.exe" } else { "talker" };
+    t.write("robot/target/CACHEDIR.TAG", "Signature: 8a477f597d28d172789f06886806bc55
+");
+    t.write(&format!("robot/target/debug/{exe}"), "");
+    t.write(&format!("robot/target/debug/deps/talker-1a2b3c{}", if cfg!(windows) { ".exe" } else { "" }), "");
+    let built = load(&t);
+    let p = built.package("robot").unwrap();
+    assert_eq!(p.nodes.len(), 1, "the hashed copy in deps is no node: {:?}", p.nodes);
+    assert!(p.nodes[0].run[0].ends_with(&format!("target/debug/{exe}")));
+    let step = &crate::build_plan::plan(&built, &[]).unwrap().steps[0];
+    assert_eq!(step.commands, vec![vec!["cargo", "build"]]);
+    assert_eq!(step.clean, [t.root().join("robot/target")]);
+}
+
+#[test]
+fn a_cargo_workspace_member_runs_from_the_workspace_target() {
+    let t = TestDir::new();
+    t.write("workspace.rant", "");
+    t.write("Cargo.toml", "[workspace]
+members = [\"nodes/*\"]
+");
+    t.write("nodes/arm/Cargo.toml", "[package]
+name = \"arm\"
+[dependencies]
+rant-middleware = { workspace = true }
+");
+    t.write("nodes/arm/src/main.rs", "fn main() {}
+");
+    t.write("target/CACHEDIR.TAG", "");
+    t.write(&format!("target/release/{}", if cfg!(windows) { "arm.exe" } else { "arm" }), "");
+    let m = load(&t);
+    let names: Vec<&str> = m.packages.iter().map(|p| p.name.as_str()).collect();
+    assert_eq!(names, ["arm"], "the virtual root is no package");
+    assert!(m.package("arm").unwrap().nodes[0].run[0].contains("target/release/arm"));
+}
+
+#[test]
 fn the_scan_cache_is_written_and_reused() {
     let t = mixed();
     load(&t);

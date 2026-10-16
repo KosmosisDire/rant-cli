@@ -106,6 +106,38 @@ TEST(csharp_reference_is_read_moved_pinned_and_added) {
                          "  </ItemGroup>\n</Project>\n"));
 }
 
+TEST(cargo_dependency_is_read_moved_and_added) {
+    std::string git = "[package]\nname = \"arm\"\n\n[dependencies]\nserde = \"1\"\n"
+                      "rant-middleware = { git = \"https://github.com/KosmosisDire/Rant.git\", tag = \"crate-v0.0.24\" }\n";
+    auto u = library::cargo_use(git);
+    CHECK(u && u->how == "Cargo" && u->version == std::string("0.0.24"));
+    CHECK_EQ(library::cargo_set(git, "0.0.25"), replaced(git, "crate-v0.0.24", "crate-v0.0.25"));
+    std::string plain_tag = "[package]\nname = \"arm\"\n[dependencies]\nrant-middleware = { git = \"x\", tag = \"v0.0.24\" }\n";
+    CHECK_EQ(library::cargo_set(plain_tag, "0.0.25"), replaced(plain_tag, "\"v0.0.24\"", "\"v0.0.25\""));
+
+    std::string plain = "[package]\nname = \"arm\"\n[dependencies]\nrant-middleware = \"=0.0.24\"\nother = \"0.0.24\"\n";
+    CHECK_EQ(library::cargo_set(plain, "0.0.25"), replaced(plain, "rant-middleware = \"=0.0.24\"", "rant-middleware = \"=0.0.25\""));
+    std::string renamed = "[package]\nname = \"arm\"\n[dependencies]\nrant = { package = \"rant-middleware\", version = \"0.0.24\" }\n";
+    CHECK(library::cargo_use(renamed)->version == std::string("0.0.24"));
+    std::string table = "[package]\nname = \"arm\"\n[dependencies.rant-middleware]\ngit = \"x\"\ntag = \"v0.0.24\"\n\n[features]\ntag = \"v9.9.9\"\n";
+    CHECK_EQ(library::cargo_set(table, "0.0.25"), replaced(table, "v0.0.24", "v0.0.25"));
+    std::string root = "[workspace]\nmembers = [\"arm\"]\n[workspace.dependencies]\nrant-middleware = { git = \"x\", tag = \"v0.0.24\" }\n";
+    CHECK(library::cargo_use(root)->version == std::string("0.0.24"));
+
+    std::string member = "[package]\nname = \"arm\"\n[dependencies]\nrant-middleware = { workspace = true }\n";
+    auto m = library::cargo_use(member);
+    CHECK(m && m->how == "Cargo workspace" && !m->wanted);
+    CHECK(refused(library::cargo_set, member));
+    CHECK(refused(library::cargo_set, "[package]\nname = \"a\"\n[dependencies]\nrant-middleware = { path = \"../rant\" }\n"));
+    CHECK(!library::cargo_use("[package]\nname = \"a\"\n[dev-dependencies]\nrant-middleware = \"0.0.24\"\n"));
+
+    std::string line = "rant-middleware = { git = \"https://github.com/KosmosisDire/Rant.git\", tag = \"crate-v0.0.24\" }\n";
+    CHECK_EQ(library::cargo_add("[package]\nname = \"arm\"\n\n[dependencies]\nserde = \"1\"\n", "0.0.24"),
+             "[package]\nname = \"arm\"\n\n[dependencies]\n" + line + "serde = \"1\"\n");
+    CHECK_EQ(library::cargo_add("[package]\nname = \"arm\"\n", "0.0.24"), "[package]\nname = \"arm\"\n\n[dependencies]\n" + line);
+    CHECK(refused(library::cargo_add, "[workspace]\nmembers = []\n"));
+}
+
 /* A scratch folder, removed with everything in it. */
 struct Scratch {
     fs::path root = fs::temp_directory_path() / ("rant-uses-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
