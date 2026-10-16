@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cstdlib>
 #include <map>
 #include <optional>
 #include <set>
@@ -24,10 +25,17 @@ using mesh::json;
 /* One node as ls lists it. A node rant started that is not on the mesh is still joining,
  * or never joins since it does not use Rant. Unknown with --no-mesh. */
 struct Row {
-    std::string         name;
-    std::optional<bool> on_mesh;
-    std::string         type;    /* the node type of one rant started, else empty */
+    std::string             name;
+    std::optional<bool>     on_mesh;
+    std::string             type;      /* the node type of one rant started, else empty */
+    std::optional<uint16_t> domain;    /* the domain of one rant started */
 };
+
+/* The domain a started node joined: the RANT_DOMAIN rant gave it, else Rant's 0. */
+static uint16_t started_domain(const state::Instance& i) {
+    auto it = i.env.find("RANT_DOMAIN");
+    return it == i.env.end() ? 0 : static_cast<uint16_t>(std::strtoul(it->second.c_str(), nullptr, 10));
+}
 
 /* The running nodes as ls shows them: each group root with its nodes, then every node
  * outside a group, started by rant or not. A node two roots share shows under both. */
@@ -48,7 +56,7 @@ static Listing list_nodes(app::Context& ctx, mesh::Client* mesh, const std::stri
     std::set<std::string> on_mesh;
     for (auto& [_, name] : managed) on_mesh.insert(name);
     auto row = [&](const state::Instance& i) {
-        return Row{ i.name, mesh ? std::optional<bool>(on_mesh.count(i.name) > 0) : std::nullopt, i.type };
+        return Row{ i.name, mesh ? std::optional<bool>(on_mesh.count(i.name) > 0) : std::nullopt, i.type, started_domain(i) };
     };
 
     Listing out;
@@ -162,12 +170,15 @@ static int list_mesh(app::Context& ctx, std::optional<Kind> kind, const std::str
             for (auto& r : v) {
                 json row = { { "name", r.name } };
                 if (!r.type.empty()) row["type"] = r.type;
+                if (r.domain) row["domain"] = *r.domain;
                 if (r.on_mesh) row["on_mesh"] = *r.on_mesh;
                 a.push_back(row);
             }
             return a;
         };
         if (show_nodes) {
+            /* the mesh this listing reads, the workspace's, so a tool can join the same one */
+            out["domain"] = ctx.domain();
             out["groups"] = json::array();
             for (auto& g : nodes.groups) out["groups"].push_back({ { "group", g.header }, { "nodes", rows(g.nodes) } });
             out["nodes"] = rows(nodes.loose);

@@ -63,6 +63,8 @@ expect_match("${OUT}" "NODES\n  planner\n")
 # Without the mesh only what this workspace started, so not the other one's planner, and no
 # word on whether a node joined.
 rant(ls nodes --no-mesh --json)
+expect_match("${OUT}" "\"domain\": ${DOMAIN},")
+expect_match("${OUT}" "\"name\": \"arm\",\n +\"type\": \"demo/sensor\",\n +\"domain\": ${DOMAIN}\n")
 expect_match("${OUT}" "\"group\": \"pick\"")
 expect_match("${OUT}" "\"nodes\": \\[\\]")
 expect_no_match("${OUT}" "on_mesh")
