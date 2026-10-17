@@ -52,7 +52,7 @@ to override something. A folder may be a workspace and a package, with both file
 | visual debugger | `rant explore` |
 | web frontends | `rant bridge enable`, see Bridge |
 | explorer in a browser | `rant explore web enable`, see Web explorer |
-| VS Code | `rant vscode install` (`--editor cursor` for another editor, `--from PATH` for a built .vsix), `rant vscode uninstall`. In a remote terminal it installs on that remote. Its Mesh view needs the bridge |
+| VS Code | `rant vscode install` (`--editor cursor` for another editor, `--from PATH` for a built .vsix), `rant vscode uninstall`. In a remote terminal it installs on that remote. Its Mesh view joins the mesh itself, or through the bridge the setting `rant.bridgeUrl` names |
 
 Values on the command line are forgiving JSON: `{x: 1, y: 2}`, `[1, 2]`, or field words
 like `position.x=1`. Add `--json` to any command for output a program can read, `-y` to
