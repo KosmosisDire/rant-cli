@@ -83,16 +83,27 @@ static void ensure_binary(app::Context& ctx, const service::Service& s) {
     }
 }
 
+/* The settings enable passes to bridge.yaml through the bridge, which checks them. */
+static const std::vector<std::string> settings = { "bind", "port", "pass" };
+
 static int bridge_enable(app::Context& ctx, const service::Service& s) {
     ensure_binary(ctx, s);
     std::error_code ec;
     fs::create_directories(s.log.parent_path(), ec);
-    if (!process::output({ { native(s.exe), "--init-config", "--config", native(bridge::config_path()) }, util::rant_home(), {} }))
-        throw app::Failure("`rant-bridge --init-config` failed, run it by hand to see why");
+    std::vector<std::string> init = { native(s.exe), "--init-config", "--config", native(bridge::config_path()) };
+    for (auto& o : settings)
+        if (auto v = ctx.args.get(o)) init.insert(init.end(), { "--" + o, *v });
+    bool changed = init.size() > 4;
+    if (!process::output({ init, util::rant_home(), {} }))
+        throw app::Failure(changed ? "the bridge did not take the settings, an older one takes none, `rant update` installs the newest"
+                                   : "`rant-bridge --init-config` failed, run it by hand to see why");
 
+    /* a running bridge reads its config only as it starts */
+    std::optional<service::State> was = service::running(s);
     service::define(s);
-    if (!service::running(s)) service::start(s);
-    service::State st = service::wait_listening(s, 0);
+    if (was && changed) service::restart(s);
+    else if (!was) service::start(s);
+    service::State st = service::wait_listening(s, was && changed ? was->pid : 0);
     ctx.out.note("enabled the bridge, it starts when you log in");
     service::note_linger(ctx);
     print_value(ctx, json{ { "url", st.url }, { "config", u8(bridge::config_path()) } });
@@ -119,7 +130,9 @@ static int bridge_status(app::Context& ctx, const service::Service& s) {
 static int run(app::Context& ctx) {
     service::Service s = bridge::service();
     auto& w = ctx.args.words;
-    service::check_usage(ctx, s, w, { "from" });
+    std::vector<std::string> enable_options = settings;
+    enable_options.push_back("from");
+    service::check_usage(ctx, s, w, enable_options);
     if (w[0] == "enable") return bridge_enable(ctx, s);
     if (w[0] == "status") return bridge_status(ctx, s);
     return *service::run_shared(ctx, s, w);
@@ -135,6 +148,9 @@ app::Command bridge_() {
                     "run the bridge, a background server that connects web frontends to the mesh, config in ~/.rant/bridge.yaml",
                     app::Section::Setup,
                     { { "from", 0, "PATH", "with enable: install this rant-bridge instead of downloading the newest release" },
+                      { "bind", 0, "IP", "with enable: listen on this address, 0.0.0.0 every interface (the default), 127.0.0.1 this computer only" },
+                      { "port", 0, "N", "with enable: listen on this port, 7480 by default" },
+                      { "pass", 0, "TEXT", "with enable: the passphrase clients give, \"\" for none" },
                       { "follow", 'f', "", "with logs: keep printing new lines until Ctrl-C" } },
                     run };
     c.complete = complete_words;

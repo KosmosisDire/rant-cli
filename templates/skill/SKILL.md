@@ -109,13 +109,15 @@ and keeps it running as a service of the user, no admin needed.
 | goal | command |
 |---|---|
 | install, start now and at every login | `rant bridge enable` (prints the url), `--from PATH` uses a bridge you built |
+| where it listens, the passphrase | `rant bridge enable --bind IP --port N --pass TEXT`, any of them, restarts a running bridge. Every interface on 7480 by default, `--bind 127.0.0.1` this computer only, `--pass ""` no passphrase |
 | stop it and stop it starting at login | `rant bridge disable` (the binary and the config stay) |
 | control | `rant bridge start`, `stop`, `restart`, `status` (`--json` for tools) |
 | output | `rant bridge logs`, `-f` to follow |
 | in the foreground | `rant bridge run [-- bridge args]` |
 
-- The config is `~/.rant/bridge.yaml`, which holds the passphrase. Edit it by hand, then run
-  `rant bridge restart`. rant never edits it.
+- The config is `~/.rant/bridge.yaml`, which holds a random passphrase until one is set.
+  `enable` changes its address and passphrase through the bridge. For the rest edit it by
+  hand, then run `rant bridge restart`.
 - Security: anyone who can load a frontend that connects to the bridge has the bridge's
   access to the mesh. Restrict who can reach the frontend (Cloudflare Access or similar) and
   set `allowed_origins` in the config.
