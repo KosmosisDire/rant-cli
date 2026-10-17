@@ -103,8 +103,9 @@ hard coded in the program.
 
 ## Bridge
 
-The bridge is a background server that lets web frontends reach the mesh. rant installs it
-and keeps it running as a service of the user, no admin needed.
+The bridge is a background server that lends this host's UDP sockets to Rant nodes running
+in web pages, so they join the mesh. rant installs it and keeps it running as a service of the
+user, no admin needed.
 
 | goal | command |
 |---|---|
@@ -121,14 +122,17 @@ and keeps it running as a service of the user, no admin needed.
 - Security: anyone who can load a frontend that connects to the bridge has the bridge's
   access to the mesh. Restrict who can reach the frontend (Cloudflare Access or similar) and
   set `allowed_origins` in the config.
-- A frontend, a script or an editor extension talks to it with the TypeScript client
-  `rant-client`, which ships with each bridge release. It has every pattern and reflection,
-  with the same names as the other bindings:
+- A page, a script or an editor extension runs Rant itself through the TypeScript binding,
+  the npm package `rant-middleware` each Rant release attaches. It has every pattern and
+  reflection, with the same names as the other bindings. In Node.js a node joins the mesh
+  directly, and a page passes the bridge's sockets:
 
 ```ts
-import { RantNode, types } from "rant-client";
-const node = await RantNode.connect("ws://127.0.0.1:7480", { passphrase });
-await node.subscriber("Pose", types.Pose2D, (p) => draw(p));
+import { openNode, types } from "rant-middleware";
+import { TunnelNet } from "rant-middleware/tunnel";
+const net = await TunnelNet.connect("ws://192.168.1.20:7480", { passphrase });
+const node = await openNode("page", { net });
+node.subscriber("Pose", types.Pose2D, (p) => draw(p));
 ```
 
 ## Web explorer
