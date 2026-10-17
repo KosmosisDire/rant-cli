@@ -122,8 +122,9 @@ installs it and keeps it running as a service of the user, no admin needed.
 - Bridges find each other over mDNS: each answers `rant-bridges.local` and lists the others,
   which `findBridges()` from `rant-middleware/tunnel` reads with no passphrase. `advertise:
   false` in the config turns it off.
-- Security: anyone who can load a frontend that connects to the bridge has the bridge's
-  access to the mesh. Restrict who can reach the frontend (Cloudflare Access or similar) and
+- Security: the passphrase never crosses the wire, a client proves it on a fresh nonce.
+  Anyone who can load a frontend that connects to the bridge has the bridge's access to the
+  mesh. Restrict who can reach the frontend (Cloudflare Access or similar) and
   set `allowed_origins` in the config.
 - A page, a script or an editor extension runs Rant itself through the TypeScript binding,
   the npm package `rant-middleware` each Rant release attaches. It has every pattern and
