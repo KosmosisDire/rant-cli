@@ -103,9 +103,9 @@ hard coded in the program.
 
 ## Bridge
 
-The bridge is a background server that lends this host's UDP sockets to Rant nodes running
-in web pages, so they join the mesh. rant installs it and keeps it running as a service of the
-user, no admin needed.
+The bridge is a background server that lends this host's UDP sockets to Rant nodes elsewhere:
+pages, which have none, and programs on another network, so they join this host's mesh. rant
+installs it and keeps it running as a service of the user, no admin needed.
 
 | goal | command |
 |---|---|
@@ -137,6 +137,12 @@ const net = await TunnelNet.connect("ws://192.168.1.20:7480", { passphrase });
 const node = await openNode("page", { net });
 node.subscriber("Pose", types.Pose2D, (p) => draw(p));
 ```
+
+- A node in any other binding runs on a bridge's sockets with the bridge option (`net.bridge`
+  in C, `bridge` in C++, Python and Rust, `Bridge` in C#, Bridge Url on the Unity component)
+  and its passphrase, or with `RANT_BRIDGE` and `RANT_BRIDGE_PASSPHRASE` in its environment
+  when the code sets none. `ws://` only. An unreachable bridge or a wrong passphrase fails
+  the open with the `bridge` error and its reason.
 
 ## Web explorer
 
