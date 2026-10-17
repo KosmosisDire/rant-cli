@@ -119,6 +119,9 @@ user, no admin needed.
 - The config is `~/.rant/bridge.yaml`, which holds a random passphrase until one is set.
   `enable` changes its address and passphrase through the bridge. For the rest edit it by
   hand, then run `rant bridge restart`.
+- Bridges find each other over mDNS: each answers `rant-bridges.local` and lists the others,
+  which `findBridges()` from `rant-middleware/tunnel` reads with no passphrase. `advertise:
+  false` in the config turns it off.
 - Security: anyone who can load a frontend that connects to the bridge has the bridge's
   access to the mesh. Restrict who can reach the frontend (Cloudflare Access or similar) and
   set `allowed_origins` in the config.
