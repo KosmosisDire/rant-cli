@@ -28,7 +28,7 @@ namespace web {
 /* Where the server listens, as `rant explore web enable` saved it: one line, the bind address and the port. */
 struct Address {
     std::string bind = "0.0.0.0";
-    int         port = 8090;
+    int         port = 6732;     /* Rant's ports are 6730 to 6739 */
 };
 
 static fs::path address_file() { return util::rant_home() / "explorer-web.address"; }

@@ -17,6 +17,8 @@ writes the mesh. Full docs: https://docs.rantlib.dev/llms.txt (fetch the page yo
 - `rant --help` and `rant <command> --help` are the truth for every command and flag.
 - Nodes on another domain are invisible. Never start test nodes on the domain a real
   system uses. Use `--domain N` or a workspace `domain` for your own runs.
+- Rant's ports: discovery on UDP 6730 (each domain on its own multicast group), the bridge
+  on TCP 6731, the web explorer on TCP 6732. A node's data port is chosen by the OS.
 
 ## Layout
 
@@ -110,7 +112,7 @@ installs it and keeps it running as a service of the user, no admin needed.
 | goal | command |
 |---|---|
 | install, start now and at every login | `rant bridge enable` (prints the url), `--from PATH` uses a bridge you built |
-| where it listens, the passphrase | `rant bridge enable --bind IP --port N --pass TEXT`, any of them, restarts a running bridge. Every interface on 7480 by default, `--bind 127.0.0.1` this computer only, `--pass ""` no passphrase |
+| where it listens, the passphrase | `rant bridge enable --bind IP --port N --pass TEXT`, any of them, restarts a running bridge. Every interface on 6731 by default, `--bind 127.0.0.1` this computer only, `--pass ""` no passphrase |
 | stop it and stop it starting at login | `rant bridge disable` (the binary and the config stay) |
 | control | `rant bridge start`, `stop`, `restart`, `status` (`--json` for tools) |
 | output | `rant bridge logs`, `-f` to follow |
@@ -134,7 +136,7 @@ installs it and keeps it running as a service of the user, no admin needed.
 ```ts
 import { openNode, types } from "rant-middleware";
 import { TunnelNet } from "rant-middleware/tunnel";
-const net = await TunnelNet.connect("ws://192.168.1.20:7480", { passphrase });
+const net = await TunnelNet.connect("ws://192.168.1.20:6731", { passphrase });
 const node = await openNode("page", { net });
 node.subscriber("Pose", types.Pose2D, (p) => draw(p));
 ```
@@ -144,6 +146,8 @@ node.subscriber("Pose", types.Pose2D, (p) => draw(p));
   and its passphrase, or with `RANT_BRIDGE` and `RANT_BRIDGE_PASSPHRASE` in its environment
   when the code sets none. `ws://` only. An unreachable bridge or a wrong passphrase fails
   the open with the `bridge` error and its reason.
+- A machine with no multicast, or behind a NAT (a container, a cloud host), joins a mesh this
+  way, through a bridge on that mesh's network.
 
 ## Web explorer
 
@@ -153,7 +157,7 @@ The page reaches the mesh through the bridge on the same host, so enable both.
 
 | goal | command |
 |---|---|
-| install, start now and at every login | `rant explore web enable` (prints the url), `--port N` and `--bind IP` set where it listens (8090 on every address unless set before), `--from PATH` uses an explorer you built |
+| install, start now and at every login | `rant explore web enable` (prints the url), `--port N` and `--bind IP` set where it listens (6732 on every address unless set before), `--from PATH` uses an explorer you built |
 | stop it and stop it starting at login | `rant explore web disable` (the explorer stays) |
 | control | `rant explore web start`, `stop`, `restart`, `status` (`--json` for tools) |
 | output | `rant explore web logs`, `-f` to follow |

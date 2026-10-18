@@ -103,7 +103,7 @@ app::Command explore() {
                     "`web` serves it as a page in the background, for any browser on the network",
                     app::Section::Setup,
                     { { "from", 0, "PATH", "with web enable: install this rant-explorer instead of downloading the newest release" },
-                      { "port", 0, "N", "with web enable: the port to serve on, 8090 unless set before" },
+                      { "port", 0, "N", "with web enable: the port to serve on, 6732 unless set before" },
                       { "bind", 0, "IP", "with web enable: the address to serve on, 0.0.0.0 (every address) unless set before" },
                       { "follow", 'f', "", "with web logs: keep printing new lines until Ctrl-C" } },
                     run };

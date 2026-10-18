@@ -10,13 +10,13 @@ if(NOT ext STREQUAL ".exe")
   set(ext "")
 endif()
 
-# An empty home has no explorer, and the server would listen on every address at 8090.
+# An empty home has no explorer, and the server would listen on every address at 6732.
 rant(explore web status)
 expect_match("${OUT}" "installed: +false\n")
 expect_match("${OUT}" "enabled: +false\n")
 expect_match("${OUT}" "running: +false\n")
 expect_match("${OUT}" "bind: +0[.]0[.]0[.]0\n")
-expect_match("${OUT}" "port: +8090\n")
+expect_match("${OUT}" "port: +6732\n")
 expect_match("${ERR}" "the explorer is not installed, run `rant explore web enable`")
 
 rant(explore web status --json)

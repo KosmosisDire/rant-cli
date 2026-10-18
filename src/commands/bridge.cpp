@@ -149,7 +149,7 @@ app::Command bridge_() {
                     app::Section::Setup,
                     { { "from", 0, "PATH", "with enable: install this rant-bridge instead of downloading the newest release" },
                       { "bind", 0, "IP", "with enable: listen on this address, 0.0.0.0 every interface (the default), 127.0.0.1 this computer only" },
-                      { "port", 0, "N", "with enable: listen on this port, 7480 by default" },
+                      { "port", 0, "N", "with enable: listen on this port, 6731 by default" },
                       { "pass", 0, "TEXT", "with enable: the passphrase clients give, \"\" for none" },
                       { "follow", 'f', "", "with logs: keep printing new lines until Ctrl-C" } },
                     run };
