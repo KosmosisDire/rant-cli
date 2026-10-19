@@ -74,8 +74,8 @@ static int update_programs(app::Context& ctx) {
         }
     }
     std::optional<net::Release> vs;
-    std::optional<config::fs::path> editor = vscode::recorded_editor();
-    std::string vs_had = editor ? vscode::installed_version(*editor) : "";
+    std::optional<vscode::Target> vs_at = vscode::recorded();
+    std::string vs_had = vs_at ? vscode::installed_version(*vs_at) : "";
     if (!vs_had.empty()) {
         try {
             net::Release latest = vscode::latest();
@@ -106,7 +106,7 @@ static int update_programs(app::Context& ctx) {
                          config::to_utf8(explorer::installed()));
     if (br) ctx.out.line("  the bridge " + (br_had.empty() ? std::string("") : br_had + " ") + "to " + br->version + ", over " +
                          config::to_utf8(bridge::installed()));
-    if (vs) ctx.out.line("  the VS Code extension " + vs_had + " to " + vs->version + ", through " + config::to_utf8(*editor));
+    if (vs) ctx.out.line("  the VS Code extension " + vs_had + " to " + vs->version + ", through " + vscode::shown(*vs_at));
     if (!names.empty()) ctx.out.line("  the rant skill for " + names);
     if (!ui::confirm("Update?", ctx.yes)) return 1;
 
@@ -115,7 +115,7 @@ static int update_programs(app::Context& ctx) {
         explorer::install(ctx, *ex);
         if (serving) restart_updated(ctx, web::service());
     }
-    if (vs) vscode::install(ctx, *editor, *vs);
+    if (vs) vscode::install(ctx, *vs_at, *vs);
     if (br) {
         bool was_running = service::running(bridge::service()).has_value();
         bridge::install(ctx, *br);

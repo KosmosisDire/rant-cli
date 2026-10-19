@@ -158,8 +158,8 @@ static int run(app::Context& ctx) {
                              if (process::run({ { "dotnet", "nuget", "remove", "source", "rant" }, fs::temp_directory_path(), {} }) != 0)
                                  throw app::Failure("dotnet could not remove the NuGet source rant");
                          } });
-    if (auto editor = vscode::recorded_editor(); editor && !vscode::installed_version(*editor).empty())
-        steps.push_back({ {}, "the VS Code extension, through " + editor->u8string(), [ed = *editor] { vscode::remove(ed); } });
+    if (auto at = vscode::recorded(); at && !vscode::installed_version(*at).empty())
+        steps.push_back({ {}, "the VS Code extension, through " + vscode::shown(*at), [t = *at] { vscode::remove(t); } });
     if (service::enabled(bridge::service()) || service::running(bridge::service()))
         steps.push_back({ bridge::installed(), "stopped and no longer started at login", [] { service::disable(bridge::service()); } });
     if (service::enabled(web::service()) || service::running(web::service()))

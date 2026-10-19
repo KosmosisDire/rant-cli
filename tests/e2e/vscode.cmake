@@ -70,3 +70,46 @@ if(EXISTS "${home}/vscode.editor")
 endif()
 rant(vscode uninstall --editor "${editor}")
 expect_match("${ERR}" "the VS Code extension is not installed")
+
+# Profiles come from the editor's storage.json. The data folder of a portable install beside
+# the fake editor holds it, so no test reads a real one.
+unset(ENV{VSCODE_PORTABLE})
+file(WRITE "${SCRATCH}/resources/app/product.json" "{ \"nameShort\": \"Fake\" }\n")
+file(MAKE_DIRECTORY "${SCRATCH}/project")
+if(CMAKE_HOST_WIN32)
+  set(project_uri "file:///${SCRATCH}/project")
+else()
+  set(project_uri "file://${SCRATCH}/project")
+endif()
+file(WRITE "${SCRATCH}/data/user-data/User/globalStorage/storage.json" "{
+  \"userDataProfiles\": [
+    { \"location\": \"builtin/agents\", \"name\": \"Agents\", \"useDefaultFlags\": { \"extensions\": true } },
+    { \"location\": \"-500e13d6\", \"name\": \"Mixed\" }
+  ],
+  \"profileAssociations\": { \"workspaces\": { \"${project_uri}\": \"-500e13d6\" } }
+}\n")
+file(REMOVE "${bin}/calls.txt")
+
+# Outside a VS Code terminal it asks among the profiles with their own extensions, and with
+# no one to answer it says how to pick.
+unset(ENV{TERM_PROGRAM})
+rant(vscode install --from ext.vsix --editor "${editor}" FAILS)
+expect_match("${ERR}" "1  Default")
+expect_match("${ERR}" "2  Mixed")
+expect_no_match("${ERR}" "Agents")
+expect_match("${ERR}" "pass --profile NAME")
+
+# A VS Code terminal takes the profile its folder opens in, and uninstall the recorded one.
+set(ENV{TERM_PROGRAM} "vscode")
+rant(vscode install --from "${SCRATCH}/ext.vsix" --editor "${editor}" IN "${SCRATCH}/project")
+expect_match("${ERR}" "in the profile Mixed")
+unset(ENV{TERM_PROGRAM})
+rant(vscode uninstall)
+expect_match("${ERR}" "removed the VS Code extension from [^\n]* in the profile Mixed")
+file(READ "${bin}/calls.txt" calls)
+expect_match("${calls}" "--install-extension [^\n]* --force --profile Mixed")
+expect_match("${calls}" "--uninstall-extension kosmosisdire[.]vscode-rant --profile Mixed")
+
+# --profile picks one outright.
+rant(vscode install --from ext.vsix --editor "${editor}" --profile Mixed)
+expect_match("${ERR}" "in the profile Mixed")
