@@ -166,6 +166,7 @@ static Answer package_answer(app::Context& ctx, const state::State& st, const co
     json& j = a.fields;
     j["package"] = p.name;
     j["folder"] = ctx.shown(p.dir);
+    if (!p.description.empty()) j["description"] = p.description;
     j["kind"] = p.kinds;
     json rant = json::array();
     for (auto& u : library::in_folder(p.dir))

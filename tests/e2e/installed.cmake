@@ -4,7 +4,7 @@ include("${CMAKE_CURRENT_LIST_DIR}/lib.cmake")
 # the groups beside them, as rant install leaves it.
 set(PKG "$ENV{RANT_HOME}/packages/tool")
 install_test_node("home/.rant/packages/tool/bin")
-file(WRITE "${PKG}/package.rant" "node \"tool\" {\n  run = [\"./bin/test_node\", \"--life\", \"60\"]\n}\n")
+file(WRITE "${PKG}/package.rant" "description = \"Answers questions\"\narchive = \"tool-$\{version}.zip\"\nnode \"tool\" {\n  run = [\"./bin/test_node\", \"--life\", \"60\"]\n}\n")
 file(WRITE "${PKG}/Tool.run" "node \"tool\" {}\n")
 
 # Outside every workspace the installed packages stand alone, run from rant's home.
@@ -12,6 +12,8 @@ rant(ls packages)
 expect_match("${OUT}" "^PACKAGES\n  tool +package[.]rant +installed +")
 rant(ls groups)
 expect_match("${OUT}" "^GROUPS\n  tool/Tool")
+rant(info package tool)
+expect_match("${OUT}" "\ndescription: Answers questions\n")
 rant(run Tool)
 expect_match("${OUT}" "tool +started")
 rant(log tool)

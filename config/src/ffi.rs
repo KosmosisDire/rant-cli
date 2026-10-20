@@ -9,10 +9,13 @@ use std::rc::Rc;
 use std::sync::Mutex;
 
 use crate::build_plan;
+use crate::database;
 use crate::diag::Diag;
+use crate::eval::{FileName, Target};
 use crate::group::{GroupDef, Groups};
 use crate::manifest::ManifestKind;
 use crate::model::{Model, NodeType, Package};
+use crate::package;
 use crate::param::{self, Param};
 use crate::paths;
 use crate::plan::{self, Plan};
@@ -59,6 +62,8 @@ pub struct RantConfigNodeType {
 #[repr(C)]
 pub struct RantConfigPackage {
     pub name: *const c_char,
+    /// What its package.rant says it is for, NULL when it says nothing.
+    pub description: *const c_char,
     pub dir: *const c_char,
     /// What makes it a package: "cmake", "python", "csharp", "rust" for its manifests,
     /// "package.rant" for its own settings.
@@ -266,6 +271,7 @@ impl Store {
         let (files, file_count) = self.strs(&files);
         RantConfigPackage {
             name: self.str(&p.name),
+            description: p.block.as_ref().and_then(|b| b.description.as_deref()).map(|d| self.str(d)).unwrap_or(std::ptr::null()),
             dir: self.path(&p.dir),
             kinds,
             kind_count,
@@ -985,5 +991,127 @@ pub unsafe extern "C" fn rant_config_folders_view(f: *const RantConfigFolders) -
 pub unsafe extern "C" fn rant_config_folders_free(f: *mut RantConfigFolders) {
     if !f.is_null() {
         drop(Box::from_raw(f));
+    }
+}
+
+/// A package.rant as one release carries it, read before that release is installed.
+#[repr(C)]
+pub struct RantConfigReleaseView {
+    /// NULL when the file says nothing.
+    pub description: *const c_char,
+    /// The release's files by kind, each NULL when the release carries none of that kind.
+    pub archive: *const c_char,
+    pub vsix: *const c_char,
+    pub diagnostics: *const RantConfigDiagnostic,
+    pub diagnostic_count: usize,
+}
+
+pub struct RantConfigRelease {
+    view: RantConfigReleaseView,
+    #[allow(dead_code)]
+    store: Store,
+}
+
+/// Reads package.rant text as if it were in dir, where the release installs, and names the
+/// release's files for version and platform.
+///
+/// # Safety
+/// Every argument must be NULL or a NUL terminated UTF-8 string.
+#[no_mangle]
+pub unsafe extern "C" fn rant_config_release(
+    dir: *const c_char,
+    text: *const c_char,
+    version: *const c_char,
+    platform: *const c_char,
+) -> *mut RantConfigRelease {
+    let dir = arg_path(dir);
+    let (version, platform) = (arg_str(version), arg_str(platform));
+    let target = Target { version: &version, platform: &platform };
+    let named = |f: &Option<FileName>| f.as_ref().map(|f| f.of(&target)).transpose();
+    let read = package::from_text(&dir, arg_str(text), &dir).and_then(|p| Ok((p.description.clone(), named(&p.archive)?, named(&p.vsix)?)));
+    let mut store = Store::default();
+    let null = std::ptr::null();
+    let mut view = RantConfigReleaseView { description: null, archive: null, vsix: null, diagnostics: std::ptr::null(), diagnostic_count: 0 };
+    match read {
+        Ok((description, archive, vsix)) => {
+            let mut opt = |s: Option<String>| s.map(|s| store.str(&s)).unwrap_or(null);
+            view.description = opt(description);
+            view.archive = opt(archive);
+            view.vsix = opt(vsix);
+        }
+        Err(d) => (view.diagnostics, view.diagnostic_count) = store.diags(&[d]),
+    }
+    Box::into_raw(Box::new(RantConfigRelease { view, store }))
+}
+
+/// # Safety
+/// `r` must be a live handle from rant_config_release.
+#[no_mangle]
+pub unsafe extern "C" fn rant_config_release_view(r: *const RantConfigRelease) -> *const RantConfigReleaseView {
+    &(*r).view
+}
+
+/// # Safety
+/// `r` must be NULL or a live handle, and is invalid afterwards.
+#[no_mangle]
+pub unsafe extern "C" fn rant_config_release_free(r: *mut RantConfigRelease) {
+    if !r.is_null() {
+        drop(Box::from_raw(r));
+    }
+}
+
+/// One package the database names, and its GitHub repo as owner/name.
+#[repr(C)]
+pub struct RantConfigListed {
+    pub name: *const c_char,
+    pub repo: *const c_char,
+}
+
+#[repr(C)]
+pub struct RantConfigDatabaseView {
+    pub packages: *const RantConfigListed,
+    pub package_count: usize,
+    pub diagnostics: *const RantConfigDiagnostic,
+    pub diagnostic_count: usize,
+}
+
+pub struct RantConfigDatabase {
+    view: RantConfigDatabaseView,
+    #[allow(dead_code)]
+    store: Store,
+}
+
+/// Reads the package database's text. file only names it in errors.
+///
+/// # Safety
+/// Both arguments must be NULL or NUL terminated UTF-8 strings.
+#[no_mangle]
+pub unsafe extern "C" fn rant_config_database(file: *const c_char, text: *const c_char) -> *mut RantConfigDatabase {
+    let mut store = Store::default();
+    let mut view = RantConfigDatabaseView { packages: std::ptr::null(), package_count: 0, diagnostics: std::ptr::null(), diagnostic_count: 0 };
+    match database::parse(&arg_path(file), arg_str(text)) {
+        Ok(listed) => {
+            let listed: Vec<RantConfigListed> =
+                listed.iter().map(|l| RantConfigListed { name: store.str(&l.name), repo: store.str(&l.repo) }).collect();
+            (view.packages, view.package_count) = store.array(listed);
+        }
+        Err(d) => (view.diagnostics, view.diagnostic_count) = store.diags(&[d]),
+    }
+    Box::into_raw(Box::new(RantConfigDatabase { view, store }))
+}
+
+/// # Safety
+/// `d` must be a live handle from rant_config_database.
+#[no_mangle]
+pub unsafe extern "C" fn rant_config_database_view(d: *const RantConfigDatabase) -> *const RantConfigDatabaseView {
+    &(*d).view
+}
+
+/// # Safety
+/// `d` must be NULL or a live handle, and is invalid afterwards.
+#[no_mangle]
+pub unsafe extern "C" fn rant_config_database_free(d: *mut RantConfigDatabase) {
+    if !d.is_null() {
+        drop(Box::from_raw(d));
     }
 }

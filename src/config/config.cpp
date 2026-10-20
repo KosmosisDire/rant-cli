@@ -74,7 +74,7 @@ static Opened read(Handle h) {
     if (v->domain >= 0) ws.domain = static_cast<uint16_t>(v->domain);
     for (size_t i = 0; i < v->package_count; i++) {
         const RantConfigPackage& p = v->packages[i];
-        Package pkg{ str(p.name), from_utf8(str(p.dir)), strs(p.kinds, p.kind_count), {}, {}, p.installed };
+        Package pkg{ str(p.name), str(p.description), from_utf8(str(p.dir)), strs(p.kinds, p.kind_count), {}, {}, p.installed };
         for (auto& f : strs(p.files, p.file_count)) pkg.files.push_back(from_utf8(f));
         for (size_t j = 0; j < p.node_count; j++) pkg.nodes.push_back(node_type(p.nodes[j]));
         ws.packages.push_back(std::move(pkg));
@@ -203,6 +203,23 @@ Folders folders_under(const fs::path& start) {
     Folders out;
     for (auto& f : strs(v->folders, v->folder_count)) out.folders.push_back(from_utf8(f));
     for (auto& f : strs(v->venvs, v->venv_count)) out.venvs.push_back(from_utf8(f));
+    return out;
+}
+
+PackageRelease read_release(const fs::path& dir, const std::string& text, const std::string& version, const std::string& platform) {
+    std::unique_ptr<RantConfigRelease, decltype(&rant_config_release_free)> h(
+        rant_config_release(to_utf8(dir).c_str(), text.c_str(), version.c_str(), platform.c_str()), &rant_config_release_free);
+    const RantConfigReleaseView* v = rant_config_release_view(h.get());
+    return { str(v->description), str(v->archive), str(v->vsix), diagnostics(v->diagnostics, v->diagnostic_count) };
+}
+
+Database read_database(const std::string& file, const std::string& text) {
+    std::unique_ptr<RantConfigDatabase, decltype(&rant_config_database_free)> h(rant_config_database(file.c_str(), text.c_str()),
+                                                                               &rant_config_database_free);
+    const RantConfigDatabaseView* v = rant_config_database_view(h.get());
+    Database out;
+    for (size_t i = 0; i < v->package_count; i++) out.packages.push_back({ str(v->packages[i].name), str(v->packages[i].repo) });
+    out.diagnostics = diagnostics(v->diagnostics, v->diagnostic_count);
     return out;
 }
 

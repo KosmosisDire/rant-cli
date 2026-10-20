@@ -75,9 +75,15 @@ ignore = ["third_party/**"]  # folders discovery skips
 domain = 7                   # placement, see below
 ```
 
-package.rant in a package: `name`, `build` (commands replacing the default),
+package.rant in a package: `name`, `description`, `build` (commands replacing the default),
 `depend` (package names built first), `ignore`, `python` (the interpreter), and
 `node "name" { run = "./tool --flag" }` for programs rant cannot find itself.
+
+A package others install says what each release carries, by kind: `archive =
+"rant-x-${version}-${platform}.zip"` holds bin/, package.rant and the run files, unpacked into
+`~/.rant/packages/<name>`, and `vsix = "rant-x-${version}.vsix"` goes into editors. `version`
+is the release tag without its v, `platform` one of win-x64, win-arm64, linux-x64,
+linux-arm64, osx-x64 and osx-arm64.
 
 A group is `<Name>.run`:
 
@@ -99,7 +105,7 @@ node "planner" {               # the label names the node to run, package/name w
 ```
 
 Expressions may use `param.<name>` in groups and `path.file`, `path.package` and
-`path.workspace` anywhere.
+`path.workspace` anywhere but `archive` and `vsix`.
 
 Placement: `domain`, `prefix` and `node_prefix` may go in workspace.rant, package.rant, a
 group's top level, an `include` and a group `node`. Prefixes join from the outside in, the

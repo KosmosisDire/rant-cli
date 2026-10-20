@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use crate::argv;
 use crate::diag::Diag;
-use crate::eval::{self, Scope, StringOrList};
+use crate::eval::{self, FileName, Scope, StringOrList};
 use crate::placement::{self, Placement};
 use crate::source::{one_label, Fields, Source};
 
@@ -15,6 +15,12 @@ pub const PACKAGE_FILE: &str = "package.rant";
 pub struct PackageBlock {
     pub file: PathBuf,
     pub name: Option<String>,
+    /// What the package is for, shown by `rant info package`.
+    pub description: Option<String>,
+    /// The files its releases carry for `rant install`, by kind: an archive unpacked into
+    /// rant's home, a vsix installed into editors.
+    pub archive: Option<FileName>,
+    pub vsix: Option<FileName>,
     /// Commands run in order, replacing the default build. None keeps the default.
     pub build: Option<Vec<Vec<String>>>,
     pub depend: Vec<String>,
@@ -36,15 +42,28 @@ pub fn read(dir: &Path, workspace: &Path) -> Result<Option<PackageBlock>, Diag> 
     if !path.is_file() {
         return Ok(None);
     }
-    let src = Source::read(&path)?;
+    from_source(Source::read(&path)?, dir, workspace).map(Some)
+}
+
+/// Reads package.rant text as if it were in dir, such as the one of a release not yet installed.
+pub fn from_text(dir: &Path, text: String, workspace: &Path) -> Result<PackageBlock, Diag> {
+    from_source(Source::parse(&dir.join(PACKAGE_FILE), text)?, dir, workspace)
+}
+
+fn from_source(src: Source, dir: &Path, workspace: &Path) -> Result<PackageBlock, Diag> {
     let scope = Scope { params: None, file_dir: dir, package_dir: Some(dir), workspace };
-    let keys = [&["name", "build", "depend", "ignore", "python"][..], &placement::KEYS[..]].concat();
+    let keys = [&["name", "description", "archive", "vsix", "build", "depend", "ignore", "python"][..], &placement::KEYS[..]].concat();
     let fields = Fields::of_body(&src, &src.body, PACKAGE_FILE, &keys, &["node"])?;
 
-    let mut out = PackageBlock { file: path.clone(), placement: Placement::read(&src, &fields.attrs, &scope)?, ..Default::default() };
+    let mut out = PackageBlock { file: src.path.clone(), placement: Placement::read(&src, &fields.attrs, &scope)?, ..Default::default() };
     if let Some(a) = fields.attr("name") {
         out.name = Some(eval::string(&src, a, &scope)?);
     }
+    if let Some(a) = fields.attr("description") {
+        out.description = Some(eval::string(&src, a, &scope)?);
+    }
+    out.archive = fields.attr("archive").map(|a| FileName::read(&src, a)).transpose()?;
+    out.vsix = fields.attr("vsix").map(|a| FileName::read(&src, a)).transpose()?;
     if let Some(a) = fields.attr("build") {
         let commands = match eval::string_or_list(&src, a, &scope)? {
             StringOrList::One(s) => vec![s],
@@ -80,7 +99,7 @@ pub fn read(dir: &Path, workspace: &Path) -> Result<Option<PackageBlock>, Diag> 
         }
         out.nodes.push(DeclaredNode { name, run });
     }
-    Ok(Some(out))
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -113,6 +132,18 @@ node "raw" {
         assert_eq!(p.nodes[0].run, ["npm", "run", "serve", "--", "--port", "80 80"]);
         assert!(p.nodes[1].run[0].ends_with("/dash/x"));
         assert_eq!(p.nodes[1].run[1], "a b");
+    }
+
+    #[test]
+    fn reads_what_its_releases_carry() {
+        let t = TestDir::new();
+        let text = "name = \"bridge\"\ndescription = \"Lends sockets\"\narchive = \"rant-bridge-${version}-${platform}.zip\"\n";
+        let p = from_text(&t.path("bridge"), text.into(), t.root()).unwrap();
+        assert_eq!(p.description.as_deref(), Some("Lends sockets"));
+        let target = eval::Target { version: "0.3.0", platform: "linux-x64" };
+        assert_eq!(p.archive.unwrap().of(&target).unwrap(), "rant-bridge-0.3.0-linux-x64.zip");
+        assert!(p.vsix.is_none());
+        assert!(p.file.ends_with("bridge/package.rant"));
     }
 
     #[test]

@@ -45,6 +45,7 @@ struct NodeType {
 
 struct Package {
     std::string              name;
+    std::string              description;    /* what its package.rant says it is for */
     fs::path                 dir;
     std::vector<std::string> kinds;    /* "cmake", "python", "csharp", "rust", "package.rant" */
     std::vector<fs::path>    files;    /* its build files, then its package.rant */
@@ -181,6 +182,32 @@ struct Folders {
 };
 
 Folders folders_under(const fs::path& start);
+
+/* A package.rant as one release carries it, read before that release is installed. */
+struct PackageRelease {
+    std::string             description;
+    std::string             archive;    /* the release's files by kind, empty for a kind it lacks */
+    std::string             vsix;
+    std::vector<Diagnostic> diagnostics;
+};
+
+/* Reads package.rant text as if it were in dir, where the release installs, and names the
+ * release's files for version and platform. */
+PackageRelease read_release(const fs::path& dir, const std::string& text, const std::string& version, const std::string& platform);
+
+/* One package the package database names, and its GitHub repo as owner/name. */
+struct Listed {
+    std::string name;
+    std::string repo;
+};
+
+struct Database {
+    std::vector<Listed>     packages;
+    std::vector<Diagnostic> diagnostics;
+};
+
+/* Reads the package database's text. file only names it in errors. */
+Database read_database(const std::string& file, const std::string& text);
 
 /* rant's home, which holds the installed packages and stands in for a workspace outside
  * every one. Set once before anything is opened. */

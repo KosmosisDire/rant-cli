@@ -4,6 +4,7 @@
 
 mod argv;
 mod build_plan;
+mod database;
 mod diag;
 mod discover;
 mod eval;
