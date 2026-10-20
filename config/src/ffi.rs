@@ -9,7 +9,7 @@ use std::rc::Rc;
 use std::sync::Mutex;
 
 use crate::build_plan;
-use crate::database;
+use crate::database::{self, Origin};
 use crate::diag::Diag;
 use crate::eval::{FileName, Target};
 use crate::group::{GroupDef, Groups};
@@ -20,6 +20,7 @@ use crate::param::{self, Param};
 use crate::paths;
 use crate::plan::{self, Plan};
 use crate::scan::NodeKind;
+use crate::vsix;
 use crate::workspace::{self, WorkspaceConfig};
 
 /// rant_config_open flag: also find every package and scan it for node types.
@@ -1063,17 +1064,22 @@ pub unsafe extern "C" fn rant_config_release_free(r: *mut RantConfigRelease) {
     }
 }
 
-/// One package the database names, and its GitHub repo as owner/name.
+/// One package a database names, from a GitHub repo as owner/name or, in sources.rant, a
+/// path on this machine. Exactly one of repo and path is set.
 #[repr(C)]
 pub struct RantConfigListed {
     pub name: *const c_char,
     pub repo: *const c_char,
+    pub path: *const c_char,
 }
 
 #[repr(C)]
 pub struct RantConfigDatabaseView {
     pub packages: *const RantConfigListed,
     pub package_count: usize,
+    /// The databases sources.rant adds, as owner/name, in the order to read them.
+    pub databases: *const *const c_char,
+    pub database_count: usize,
     pub diagnostics: *const RantConfigDiagnostic,
     pub diagnostic_count: usize,
 }
@@ -1084,19 +1090,34 @@ pub struct RantConfigDatabase {
     store: Store,
 }
 
-/// Reads the package database's text. file only names it in errors.
+/// Reads a database's text, sources.rant when local. file names it in errors, and a relative
+/// path in sources.rant is from its folder.
 ///
 /// # Safety
-/// Both arguments must be NULL or NUL terminated UTF-8 strings.
+/// file and text must be NULL or NUL terminated UTF-8 strings.
 #[no_mangle]
-pub unsafe extern "C" fn rant_config_database(file: *const c_char, text: *const c_char) -> *mut RantConfigDatabase {
+pub unsafe extern "C" fn rant_config_database(file: *const c_char, text: *const c_char, local: bool) -> *mut RantConfigDatabase {
     let mut store = Store::default();
-    let mut view = RantConfigDatabaseView { packages: std::ptr::null(), package_count: 0, diagnostics: std::ptr::null(), diagnostic_count: 0 };
-    match database::parse(&arg_path(file), arg_str(text)) {
-        Ok(listed) => {
-            let listed: Vec<RantConfigListed> =
-                listed.iter().map(|l| RantConfigListed { name: store.str(&l.name), repo: store.str(&l.repo) }).collect();
+    let mut view = RantConfigDatabaseView {
+        packages: std::ptr::null(),
+        package_count: 0,
+        databases: std::ptr::null(),
+        database_count: 0,
+        diagnostics: std::ptr::null(),
+        diagnostic_count: 0,
+    };
+    match database::parse(&arg_path(file), arg_str(text), local) {
+        Ok(db) => {
+            let listed: Vec<RantConfigListed> = db
+                .packages
+                .iter()
+                .map(|l| match &l.origin {
+                    Origin::Repo(r) => RantConfigListed { name: store.str(&l.name), repo: store.str(r), path: std::ptr::null() },
+                    Origin::Path(p) => RantConfigListed { name: store.str(&l.name), repo: std::ptr::null(), path: store.path(p) },
+                })
+                .collect();
             (view.packages, view.package_count) = store.array(listed);
+            (view.databases, view.database_count) = store.strs(&db.databases);
         }
         Err(d) => (view.diagnostics, view.diagnostic_count) = store.diags(&[d]),
     }
@@ -1116,5 +1137,55 @@ pub unsafe extern "C" fn rant_config_database_view(d: *const RantConfigDatabase)
 pub unsafe extern "C" fn rant_config_database_free(d: *mut RantConfigDatabase) {
     if !d.is_null() {
         drop(Box::from_raw(d));
+    }
+}
+
+/// The extension a .vsix file holds.
+#[repr(C)]
+pub struct RantConfigVsixView {
+    /// publisher.name in lowercase, NULL when the file is no extension.
+    pub id: *const c_char,
+    pub version: *const c_char,
+    pub diagnostics: *const RantConfigDiagnostic,
+    pub diagnostic_count: usize,
+}
+
+pub struct RantConfigVsix {
+    view: RantConfigVsixView,
+    #[allow(dead_code)]
+    store: Store,
+}
+
+/// Reads the extension's id and version from a .vsix file.
+///
+/// # Safety
+/// path must be NULL or a NUL terminated UTF-8 string.
+#[no_mangle]
+pub unsafe extern "C" fn rant_config_vsix(path: *const c_char) -> *mut RantConfigVsix {
+    let mut store = Store::default();
+    let mut view = RantConfigVsixView { id: std::ptr::null(), version: std::ptr::null(), diagnostics: std::ptr::null(), diagnostic_count: 0 };
+    match vsix::read(&arg_path(path)) {
+        Ok(e) => {
+            view.id = store.str(&e.id);
+            view.version = store.str(&e.version);
+        }
+        Err(d) => (view.diagnostics, view.diagnostic_count) = store.diags(&[d]),
+    }
+    Box::into_raw(Box::new(RantConfigVsix { view, store }))
+}
+
+/// # Safety
+/// `v` must be a live handle from rant_config_vsix.
+#[no_mangle]
+pub unsafe extern "C" fn rant_config_vsix_view(v: *const RantConfigVsix) -> *const RantConfigVsixView {
+    &(*v).view
+}
+
+/// # Safety
+/// `v` must be NULL or a live handle, and is invalid afterwards.
+#[no_mangle]
+pub unsafe extern "C" fn rant_config_vsix_free(v: *mut RantConfigVsix) {
+    if !v.is_null() {
+        drop(Box::from_raw(v));
     }
 }

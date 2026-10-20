@@ -1,6 +1,6 @@
 //! The config layer of the rant CLI: finding the workspace, its packages and their node
-//! types, parsing and evaluating its HCL, and handing the C++ side resolved data through
-//! the C ABI in `ffi`.
+//! types, parsing and evaluating its HCL, reading the package database and the files
+//! packages install, and handing the C++ side resolved data through the C ABI in `ffi`.
 
 mod argv;
 mod build_plan;
@@ -20,6 +20,7 @@ mod plan;
 mod refs;
 mod scan;
 mod source;
+mod vsix;
 mod workspace;
 
 #[cfg(test)]

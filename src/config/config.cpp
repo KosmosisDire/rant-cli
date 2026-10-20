@@ -214,14 +214,24 @@ PackageRelease read_release(const fs::path& dir, const std::string& text, const 
     return { str(v->description), str(v->archive), str(v->vsix), diagnostics(v->diagnostics, v->diagnostic_count) };
 }
 
-Database read_database(const std::string& file, const std::string& text) {
-    std::unique_ptr<RantConfigDatabase, decltype(&rant_config_database_free)> h(rant_config_database(file.c_str(), text.c_str()),
-                                                                               &rant_config_database_free);
+Database read_database(const fs::path& file, const std::string& text, bool local) {
+    std::unique_ptr<RantConfigDatabase, decltype(&rant_config_database_free)> h(
+        rant_config_database(to_utf8(file).c_str(), text.c_str(), local), &rant_config_database_free);
     const RantConfigDatabaseView* v = rant_config_database_view(h.get());
     Database out;
-    for (size_t i = 0; i < v->package_count; i++) out.packages.push_back({ str(v->packages[i].name), str(v->packages[i].repo) });
+    for (size_t i = 0; i < v->package_count; i++) {
+        auto& l = v->packages[i];
+        out.packages.push_back({ str(l.name), str(l.repo), l.path ? from_utf8(l.path) : fs::path() });
+    }
+    out.databases = strs(v->databases, v->database_count);
     out.diagnostics = diagnostics(v->diagnostics, v->diagnostic_count);
     return out;
+}
+
+Vsix read_vsix(const fs::path& file) {
+    std::unique_ptr<RantConfigVsix, decltype(&rant_config_vsix_free)> h(rant_config_vsix(to_utf8(file).c_str()), &rant_config_vsix_free);
+    const RantConfigVsixView* v = rant_config_vsix_view(h.get());
+    return { str(v->id), str(v->version), diagnostics(v->diagnostics, v->diagnostic_count) };
 }
 
 void set_home(const fs::path& home) { rant_config_set_home(to_utf8(home).c_str()); }

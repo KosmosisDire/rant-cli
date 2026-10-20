@@ -196,19 +196,32 @@ struct PackageRelease {
  * release's files for version and platform. */
 PackageRelease read_release(const fs::path& dir, const std::string& text, const std::string& version, const std::string& platform);
 
-/* One package the package database names, and its GitHub repo as owner/name. */
+/* One package a database names, from a GitHub repo as owner/name or, in sources.rant, a
+ * folder or archive on this machine. Exactly one of repo and path is set. */
 struct Listed {
     std::string name;
     std::string repo;
+    fs::path    path;
 };
 
 struct Database {
-    std::vector<Listed>     packages;
+    std::vector<Listed>      packages;
+    std::vector<std::string> databases;    /* those sources.rant adds, in the order to read them */
+    std::vector<Diagnostic>  diagnostics;
+};
+
+/* Reads a database's text, sources.rant when local. file names it in errors, and a relative
+ * path in sources.rant is from its folder. */
+Database read_database(const fs::path& file, const std::string& text, bool local);
+
+/* The extension a .vsix file holds: its id as publisher.name in lowercase, and its version. */
+struct Vsix {
+    std::string             id;
+    std::string             version;
     std::vector<Diagnostic> diagnostics;
 };
 
-/* Reads the package database's text. file only names it in errors. */
-Database read_database(const std::string& file, const std::string& text);
+Vsix read_vsix(const fs::path& file);
 
 /* rant's home, which holds the installed packages and stands in for a workspace outside
  * every one. Set once before anything is opened. */
