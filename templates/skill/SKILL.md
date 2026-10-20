@@ -80,7 +80,7 @@ package.rant in a package: `name`, `description`, `build` (commands replacing th
 `node "name" { run = "./tool --flag" }` for programs rant cannot find itself.
 
 A package others install says what each release carries, by kind: `archive =
-"rant-x-${version}-${platform}.zip"` holds bin/, package.rant and the run files, unpacked into
+"rant-x-${version}-${platform}.tar.gz"` holds bin/, package.rant and the run files, unpacked into
 `~/.rant/packages/<name>`, and `vsix = "rant-x-${version}.vsix"` goes into editors. `version`
 is the release tag without its v, `platform` one of win-x64, win-arm64, linux-x64,
 linux-arm64, osx-x64 and osx-arm64.
