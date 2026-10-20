@@ -122,7 +122,8 @@ About about(const Source& s, bool release) {
     config::PackageRelease rel = config::read_release(dir() / s.name, text, a.version, net::platform());
     if (!rel.diagnostics.empty()) throw app::Failure(rel.diagnostics[0].str());
     a.description = rel.description;
-    if (release || s.repo.empty()) {
+    /* a file name needs the release's version, and a path installs no file */
+    if (release && !s.repo.empty()) {
         a.archive = rel.archive;
         a.vsix = rel.vsix;
     }
