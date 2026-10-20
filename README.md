@@ -31,7 +31,7 @@ rant log Nav -f                # follow what its nodes print
 rant stop Nav
 rant lib update                # move every package here to the newest Rant
 rant setup                     # tab completion for your shells
-rant install explorer          # a package: the explorer, the bridge, vscode (rant ls packages --available)
+rant install explorer          # a package, all of them at https://pack.rantlib.dev
 rant explore                   # open the explorer
 ```
 
