@@ -18,7 +18,7 @@ struct Service {
     std::string              name;            /* "the bridge", as messages name it */
     std::string              command;         /* "bridge", the rant words that manage it */
     std::string              description;     /* the unit's Description, "Rant bridge" */
-    std::filesystem::path    exe;             /* where rant installs the program */
+    std::filesystem::path    exe;             /* the program, empty when it is not installed */
     std::filesystem::path    version_file;    /* the version rant installed */
     std::vector<std::string> args;            /* its arguments under systemd and launchd */
     std::vector<std::string> windows_args;    /* its arguments under the Run key, which keeps no log */

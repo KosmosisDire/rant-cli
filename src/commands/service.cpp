@@ -153,7 +153,8 @@ static std::wstring run_value(const Service& s) {
 }
 
 /* Another home's program, such as the real one while a test runs, is not this one. */
-bool enabled(const Service& s) { return run_value(s).find(s.exe.wstring()) != std::wstring::npos; }
+/* A program not installed has no path, which every text would hold. */
+bool enabled(const Service& s) { return !s.exe.empty() && run_value(s).find(s.exe.wstring()) != std::wstring::npos; }
 
 void define(const Service& s) {
     std::wstring name = config::from_utf8(s.run_name).wstring();
@@ -211,6 +212,7 @@ static std::string service_text(const Service& s) {
 
 /* Another home's program, such as the real one while a test runs, is not this one. */
 bool enabled(const Service& s) {
+    if (s.exe.empty()) return false;
     std::ifstream in(service_file(s));
     std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
     return text.find(native(s.exe)) != std::string::npos;

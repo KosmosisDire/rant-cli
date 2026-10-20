@@ -99,3 +99,12 @@ TEST(launchd_plist_escapes_xml) {
     std::string plist = service::launchd_plist(bridge_at("/Users/a&b/rant-bridge", "/c.yaml", "/l.log"));
     CHECK(plist.find("<string>/Users/a&amp;b/rant-bridge</string>") != std::string::npos);
 }
+
+/* Only reads: a program not installed never counts as enabled, whatever the real login entries hold. */
+TEST(a_program_not_installed_is_never_enabled) {
+    service::Service s = bridge_at("", "bridge.yaml", "bridge.log");
+    s.run_name = "RantNoSuchService";
+    s.unit = "rant-no-such-service";
+    s.label = "dev.rantlib.no-such-service";
+    CHECK(!service::enabled(s));
+}
