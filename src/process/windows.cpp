@@ -5,7 +5,9 @@
 #include <windows.h>
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdlib>
+#include <fstream>
 #include <memory>
 #include <stdexcept>
 #include <thread>
@@ -290,6 +292,46 @@ std::optional<int> helper_main(int argc, char** argv) {
     return ok ? 0 : 1;
 }
 
+/* A program built for the Windows GUI subsystem, such as the bridge or the explorer, gets no
+ * console, so Ctrl-Break never reaches it. Read from the subsystem field of its exe. */
+static bool gui_program(DWORD pid) {
+    Handle p(OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid));
+    std::wstring path(32768, L'\0');
+    DWORD n = (DWORD)path.size();
+    if (!p || !QueryFullProcessImageNameW(p.get(), 0, path.data(), &n)) return false;
+    path.resize(n);
+    std::ifstream exe(fs::path(path), std::ios::binary);
+    IMAGE_DOS_HEADER dos{};
+    WORD subsystem = 0;
+    if (!exe.read(reinterpret_cast<char*>(&dos), sizeof dos) || dos.e_magic != IMAGE_DOS_SIGNATURE) return false;
+    /* the field sits at one offset in the optional header of 32 and 64 bit images alike */
+    exe.seekg(dos.e_lfanew + sizeof(DWORD) + sizeof(IMAGE_FILE_HEADER) + offsetof(IMAGE_OPTIONAL_HEADER64, Subsystem));
+    exe.read(reinterpret_cast<char*>(&subsystem), sizeof subsystem);
+    return exe && subsystem == IMAGE_SUBSYSTEM_WINDOWS_GUI;
+}
+
+/* Posts WM_CLOSE to every top level window of the processes, hidden ones too, which is how
+ * taskkill asks a program with no console to stop. True when there was one. */
+static bool close_windows(const std::vector<DWORD>& pids) {
+    struct Search {
+        const std::vector<DWORD>& pids;
+        bool                      found = false;
+    } search{ pids };
+    EnumWindows(
+        [](HWND w, LPARAM arg) -> BOOL {
+            auto& s = *reinterpret_cast<Search*>(arg);
+            DWORD pid = 0;
+            GetWindowThreadProcessId(w, &pid);
+            if (std::find(s.pids.begin(), s.pids.end(), pid) != s.pids.end() && !GetWindow(w, GW_OWNER)) {
+                PostMessageW(w, WM_CLOSE, 0, 0);
+                s.found = true;
+            }
+            return TRUE;
+        },
+        reinterpret_cast<LPARAM>(&search));
+    return search.found;
+}
+
 static bool wait_gone(const Tracking& t, std::chrono::milliseconds limit) {
     auto deadline = std::chrono::steady_clock::now() + limit;
     while (alive(t)) {
@@ -299,9 +341,9 @@ static bool wait_gone(const Tracking& t, std::chrono::milliseconds limit) {
     return true;
 }
 
-/* Sends Ctrl-Break until it goes out, then waits for the job to empty, all within grace.
- * A process stopped right after it started may not have its console yet, so the first
- * attach can fail. */
+/* Sends Ctrl-Break, or to a GUI program WM_CLOSE, until it goes out, then waits for the job
+ * to empty, all within grace. A process stopped right after it started may not have its
+ * console or its windows yet, so the first try can fail. */
 static bool ask_to_stop(const Tracking& t, HANDLE job, std::chrono::milliseconds grace) {
     auto deadline = std::chrono::steady_clock::now() + grace;
     bool sent = false;
@@ -310,7 +352,8 @@ static bool ask_to_stop(const Tracking& t, HANDLE job, std::chrono::milliseconds
         if (!sent) {
             auto pids = job_pids(job);
             bool first = std::find(pids.begin(), pids.end(), (DWORD)t.pid) != pids.end();
-            sent = send_ctrl_break(t.pid, first || pids.empty() ? t.pid : pids[0]);
+            DWORD target = first || pids.empty() ? (DWORD)t.pid : pids[0];
+            sent = gui_program(target) ? close_windows(pids.empty() ? std::vector<DWORD>{ target } : pids) : send_ctrl_break(t.pid, target);
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(sent ? 20 : 50));
     }

@@ -6,6 +6,10 @@ set(PKG "$ENV{RANT_HOME}/packages/tool")
 install_test_node("home/.rant/packages/tool/bin")
 file(WRITE "${PKG}/package.rant" "description = \"Answers questions\"\narchive = \"tool-$\{version}.tar.gz\"\nnode \"tool\" {\n  run = [\"./bin/test_node\", \"--life\", \"60\"]\n}\nnode \"idle\" {\n  run = [\"${CMAKE_COMMAND}\", \"-E\", \"sleep\", \"60\"]\n  expect_mesh = false\n}\n")
 file(WRITE "${PKG}/Tool.run" "node \"tool\" {}\n")
+if(TEST_WINDOW)
+  file(COPY_FILE "${TEST_WINDOW}" "${PKG}/bin/test_window.exe")
+  file(APPEND "${PKG}/package.rant" "node \"window\" {\n  run = \"./bin/test_window\"\n  expect_mesh = false\n}\n")
+endif()
 
 # Outside every workspace the installed packages stand alone, run from rant's home.
 rant(ls packages)
@@ -32,6 +36,16 @@ expect_match("${OUT}" "\"name\": \"idle\"")
 expect_no_match("${OUT}" "on_mesh")
 rant(stop idle)
 expect_match("${OUT}" "idle +stopped")
+
+# A Windows GUI program has no console for Ctrl-Break, so rant asks it to close its windows.
+if(TEST_WINDOW)
+  rant(run node window)
+  expect_match("${OUT}" "window +started")
+  rant(stop window)
+  expect_match("${OUT}" "window +stopped")
+  rant(log window)
+  expect_match("${OUT}" "^ready test_window\nstopped\n$")
+endif()
 
 rant(build FAILS)
 expect_match("${ERR}" "no workspace here")

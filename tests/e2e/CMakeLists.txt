@@ -2,11 +2,18 @@
 # domain, so tests run in parallel and never see a real mesh on the default domain.
 set(E2E_NEXT_DOMAIN 140 CACHE INTERNAL "")
 
+# The GUI test program exists on Windows only.
+set(E2E_TEST_WINDOW "")
+if(WIN32)
+  set(E2E_TEST_WINDOW "-DTEST_WINDOW=$<TARGET_FILE:test_window>")
+endif()
+
 function(e2e_test name)
   add_test(NAME e2e.${name}
     COMMAND "${CMAKE_COMMAND}"
             "-DRANT=$<TARGET_FILE:rant_cli>"
             "-DTEST_NODE=$<TARGET_FILE:test_node>"
+            ${E2E_TEST_WINDOW}
             "-DFIXTURES=${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
             "-DSCRATCH=${CMAKE_CURRENT_BINARY_DIR}/scratch/${name}"
             "-DDOMAIN=${E2E_NEXT_DOMAIN}"
