@@ -10,6 +10,7 @@
 #include "commands/commands.hpp"
 #include "complete/shells.hpp"
 #include "library/library.hpp"
+#include "packages/packages.hpp"
 #include "process/command.hpp"
 #include "process/supervisor.hpp"
 #include "ui/prompt.hpp"
@@ -118,6 +119,7 @@ static std::vector<fs::path> removable(const fs::path& home) {
 /* ~/.rant and all in it but the bridge config: this rant, the explorer, the bridge, the shell
  * hooks, caches, the workspace list and the NuGet feed. */
 static void remove_home(const fs::path& home) {
+    packages::unlink_all();
     std::error_code ec;
     for (auto& p : removable(home)) fs::remove_all(p, ec);
     if (removable(home).empty()) {

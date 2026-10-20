@@ -82,7 +82,7 @@ pub fn parse(file: &Path, text: String, local: bool) -> Result<Database, Diag> {
 }
 
 /// A package name the database can hold, also the folder it installs into.
-fn is_name(name: &str) -> bool {
+pub fn is_name(name: &str) -> bool {
     name.starts_with(|c: char| c.is_ascii_lowercase()) && name.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
 }
 

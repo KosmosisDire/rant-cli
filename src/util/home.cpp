@@ -45,4 +45,18 @@ std::string path_key(const fs::path& p) {
     return hex;
 }
 
+bool holds(const fs::path& folder, const fs::path& p) {
+    auto key = [](const fs::path& x) {
+        std::string s = x.lexically_normal().u8string();
+#ifdef _WIN32
+        for (char& c : s) c = c == '\\' ? '/' : (char)std::tolower((unsigned char)c);
+#endif
+        while (s.size() > 1 && s.back() == '/') s.pop_back();
+        return s;
+    };
+    std::string f = key(folder), d = key(p);
+    if (f.empty() || d.compare(0, f.size(), f) != 0) return false;
+    return d.size() == f.size() || d[f.size()] == '/' || f.back() == '/';
+}
+
 }

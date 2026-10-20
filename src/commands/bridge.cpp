@@ -55,7 +55,7 @@ service::Service service() {
 }
 
 void install(const app::Context& ctx, const net::Release& r) {
-    std::string asset = "rant-bridge-" + r.version + "-" + net::platform();
+    std::string asset = "rant-bridge-" + r.version + "-" + net::platform() + net::exe_suffix();
     const net::Asset* a = r.asset(asset);
     if (!a) throw app::Failure("the bridge " + r.version + " release has no " + asset);
     ctx.out.note("downloading " + asset);

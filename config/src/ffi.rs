@@ -1140,6 +1140,15 @@ pub unsafe extern "C" fn rant_config_database_free(d: *mut RantConfigDatabase) {
     }
 }
 
+/// Whether a name can name a package: lowercase letters, digits and _, starting with a letter.
+///
+/// # Safety
+/// name must be NULL or a NUL terminated UTF-8 string.
+#[no_mangle]
+pub unsafe extern "C" fn rant_config_is_package_name(name: *const c_char) -> bool {
+    database::is_name(&arg_str(name))
+}
+
 /// The extension a .vsix file holds.
 #[repr(C)]
 pub struct RantConfigVsixView {

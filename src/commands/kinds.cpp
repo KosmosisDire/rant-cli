@@ -21,6 +21,7 @@ static const std::vector<Words>& table() {
         { Kind::Type, "type", "types", {}, "message types, the standard ones and those the mesh uses" },
         { Kind::Package, "package", "packages", { "pkg", "pkgs" }, "the packages of this workspace" },
         { Kind::Group, "group", "groups", {}, "the groups of this workspace" },
+        { Kind::Source, "source", "sources", {}, "where rant install finds packages, in the order it looks" },
     };
     return t;
 }
@@ -42,9 +43,12 @@ const char* kind_word(Kind k) {
 
 std::vector<std::string> kind_words(bool plural) {
     std::vector<std::string> out;
-    for (auto& w : table()) out.emplace_back(plural ? w.plural : w.singular);
+    for (auto& w : table())
+        if (plural || explained(w.kind)) out.emplace_back(plural ? w.plural : w.singular);
     return out;
 }
+
+bool explained(Kind k) { return k != Kind::Source; }
 
 std::vector<std::pair<std::string, std::string>> kinds_listed() {
     std::vector<std::pair<std::string, std::string>> out;
@@ -52,7 +56,7 @@ std::vector<std::pair<std::string, std::string>> kinds_listed() {
     return out;
 }
 
-bool on_mesh(Kind k) { return k != Kind::Package && k != Kind::Group; }
+bool on_mesh(Kind k) { return k != Kind::Package && k != Kind::Group && k != Kind::Source; }
 
 bool entity_matches(Kind k, std::string_view entity_kind) {
     return k == Kind::Entity || (on_mesh(k) && k != Kind::Node && entity_kind == kind_word(k));

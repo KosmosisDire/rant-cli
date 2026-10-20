@@ -18,4 +18,7 @@ std::filesystem::path rant_home();
 /* A stable name for a path: 16 hex digits of FNV-1a over it, case folded on Windows. */
 std::string path_key(const std::filesystem::path& p);
 
+/* Whether p is folder or inside it, by their text, without case on Windows. */
+bool holds(const std::filesystem::path& folder, const std::filesystem::path& p);
+
 }

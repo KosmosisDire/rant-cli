@@ -18,6 +18,7 @@ add_library(rant_cli_core STATIC
   commands/get.cpp
   commands/info.cpp
   commands/init.cpp
+  commands/install.cpp
   commands/kinds.cpp
   commands/lib.cpp
   commands/log.cpp
@@ -25,6 +26,7 @@ add_library(rant_cli_core STATIC
   commands/new.cpp
   commands/plan_output.cpp
   commands/pub.cpp
+  commands/remove.cpp
   commands/restart.cpp
   commands/run.cpp
   commands/service.cpp
@@ -51,6 +53,7 @@ add_library(rant_cli_core STATIC
   mesh/values.cpp
   net/github.cpp
   net/interfaces.cpp
+  packages/packages.cpp
   process/command.cpp
   process/quote.cpp
   run/logs.cpp

@@ -66,9 +66,9 @@ static std::string curl_failure(const std::string& url, int code) {
 
 std::string platform() {
 #if defined(_WIN32) && defined(_M_ARM64)
-    return "win-arm64.exe";
+    return "win-arm64";
 #elif defined(_WIN32)
-    return "win-x64.exe";
+    return "win-x64";
 #elif defined(__APPLE__) && defined(__aarch64__)
     return "osx-arm64";
 #elif defined(__APPLE__)
@@ -77,6 +77,14 @@ std::string platform() {
     return "linux-arm64";
 #else
     return "linux-x64";
+#endif
+}
+
+std::string exe_suffix() {
+#ifdef _WIN32
+    return ".exe";
+#else
+    return "";
 #endif
 }
 
@@ -92,26 +100,44 @@ Release parse_release(const std::string& body) {
     return r;
 }
 
-Release release(const std::string& repo, const std::string& tag) {
+/* Fetches url into body and returns the HTTP status, with the token when given one. */
+static std::string get(const std::string& url, const fs::path& body, bool api) {
     need_curl();
-    std::string t = tag.empty() || tag[0] == 'v' ? tag : "v" + tag;
-    std::string url = "https://api.github.com/repos/" + repo + "/releases/" + (t.empty() ? "latest" : "tags/" + t);
-    Scratch body("release"), status("status"), headers("headers");
-    std::vector<std::string> argv = { "curl", "-sS", "-L", "--max-time", "60", "-H", "Accept: application/vnd.github+json",
-                                      "-A", "rant-cli", "-o", config::to_utf8(body.path), "-w", "%{http_code}" };
+    Scratch status("status"), headers("headers");
+    std::vector<std::string> argv = { "curl", "-sS", "-L", "--max-time", "60", "-A", "rant-cli", "-o", config::to_utf8(body), "-w", "%{http_code}" };
+    if (api) argv.insert(argv.end(), { "-H", "Accept: application/vnd.github+json" });
     /* the token goes through a file, never the command line other users can read */
-    if (const char* token = std::getenv("GITHUB_TOKEN"); token && *token) {
+    if (const char* token = std::getenv("GITHUB_TOKEN"); api && token && *token) {
         std::ofstream(headers.path, std::ios::binary) << "Authorization: Bearer " << token << "\n";
         argv.insert(argv.end(), { "-H", "@" + config::to_utf8(headers.path) });
     }
     argv.push_back(url);
     int code = process::run({ argv, fs::temp_directory_path(), {} }, status.path);
     if (code != 0) throw app::Failure(curl_failure(url, code));
-    std::string http = read_file(status.path);
+    return read_file(status.path);
+}
+
+Release release(const std::string& repo, const std::string& tag) {
+    std::string t = tag.empty() || tag[0] == 'v' ? tag : "v" + tag;
+    std::string url = "https://api.github.com/repos/" + repo + "/releases/" + (t.empty() ? "latest" : "tags/" + t);
+    Scratch body("release");
+    std::string http = get(url, body.path, true);
     if (http == "200") return parse_release(read_file(body.path));
     if (http == "404") throw app::Failure(t.empty() ? repo + " has no release yet" : repo + " has no release " + t);
     if (http == "403" || http == "429") throw app::Failure("GitHub refused, its rate limit was probably reached. Wait an hour or set GITHUB_TOKEN");
     throw app::Failure("GitHub answered " + http + " for " + url);
+}
+
+std::optional<std::string> fetch(const std::string& url) {
+    Scratch body("fetch");
+    std::string http = get(url, body.path, false);
+    if (http == "200") return read_file(body.path);
+    if (http == "404") return std::nullopt;
+    throw app::Failure(host(url) + " answered " + http + " for " + url);
+}
+
+std::string raw_url(const std::string& repo, const std::string& ref, const std::string& file) {
+    return "https://raw.githubusercontent.com/" + repo + "/" + ref + "/" + file;
 }
 
 void download(const std::string& url, const fs::path& dest, bool program) {

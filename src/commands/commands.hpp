@@ -28,6 +28,8 @@ app::Command set();
 app::Command call();
 app::Command setup();
 app::Command lib();
+app::Command install();
+app::Command remove();
 app::Command explore();
 app::Command bridge_();
 app::Command vscode_();

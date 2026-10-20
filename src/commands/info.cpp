@@ -307,7 +307,7 @@ static void mesh_answers(mesh::Client& mesh, std::optional<Kind> kind, const std
 static int run(app::Context& ctx) {
     auto& w = ctx.args.words;
     std::optional<Kind> kind;
-    if (w.size() == 2 && !(kind = kind_named(w[0])))
+    if (w.size() == 2 && !((kind = kind_named(w[0])) && explained(*kind)))
         throw app::UsageError("`" + w[0] + "` is not a kind, use node, entity, topic, var, fn, task, type, package or group");
     if (w.empty() || w.size() > 2) throw app::UsageError("info takes a name, or a kind and a name such as `rant info package cam`");
     const std::string& name = w.back();

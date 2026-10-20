@@ -33,7 +33,7 @@ node "demo/sensor" {
 ]])
 
 complete(CUR r)
-expect_match("${OUT}" "^restart\nrun\n$")
+expect_match("${OUT}" "^remove\nrestart\nrun\n$")
 complete(run CUR "")
 expect_match("${OUT}" "^base\nnav\nnode\nopts\npick\n$")
 complete(run node CUR "")

@@ -53,7 +53,7 @@ static int update_programs(app::Context& ctx) {
     net::Release cli = net::release(cli_repo);
     const net::Asset* a = nullptr;
     if (numbers(cli.version) > numbers(RANT_CLI_VERSION)) {
-        std::string asset = "rant-" + cli.version + "-" + net::platform();
+        std::string asset = "rant-" + cli.version + "-" + net::platform() + net::exe_suffix();
         a = cli.asset(asset);
         if (!a) throw app::Failure("the rant-cli " + cli.version + " release has no " + asset);
     }

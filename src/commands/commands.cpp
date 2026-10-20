@@ -22,6 +22,8 @@ const std::vector<app::Command>& all() {
         call(),
         setup(),
         lib(),
+        install(),
+        remove(),
         update(),
         uninstall(),
         explore(),

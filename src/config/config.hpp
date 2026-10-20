@@ -214,6 +214,9 @@ struct Database {
  * path in sources.rant is from its folder. */
 Database read_database(const fs::path& file, const std::string& text, bool local);
 
+/* Whether a name can name a package, and so the folder it installs into. */
+bool is_package_name(const std::string& name);
+
 /* The extension a .vsix file holds: its id as publisher.name in lowercase, and its version. */
 struct Vsix {
     std::string             id;

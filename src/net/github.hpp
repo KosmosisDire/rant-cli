@@ -1,6 +1,7 @@
 #pragma once
 
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -35,8 +36,17 @@ Release parse_release(const std::string& body);
  * file steps aside first. Throws app::Failure. */
 void download(const std::string& url, const fs::path& dest, bool program = false);
 
-/* The end of a release asset's name for the platform this runs on: "win-x64.exe",
- * "linux-x64", "osx-arm64". */
+/* The text of a file at url, nullopt when the server has none there. Throws app::Failure
+ * when it cannot be fetched. */
+std::optional<std::string> fetch(const std::string& url);
+
+/* The address of one file of a GitHub repo at a tag or branch, "HEAD" for the default branch. */
+std::string raw_url(const std::string& repo, const std::string& ref, const std::string& file);
+
+/* The platform this runs on as release files name it: "win-x64", "linux-x64", "osx-arm64". */
 std::string platform();
+
+/* What a program's file name ends with here: ".exe" on Windows, else nothing. */
+std::string exe_suffix();
 
 }

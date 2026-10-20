@@ -91,21 +91,6 @@ static std::optional<fs::path> uri_path(const std::string& uri) {
     return config::from_utf8(s);
 }
 
-/* Whether dir is folder or inside it, without case on Windows. */
-static bool holds(const fs::path& folder, const fs::path& dir) {
-    auto key = [](const fs::path& p) {
-        std::string s = config::to_utf8(p.lexically_normal());
-#ifdef _WIN32
-        for (char& c : s) c = c == '\\' ? '/' : (char)std::tolower((unsigned char)c);
-#endif
-        while (s.size() > 1 && s.back() == '/') s.pop_back();
-        return s;
-    };
-    std::string f = key(folder), d = key(dir);
-    if (f.empty() || d.compare(0, f.size(), f) != 0) return false;
-    return d.size() == f.size() || d[f.size()] == '/' || f.back() == '/';
-}
-
 std::vector<std::string> folder_profiles(const std::string& storage, const fs::path& dir) {
     std::vector<std::string> out;
     json j = json::parse(storage, nullptr, false);
@@ -114,7 +99,7 @@ std::vector<std::string> folder_profiles(const std::string& storage, const fs::p
     if (!folders.is_object()) return out;
     for (auto& [uri, id] : folders.items()) {
         std::optional<fs::path> folder = uri_path(uri);
-        if (!id.is_string() || !folder || !holds(*folder, dir)) continue;
+        if (!id.is_string() || !folder || !util::holds(*folder, dir)) continue;
         std::string p = id.get<std::string>();
         if (p == "__default__profile__") p.clear();
         if (std::find(out.begin(), out.end(), p) == out.end()) out.push_back(p);

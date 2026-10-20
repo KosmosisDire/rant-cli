@@ -12,6 +12,7 @@
 #include "mesh/client.hpp"
 #include "mesh/schema_text.hpp"
 #include "mesh/values.hpp"
+#include "packages/packages.hpp"
 #include "process/command.hpp"
 #include "run/nodes.hpp"
 #include "ui/table.hpp"
@@ -320,6 +321,33 @@ static int list_workspace(app::Context& ctx, Kind kind, const std::string& patte
     return 0;
 }
 
+/* Where rant install looks, in order: the packages sources.rant names, the official database,
+ * then the databases sources.rant adds. */
+static int list_sources(app::Context& ctx) {
+    packages::Sources sources;
+    auto dim = [&](const std::string& s) { return ctx.out.paint(ui::Style::Dim, s); };
+    json out = json::array();
+    ui::Table t;
+    for (auto& l : sources.local().packages) {
+        std::string from = l.repo.empty() ? config::to_utf8(l.path) : l.repo;
+        out.push_back({ { "package", l.name }, { l.repo.empty() ? "path" : "repo", from } });
+        t.row({ l.name, dim("package"), from });
+    }
+    for (auto& d : sources.databases()) {
+        bool official = d == packages::official;
+        out.push_back({ { "database", d }, { "official", official } });
+        t.row({ d, dim("database"), official ? dim("official") : "" });
+    }
+    if (ctx.json) {
+        ctx.out.line(out.dump(2));
+        return 0;
+    }
+    section(ctx, "SOURCES", t.lines());
+    if (sources.local().packages.empty() && sources.local().databases.empty())
+        ctx.out.note("name your own in " + config::to_utf8(packages::sources_file()));
+    return 0;
+}
+
 /* With nothing to list, the help, which names every kind. */
 static int run(app::Context& ctx) {
     auto& w = ctx.args.words;
@@ -336,6 +364,10 @@ static int run(app::Context& ctx) {
     if (!kind) throw app::UsageError("`" + w[0] + "` is not a kind ls lists, see `rant ls`");
     if (w.size() > 2) throw app::UsageError("ls takes a kind and one pattern at most, such as `rant ls types cam`");
     std::string pattern = w.size() == 2 ? w[1] : "";
+    if (*kind == Kind::Source) {
+        if (!pattern.empty()) throw app::UsageError("ls sources takes no pattern");
+        return list_sources(ctx);
+    }
     if (!on_mesh(*kind)) return list_workspace(ctx, *kind, pattern);
     return list_mesh(ctx, *kind, pattern);
 }

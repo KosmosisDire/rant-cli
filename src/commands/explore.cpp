@@ -38,7 +38,7 @@ std::string installed_version() {
 }
 
 void install(const app::Context& ctx, const net::Release& r) {
-    std::string asset = "rant-explorer-" + r.version + "-" + net::platform();
+    std::string asset = "rant-explorer-" + r.version + "-" + net::platform() + net::exe_suffix();
     const net::Asset* a = r.asset(asset);
     if (!a) throw app::Failure("the explorer " + r.version + " release has no " + asset);
     ctx.out.note("downloading " + asset);
