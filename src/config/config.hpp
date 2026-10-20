@@ -85,6 +85,7 @@ struct Instance {
     std::map<std::string, std::string> env;
     fs::path                           cwd;
     std::string                        group;    /* the group whose own node block makes it, empty for a node run alone */
+    bool                               expect_mesh = true;    /* only a declared program may never join */
 };
 
 /* A resolved plan in start order. instances is empty whenever diagnostics is not. A group

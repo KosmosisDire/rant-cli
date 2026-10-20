@@ -181,9 +181,13 @@ int bring_up(app::Context& ctx, Summary& summary, const std::vector<state::Insta
     std::map<std::string, ms> exited;    /* by name, how long after the start */
     std::vector<std::string> late;       /* never came up */
 
-    /* wait: a node is up once its name is among its domain's peers */
+    /* wait: a node is up once its name is among its domain's peers, a program that never
+     * joins the mesh once started */
     std::vector<const state::Instance*> waiting;
-    for (auto& rec : started) waiting.push_back(&rec);
+    for (auto& rec : started) {
+        if (rec.expect_mesh) waiting.push_back(&rec);
+        else row(rec.name).status = verb;
+    }
     if (wait > 0 && !waiting.empty()) {
         std::map<uint16_t, std::unique_ptr<mesh::Client>> meshes;
         for (auto* rec : waiting) {

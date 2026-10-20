@@ -77,7 +77,9 @@ domain = 7                   # placement, see below
 
 package.rant in a package: `name`, `description`, `build` (commands replacing the default),
 `depend` (package names built first), `ignore`, `python` (the interpreter), and
-`node "name" { run = "./tool --flag" }` for programs rant cannot find itself.
+`node "name" { run = "./tool --flag" }` for programs rant cannot find itself. Add
+`expect_mesh = false` to one that never joins the mesh, so `rant run` waits only for it to
+start.
 
 A package others install says what each release carries, by kind: `archive =
 "rant-x-${version}-${platform}.tar.gz"` holds bin/, package.rant and the run files, unpacked into

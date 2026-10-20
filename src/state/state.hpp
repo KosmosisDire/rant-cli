@@ -35,6 +35,7 @@ struct Instance {
     process::Tracking                  tracking;
     std::vector<std::string>           roots;    /* keys of the roots that need it, in order */
     std::string                        group;    /* the group whose own node block made it, empty for a node run alone */
+    bool                               expect_mesh = true;    /* false for a program that never joins the mesh */
 
     /* Same type, argv, env and working directory. */
     bool same_spec(const Instance& o) const;

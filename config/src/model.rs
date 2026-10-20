@@ -29,6 +29,8 @@ pub struct NodeType {
     pub shadowed: Vec<PathBuf>,
     /// The file it is written in, when the manifest says: a Rust program's source.
     pub source: Option<PathBuf>,
+    /// It joins the mesh once started. Only a declared program may not.
+    pub expect_mesh: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -228,6 +230,7 @@ fn loose_node(path: PathBuf, root: &Path) -> NodeType {
         cwd: dir,
         shadowed: Vec::new(),
         source: None,
+        expect_mesh: true,
     }
 }
 
@@ -252,7 +255,7 @@ fn node_types(pkg: &Package, mut found: Vec<scan::Found>, root: &Path) -> Vec<No
         };
         by_name.insert(
             name.clone(),
-            NodeType { package: pkg.name.clone(), name, kind: f.kind, path: Some(f.path), run, cwd: pkg.dir.clone(), shadowed: Vec::new(), source: None },
+            NodeType { package: pkg.name.clone(), name, kind: f.kind, path: Some(f.path), run, cwd: pkg.dir.clone(), shadowed: Vec::new(), source: None, expect_mesh: true },
         );
     }
     for m in pkg.manifests.iter().filter(|m| m.kind == ManifestKind::CSharp && m.program && m.uses_rant) {
@@ -263,7 +266,7 @@ fn node_types(pkg: &Package, mut found: Vec<scan::Found>, root: &Path) -> Vec<No
         };
         by_name.insert(
             name.clone(),
-            NodeType { package: pkg.name.clone(), name, kind: NodeKind::CSharp, path: Some(path), run, cwd: pkg.dir.clone(), shadowed: Vec::new(), source: None },
+            NodeType { package: pkg.name.clone(), name, kind: NodeKind::CSharp, path: Some(path), run, cwd: pkg.dir.clone(), shadowed: Vec::new(), source: None, expect_mesh: true },
         );
     }
     let target = cargo_target(&pkg.dir, root);
@@ -282,6 +285,7 @@ fn node_types(pkg: &Package, mut found: Vec<scan::Found>, root: &Path) -> Vec<No
                 cwd: pkg.dir.clone(),
                 shadowed: Vec::new(),
                 source: Some(source.clone()),
+                expect_mesh: true,
             };
             by_name.insert(name.clone(), node);
         }
@@ -303,6 +307,7 @@ fn declared(pkg: &Package) -> impl Iterator<Item = NodeType> + '_ {
         cwd: pkg.dir.clone(),
         shadowed: Vec::new(),
         source: None,
+        expect_mesh: d.expect_mesh,
     })
 }
 

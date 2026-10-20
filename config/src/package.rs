@@ -34,6 +34,8 @@ pub struct PackageBlock {
 pub struct DeclaredNode {
     pub name: String,
     pub run: Vec<String>,
+    /// False for a program that never joins the mesh, so rant run waits only for it to start.
+    pub expect_mesh: bool,
 }
 
 /// Reads dir/package.rant when there is one.
@@ -83,7 +85,7 @@ fn from_source(src: Source, dir: &Path, workspace: &Path) -> Result<PackageBlock
     }
     for node in fields.blocks("node") {
         let name = one_label(&src, node)?.to_string();
-        let nf = Fields::of(&src, node, &["run"], &[])?;
+        let nf = Fields::of(&src, node, &["run", "expect_mesh"], &[])?;
         let Some(run) = nf.attr("run") else {
             return Err(src.diag_at(node, format!("node `{name}` needs `run`")));
         };
@@ -97,7 +99,8 @@ fn from_source(src: Source, dir: &Path, workspace: &Path) -> Result<PackageBlock
         if out.nodes.iter().any(|n: &DeclaredNode| n.name == name) {
             return Err(src.diag_at(node, format!("node `{name}` is declared twice")));
         }
-        out.nodes.push(DeclaredNode { name, run });
+        let expect_mesh = nf.attr("expect_mesh").map(|a| eval::boolean(&src, a, &scope)).transpose()?.unwrap_or(true);
+        out.nodes.push(DeclaredNode { name, run, expect_mesh });
     }
     Ok(out)
 }
@@ -121,7 +124,8 @@ node "dashboard" {
   run = "npm run serve -- --port '80 80'"
 }
 node "raw" {
-  run = ["${path.package}/x", "a b"]
+  run         = ["${path.package}/x", "a b"]
+  expect_mesh = false
 }
 "#,
         );
@@ -132,6 +136,7 @@ node "raw" {
         assert_eq!(p.nodes[0].run, ["npm", "run", "serve", "--", "--port", "80 80"]);
         assert!(p.nodes[1].run[0].ends_with("/dash/x"));
         assert_eq!(p.nodes[1].run[1], "a b");
+        assert_eq!((p.nodes[0].expect_mesh, p.nodes[1].expect_mesh), (true, false));
     }
 
     #[test]

@@ -127,6 +127,13 @@ pub fn string_list(src: &Source, attr: &Attribute, scope: &Scope) -> Result<Vec<
     }
 }
 
+pub fn boolean(src: &Source, attr: &Attribute, scope: &Scope) -> Result<bool, Diag> {
+    match value(src, attr, scope)? {
+        Value::Bool(b) => Ok(b),
+        v => Err(src.diag_at(&attr.value, format!("`{}` must be true or false, found {}", attr.key.as_str(), type_name(&v)))),
+    }
+}
+
 /// A string or a list of strings, the two forms `run`, `args` and `build` take.
 pub enum StringOrList {
     One(String),

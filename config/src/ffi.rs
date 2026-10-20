@@ -137,6 +137,8 @@ pub struct RantConfigInstance {
     pub cwd: *const c_char,
     /// The group whose own node block makes it, NULL for a node run alone.
     pub group: *const c_char,
+    /// It joins the mesh once started. Only a declared program may not.
+    pub expect_mesh: bool,
 }
 
 /// A resolved plan in start order, every path absolute. Empty when diagnostics are not.
@@ -298,6 +300,7 @@ impl Store {
             env_count,
             cwd: self.path(&i.cwd),
             group: i.group.as_deref().map(|g| self.str(g)).unwrap_or(std::ptr::null()),
+            expect_mesh: i.node.expect_mesh,
         }
     }
 

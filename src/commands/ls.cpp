@@ -23,7 +23,8 @@ namespace commands {
 using mesh::json;
 
 /* One node as ls lists it. A node rant started that is not on the mesh is still joining,
- * or never joins since it does not use Rant. Unknown with --no-mesh. */
+ * or never joins since it does not use Rant. Unknown with --no-mesh, or for a program
+ * declared to never join. */
 struct Row {
     std::string             name;
     std::optional<bool>     on_mesh;
@@ -58,7 +59,8 @@ static Listing list_nodes(app::Context& ctx, mesh::Client* mesh, const std::stri
     std::set<std::string> on_mesh;
     for (auto& [_, name] : managed) on_mesh.insert(name);
     auto row = [&](const state::Instance& i) {
-        return Row{ i.name, mesh ? std::optional<bool>(on_mesh.count(i.name) > 0) : std::nullopt, i.type, started_domain(i), i.group };
+        std::optional<bool> joined = mesh && i.expect_mesh ? std::optional<bool>(on_mesh.count(i.name) > 0) : std::nullopt;
+        return Row{ i.name, joined, i.type, started_domain(i), i.group };
     };
 
     Listing out;

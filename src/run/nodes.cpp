@@ -67,6 +67,7 @@ state::Instance spawn(const config::Workspace& ws, const config::Instance& inst,
     rec.cwd = config::to_utf8(inst.cwd);
     rec.log = config::to_utf8(log);
     rec.group = inst.group;
+    rec.expect_mesh = inst.expect_mesh;
     rec.tracking = process::start_detached(c, log, job_name(ws.root, name));
     state::remember(ws.data);
     return rec;

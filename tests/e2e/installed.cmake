@@ -4,7 +4,7 @@ include("${CMAKE_CURRENT_LIST_DIR}/lib.cmake")
 # the groups beside them, as rant install leaves it.
 set(PKG "$ENV{RANT_HOME}/packages/tool")
 install_test_node("home/.rant/packages/tool/bin")
-file(WRITE "${PKG}/package.rant" "description = \"Answers questions\"\narchive = \"tool-$\{version}.zip\"\nnode \"tool\" {\n  run = [\"./bin/test_node\", \"--life\", \"60\"]\n}\n")
+file(WRITE "${PKG}/package.rant" "description = \"Answers questions\"\narchive = \"tool-$\{version}.tar.gz\"\nnode \"tool\" {\n  run = [\"./bin/test_node\", \"--life\", \"60\"]\n}\nnode \"idle\" {\n  run = [\"${CMAKE_COMMAND}\", \"-E\", \"sleep\", \"60\"]\n  expect_mesh = false\n}\n")
 file(WRITE "${PKG}/Tool.run" "node \"tool\" {}\n")
 
 # Outside every workspace the installed packages stand alone, run from rant's home.
@@ -23,6 +23,16 @@ if(NOT EXISTS "$ENV{RANT_HOME}/logs/tool.log")
 endif()
 rant(stop Tool)
 expect_match("${OUT}" "tool +stopped")
+
+# A program that never joins the mesh is up once it has started.
+rant(run node idle)
+expect_match("${OUT}" "idle +started")
+rant(ls nodes --json)
+expect_match("${OUT}" "\"name\": \"idle\"")
+expect_no_match("${OUT}" "on_mesh")
+rant(stop idle)
+expect_match("${OUT}" "idle +stopped")
+
 rant(build FAILS)
 expect_match("${ERR}" "no workspace here")
 

@@ -102,6 +102,7 @@ static Plan read_plan(const RantConfigPlanView* v) {
         for (size_t e = 0; e < in.env_count; e++) inst.env[str(in.env[e].name)] = str(in.env[e].value);
         inst.cwd = from_utf8(str(in.cwd));
         inst.group = str(in.group);
+        inst.expect_mesh = in.expect_mesh;
         out.instances.push_back(std::move(inst));
     }
     return out;

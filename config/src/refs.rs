@@ -118,5 +118,6 @@ fn by_path(model: &Model, path: &Path, reference: &str) -> Result<NodeType, Stri
         run,
         shadowed: Vec::new(),
         source: None,
+        expect_mesh: true,
     })
 }
