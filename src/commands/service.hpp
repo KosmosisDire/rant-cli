@@ -29,6 +29,7 @@ struct Service {
     std::string              run_name;        /* "RantBridge", the Run value */
     std::string              stop_event;      /* the Windows event the program stops on */
     std::string              stays;           /* what disable leaves, "its binary stays" */
+    std::string              installs;        /* the command that installs the program, "rant bridge enable" */
 };
 
 /* What a program writes in its state file once it listens. */
@@ -84,7 +85,7 @@ void install_from(app::Context& ctx, const Service& s, const std::string& from);
 /* On Linux without lingering, says how a service starts at boot rather than at login. */
 void note_linger(const app::Context& ctx);
 
-/* Throws app::Failure naming the enable subcommand when the program is not installed. */
+/* Throws app::Failure naming the command that installs it when the program is not installed. */
 void require_installed(const Service& s);
 
 /* The command line the Windows Run key and a Windows start use. */

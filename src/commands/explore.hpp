@@ -1,28 +1,13 @@
 #pragma once
 
 #include <filesystem>
-#include <string>
+#include <optional>
 
-#include "app/context.hpp"
-#include "net/github.hpp"
-
-/* The explorer rant installs into ~/.rant/bin, shared by explore, which installs it when
- * missing, web, which serves its page, and update, which keeps it current. */
+/* The explorer: the program of the installed explorer package, which explore opens and web
+ * serves as a page. */
 namespace commands::explorer {
 
-/* Where rant installs the explorer, whether or not it is there. */
-std::filesystem::path installed();
-
-/* Where rant records the version it installed. */
-std::filesystem::path version_file();
-
-/* The version rant installed, empty when it installed none. */
-std::string installed_version();
-
-/* The newest explorer release. Throws app::Failure. */
-net::Release latest();
-
-/* Downloads the release's explorer for this platform over the installed one. */
-void install(const app::Context& ctx, const net::Release& r);
+/* The installed explorer's program, nullopt when the explorer package is not installed. */
+std::optional<std::filesystem::path> program();
 
 }

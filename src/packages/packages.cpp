@@ -100,6 +100,35 @@ std::vector<Source> Sources::all() {
     return out;
 }
 
+About about(const Source& s, bool release) {
+    About a;
+    std::string text;
+    std::error_code ec;
+    if (!s.repo.empty()) {
+        std::string ref = "HEAD";
+        if (release) {
+            net::Release r = net::release(s.repo);
+            a.version = r.version;
+            ref = r.tag;
+        }
+        std::optional<std::string> t = net::fetch(net::raw_url(s.repo, ref, package_file));
+        if (!t) throw app::Failure(s.repo + " has no package.rant at " + ref);
+        text = *t;
+    } else if (fs::is_regular_file(s.path / package_file, ec)) {
+        text = read_file(s.path / package_file);
+    } else {
+        return a;
+    }
+    config::PackageRelease rel = config::read_release(dir() / s.name, text, a.version, net::platform());
+    if (!rel.diagnostics.empty()) throw app::Failure(rel.diagnostics[0].str());
+    a.description = rel.description;
+    if (release || s.repo.empty()) {
+        a.archive = rel.archive;
+        a.vsix = rel.vsix;
+    }
+    return a;
+}
+
 std::vector<std::string> cached_names() {
     std::vector<std::string> out;
     std::error_code ec;
@@ -313,13 +342,25 @@ static void place(const std::string& name, const fs::path& archive, const std::s
     if (ec) throw app::Failure("cannot place " + u8(dir() / name) + ": " + ec.message());
 }
 
-/* Installs an extension into the target and records where. */
+/* Where an extension goes: the editor and profile given, else those it went into before while
+ * that editor is there, else the ones vsix::target finds, which may ask. */
+static vsix::Target extension_target(const app::Context& ctx, const std::string& name) {
+    std::optional<Record> had = record(name);
+    std::error_code ec;
+    if (!ctx.args.has("editor") && !ctx.args.has("profile") && had && !had->extension.empty() && fs::is_regular_file(had->editor, ec))
+        return { had->editor, had->profile };
+    return vsix::target(ctx);
+}
+
+/* Installs an extension into the target and records where. From a path the extension's own
+ * version stands for the package's. */
 static void install_extension(app::Context& ctx, const vsix::Target& t, const fs::path& file, Record& rec) {
     std::optional<Record> had = record(rec.name);
     config::Vsix v = vsix::install(t, file);
     rec.extension = v.id;
     rec.editor = t.editor;
     rec.profile = t.profile;
+    if (rec.repo.empty()) rec.version = v.version;
     ctx.out.note("installed the extension " + v.id + " " + v.version + " through " + vsix::shown(t) + ", reload the editor window to start it");
     if (had && !had->extension.empty() && (had->editor != t.editor || had->profile != t.profile))
         ctx.out.note("it stays in " + vsix::shown({ had->editor, had->profile }) + " as well, where rant no longer updates it");
@@ -365,7 +406,7 @@ static void install_release(app::Context& ctx, const Source& s, const std::strin
         if (!name.empty() && !asset) throw app::Failure("the " + s.name + " " + r.version + " release has no " + name + ", built for " + net::platform());
     /* the editor and profile first, since picking one may ask */
     std::optional<vsix::Target> t;
-    if (extension) t = vsix::target(ctx);
+    if (extension) t = extension_target(ctx, s.name);
     std::vector<Download> files;
     for (auto* a : { archive, extension }) {
         if (!a) continue;
@@ -403,7 +444,7 @@ static void install_path(app::Context& ctx, const Source& s, Record& rec) {
         config::PackageRelease rel = config::read_release(s.path, read_file(file), "", net::platform());
         if (!rel.diagnostics.empty()) throw app::Failure(rel.diagnostics[0].str());
         if (rel.vsix.empty() && retarget) throw app::Failure(s.name + " is no VS Code extension, so --editor and --profile do not apply");
-        if (!rel.vsix.empty()) install_extension(ctx, vsix::target(ctx), newest_vsix(s.path), rec);
+        if (!rel.vsix.empty()) install_extension(ctx, extension_target(ctx, s.name), newest_vsix(s.path), rec);
         retire(s.name);
         make_link(dir() / s.name, fs::absolute(s.path).lexically_normal());
         ctx.out.note("linked " + s.name + " to " + u8(s.path) + (rel.vsix.empty() ? ", so its builds there count at once" : ""));
@@ -451,6 +492,53 @@ void remove(app::Context& ctx, const std::string& name) {
     retire(name);
     fs::remove(record_file(name), ec);
     ctx.out.note("removed " + name);
+}
+
+std::optional<Update> check(app::Context& ctx, Sources& sources, const std::string& name) {
+    std::optional<Record> rec = record(name);
+    fs::path target = dir() / name;
+    std::error_code ec;
+    if (!rec) {
+        if (!is_link(target) && !fs::exists(target, ec)) throw app::Failure(name + " is not installed, `rant install " + name + "` installs it");
+        ctx.out.note(name + " was put in " + u8(dir()) + " by hand, so update leaves it alone");
+        return std::nullopt;
+    }
+    if (rec->once) {
+        ctx.out.note(name + " came from " + u8(rec->path) + " through --from, so update leaves it alone");
+        return std::nullopt;
+    }
+    std::optional<Source> s = sources.find(name);
+    if (!s) throw app::Failure("no source names " + name + " any more, see `rant ls sources`");
+    Update u{ *s, rec->version, "", false };
+    if (!s->repo.empty()) {
+        net::Release r = net::release(s->repo);
+        u.to = r.version;
+        u.needed = rec->repo != s->repo || net::newer(r.version, rec->version);
+        return u;
+    }
+    if (!util::holds(rec->path, s->path) || !util::holds(s->path, rec->path)) {
+        u.needed = true;
+    } else if (fs::is_directory(s->path, ec)) {
+        /* a linked folder is current by itself, but its extension is built into a file */
+        u.needed = !is_link(target);
+        if (!rec->extension.empty()) {
+            u.to = config::read_vsix(newest_vsix(s->path)).version;
+            u.needed = u.needed || u.to != rec->version;
+        }
+    } else {
+        u.needed = fs::last_write_time(s->path, ec) > fs::last_write_time(record_file(name), ec);
+    }
+    return u;
+}
+
+std::optional<config::NodeType> installed_node(const std::string& package, const std::string& node) {
+    config::Opened o = config::open(util::rant_home(), true);
+    if (!o.workspace) return std::nullopt;
+    for (auto& p : o.workspace->packages)
+        if (p.installed && p.name == package)
+            for (auto& n : p.nodes)
+                if (n.name == node) return n;
+    return std::nullopt;
 }
 
 }

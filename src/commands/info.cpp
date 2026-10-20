@@ -7,6 +7,7 @@
 #include "library/uses.hpp"
 #include "mesh/access.hpp"
 #include "mesh/schema_text.hpp"
+#include "packages/packages.hpp"
 #include "process/command.hpp"
 #include "run/nodes.hpp"
 #include "ui/yaml.hpp"
@@ -167,6 +168,11 @@ static Answer package_answer(app::Context& ctx, const state::State& st, const co
     j["package"] = p.name;
     j["folder"] = ctx.shown(p.dir);
     if (!p.description.empty()) j["description"] = p.description;
+    if (std::optional<packages::Record> rec = p.installed ? packages::record(p.name) : std::nullopt) {
+        if (!rec->version.empty()) j["version"] = rec->version;
+        j["source"] = rec->repo.empty() ? config::to_utf8(rec->path) : rec->repo;
+        if (!rec->extension.empty()) j["extension"] = rec->extension + " in " + config::to_utf8(rec->editor) + (rec->profile.empty() ? "" : ", profile " + rec->profile);
+    }
     j["kind"] = p.kinds;
     json rant = json::array();
     for (auto& u : library::in_folder(p.dir))
@@ -319,6 +325,23 @@ static int run(app::Context& ctx) {
     /* the answers' schemas live in the client's node, so it outlives their printing */
     std::optional<mesh::Client> mesh;
     if (!kind || on_mesh(*kind)) mesh_answers(mesh.emplace(ctx.domain()), kind, name, st, answers);
+    /* a package rant install could install, only when asked for a package, since it costs a fetch */
+    if (answers.empty() && kind == Kind::Package)
+        if (std::optional<packages::Source> s = packages::Sources().find(name)) {
+            packages::About about = packages::about(*s, true);
+            Answer a;
+            a.fields["package"] = name;
+            if (!about.description.empty()) a.fields["description"] = about.description;
+            a.fields["source"] = s->repo.empty() ? config::to_utf8(s->path) : s->repo;
+            if (!about.version.empty()) a.fields["latest"] = about.version;
+            json files = json::array();
+            for (auto& f : { about.archive, about.vsix })
+                if (!f.empty()) files.push_back(f);
+            a.fields["files"] = files;
+            a.fields["installed"] = false;
+            answers.push_back({ Kind::Package, a });
+            if (!ctx.json) ctx.out.note("`rant install " + name + "` installs it");
+        }
     if (answers.empty())
         throw app::Failure(kind ? "no " + std::string(kind_word(*kind)) + " named `" + name + "`, see `rant ls`"
                                 : "nothing named `" + name + "`, see `rant ls`");

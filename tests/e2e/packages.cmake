@@ -74,6 +74,31 @@ if(NOT EXISTS "${build}/package.rant" OR NOT EXISTS "${build}/bin")
   message(FATAL_ERROR "removing a linked package reached into its folder")
 endif()
 
+# Update finds a linked folder current by itself, and follows sources.rant to an archive,
+# then takes the archive again once it changes.
+file(WRITE "${home}/sources.rant" "package \"tool\" {\n  path = \"../../tool-build\"\n}\n")
+rant(install tool)
+rant(update tool)
+expect_match("${OUT}" "^tool is up to date\n$")
+file(WRITE "${home}/sources.rant" "package \"tool\" {\n  path = \"../../tool.tar.gz\"\n}\n")
+rant(update tool -y)
+expect_match("${OUT}" "This updates:\n  tool, from [^\n]*tool[.]tar[.]gz\n")
+expect_match("${ERR}" "installed tool from")
+rant(update tool)
+expect_match("${OUT}" "^tool is up to date\n$")
+execute_process(COMMAND "${CMAKE_COMMAND}" -E sleep 1.1)
+execute_process(COMMAND "${CMAKE_COMMAND}" -E touch "${SCRATCH}/tool.tar.gz")
+rant(update tool -y)
+expect_match("${ERR}" "installed tool from")
+
+# What --from installed stays until rant install says otherwise.
+rant(install tool --from tool-build)
+rant(update tool)
+expect_match("${ERR}" "tool came from [^\n]*tool-build through --from, so update leaves it alone")
+rant(update other FAILS)
+expect_match("${ERR}" "other is not installed, `rant install other` installs it")
+rant(remove tool)
+
 # A broken sources.rant says where.
 file(WRITE "${home}/sources.rant" "package \"tool\" {}\n")
 rant(install tool FAILS)

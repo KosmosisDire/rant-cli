@@ -351,7 +351,7 @@ void note_linger(const app::Context& ctx) {
 }
 
 void require_installed(const Service& s) {
-    if (!fs::is_regular_file(s.exe)) throw app::Failure(s.name + " is not installed, run `rant " + s.command + " enable`");
+    if (!fs::is_regular_file(s.exe)) throw app::Failure(s.name + " is not installed, run `" + s.installs + "`");
 }
 
 const std::vector<std::string>& subcommands() {

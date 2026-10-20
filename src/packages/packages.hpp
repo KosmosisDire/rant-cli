@@ -71,6 +71,18 @@ private:
     std::vector<std::pair<std::string, std::optional<config::Database>>> databases_;
 };
 
+/* What a package's package.rant says of it, at its newest release or as its source has it now. */
+struct About {
+    std::string version;        /* the newest release, empty when not asked or from a path */
+    std::string description;
+    std::string archive;        /* the files that release carries, empty for a kind it lacks */
+    std::string vsix;
+};
+
+/* Reads a source's package.rant: at its newest release when release, else at the repo's
+ * default branch, which costs no GitHub API call. Throws app::Failure. */
+About about(const Source& s, bool release);
+
 /* The names the databases listed when last fetched, from the cache, for completion. */
 std::vector<std::string> cached_names();
 
@@ -80,9 +92,24 @@ std::vector<std::string> installed();
 /* The record of an installed package, nullopt when rant install left none. */
 std::optional<Record> record(const std::string& name);
 
+/* What updating an installed package would do. */
+struct Update {
+    Source      source;
+    std::string had;             /* the version installed, empty from a path */
+    std::string to;              /* the release it would move to, empty from a path */
+    bool        needed = false;
+};
+
+/* What its source offers an installed package now. nullopt for one update leaves alone, one
+ * installed with --from or by hand, after a note saying so. Throws app::Failure. */
+std::optional<Update> check(app::Context& ctx, Sources& sources, const std::string& name);
+
+/* A node an installed package declares, as rant's home sees it, nullopt when there is none. */
+std::optional<config::NodeType> installed_node(const std::string& package, const std::string& node);
+
 /* Installs a package from its source, the release at version or the newest, over the one
- * installed. A VS Code extension goes into the editor --editor and --profile pick. Throws
- * app::Failure. */
+ * installed. A VS Code extension goes into the editor --editor and --profile pick, else the
+ * one it went into before. Throws app::Failure. */
 void install(app::Context& ctx, const Source& s, const std::string& version);
 
 /* Removes an installed package, and its extension from the editor that took it. Throws

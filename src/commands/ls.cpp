@@ -293,9 +293,15 @@ static int list_workspace(app::Context& ctx, Kind kind, const std::string& patte
             std::string version = rant_version(p);
             json files = json::array();
             for (auto& f : p.files) files.push_back(config::to_utf8(f));
-            out.push_back({ { "name", p.name }, { "kinds", p.kinds }, { "folder", config::to_utf8(p.dir) }, { "files", files },
-                            { "rant", version.empty() ? json(nullptr) : json(version) }, { "installed", p.installed } });
-            std::string uses = p.installed ? dim("installed") : version.empty() ? dim("no Rant") : "Rant " + version;
+            std::optional<packages::Record> rec = p.installed ? packages::record(p.name) : std::nullopt;
+            bool linked = p.installed && packages::is_link(packages::dir() / p.name);
+            json item = { { "name", p.name }, { "kinds", p.kinds }, { "folder", config::to_utf8(p.dir) }, { "files", files },
+                          { "rant", version.empty() ? json(nullptr) : json(version) }, { "installed", p.installed } };
+            if (rec && !rec->version.empty()) item["version"] = rec->version;
+            if (rec) item["source"] = rec->repo.empty() ? config::to_utf8(rec->path) : rec->repo;
+            out.push_back(item);
+            std::string state = linked ? "linked" : rec && !rec->version.empty() ? "installed " + rec->version : "installed";
+            std::string uses = p.installed ? dim(state) : version.empty() ? dim("no Rant") : "Rant " + version;
             t.row({ p.name, dim(joined(p.kinds, ", ")), uses, dim(ctx.shown(p.dir)) });
         }
     } else {
@@ -318,6 +324,32 @@ static int list_workspace(app::Context& ctx, Kind kind, const std::string& patte
     }
     if (ctx.json) ctx.out.line(out.dump(2));
     else section(ctx, title, t.lines());
+    return 0;
+}
+
+/* What rant install can install, each from the first source that names it, with what its
+ * package.rant says at the repo's default branch. */
+static int list_available(app::Context& ctx, const std::string& pattern) {
+    packages::Sources sources;
+    auto dim = [&](const std::string& s) { return ctx.out.paint(ui::Style::Dim, s); };
+    json out = json::array();
+    ui::Table t;
+    for (auto& s : sources.all()) {
+        if (!util::name_matches(pattern, s.name)) continue;
+        std::string from = s.repo.empty() ? config::to_utf8(s.path) : s.repo, description;
+        try {
+            description = packages::about(s, false).description;
+        } catch (const app::Failure& e) {
+            ctx.out.warn(s.name + ": " + e.what());
+        }
+        std::optional<packages::Record> rec = packages::record(s.name);
+        std::string installed = !rec ? "" : rec->version.empty() ? "installed" : "installed " + rec->version;
+        out.push_back({ { "name", s.name }, { s.repo.empty() ? "path" : "repo", from }, { "description", description },
+                        { "installed", rec ? json(rec->version.empty() ? json(true) : json(rec->version)) : json(false) } });
+        t.row({ s.name, dim(from), dim(installed), description });
+    }
+    if (ctx.json) ctx.out.line(out.dump(2));
+    else section(ctx, "AVAILABLE", t.lines());
     return 0;
 }
 
@@ -364,10 +396,12 @@ static int run(app::Context& ctx) {
     if (!kind) throw app::UsageError("`" + w[0] + "` is not a kind ls lists, see `rant ls`");
     if (w.size() > 2) throw app::UsageError("ls takes a kind and one pattern at most, such as `rant ls types cam`");
     std::string pattern = w.size() == 2 ? w[1] : "";
+    if (ctx.args.has("available") && *kind != Kind::Package) throw app::UsageError("--available goes with `rant ls packages`");
     if (*kind == Kind::Source) {
         if (!pattern.empty()) throw app::UsageError("ls sources takes no pattern");
         return list_sources(ctx);
     }
+    if (*kind == Kind::Package && ctx.args.has("available")) return list_available(ctx, pattern);
     if (!on_mesh(*kind)) return list_workspace(ctx, *kind, pattern);
     return list_mesh(ctx, *kind, pattern);
 }
@@ -381,7 +415,8 @@ app::Command ls() {
     app::Command c{ "ls", "<kind> [pattern]",
                     "list nodes, entities, types, packages or groups",
                     app::Section::Mesh,
-                    { { "no-mesh", 0, "", "with nodes: only what this workspace declares and started, without joining the mesh" } },
+                    { { "no-mesh", 0, "", "with nodes: only what this workspace declares and started, without joining the mesh" },
+                      { "available", 0, "", "with packages: what `rant install` can install, from sources.rant and the package databases" } },
                     run };
     c.own_help = true;
     c.complete = complete_words;

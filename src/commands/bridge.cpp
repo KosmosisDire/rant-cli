@@ -51,6 +51,7 @@ service::Service service() {
     s.run_name = "RantBridge";
     s.stop_event = "Local\\rant-bridge-stop";
     s.stays = "its binary and " + u8(config_path()) + " stay";
+    s.installs = "rant bridge enable";
     return s;
 }
 

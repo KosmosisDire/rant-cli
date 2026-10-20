@@ -28,6 +28,9 @@ struct Release {
  * v tag too. Throws app::Failure. */
 Release release(const std::string& repo, const std::string& tag = "");
 
+/* Whether a dotted version is newer than another, number by number: 0.0.12 over 0.0.9. */
+bool newer(const std::string& version, const std::string& than);
+
 /* A release from the API's JSON answer. Throws app::Failure when it cannot be read. */
 Release parse_release(const std::string& body);
 

@@ -1,4 +1,3 @@
-#include <cstdlib>
 #include <optional>
 #include <string>
 #include <vector>
@@ -7,12 +6,13 @@
 #include "app/failure.hpp"
 #include "commands/bridge.hpp"
 #include "commands/commands.hpp"
-#include "commands/explore.hpp"
 #include "commands/web.hpp"
+#include "complete/complete.hpp"
 #include "config/config.hpp"
 #include "library/library.hpp"
 #include "library/uses.hpp"
 #include "net/github.hpp"
+#include "packages/packages.hpp"
 #include "process/command.hpp"
 #include "process/supervisor.hpp"
 #include "ui/prompt.hpp"
@@ -22,17 +22,10 @@ namespace commands {
 
 static const char* cli_repo = "KosmosisDire/rant-cli";
 
-/* The numbers of a dotted version, 0.0.12 as {0, 0, 12}, compared number by number. */
-static std::vector<long> numbers(const std::string& v) {
-    std::vector<long> out;
-    size_t at = 0;
-    while (at < v.size()) {
-        size_t dot = v.find('.', at);
-        out.push_back(std::strtol(v.substr(at, dot - at).c_str(), nullptr, 10));
-        if (dot == std::string::npos) break;
-        at = dot + 1;
-    }
-    return out;
+static std::string joined(const std::vector<std::string>& v) {
+    std::string s;
+    for (size_t i = 0; i < v.size(); i++) s += (i == 0 ? "" : i + 1 == v.size() ? " and " : ", ") + v[i];
+    return s;
 }
 
 /* A service that ran the program just replaced starts again on the new one. */
@@ -45,41 +38,57 @@ static void restart_updated(app::Context& ctx, const service::Service& s) {
     }
 }
 
-/* Replaces this binary, the explorer, the bridge and the VS Code extension rant installed
- * with their newest releases, after one question, never with an older one. The skill moves
- * with the CLI, all only where someone installed them. */
-static int update_programs(app::Context& ctx) {
-    net::Release cli = net::release(cli_repo);
+/* A package's move as the question lists it: explorer 0.0.19 to 0.0.20, from its source. */
+static std::string shown(const packages::Update& u) {
+    std::string from = u.source.repo.empty() ? config::to_utf8(u.source.path) : u.source.repo;
+    return u.source.name + (u.had.empty() ? "" : " " + u.had) + (u.to.empty() ? "" : " to " + u.to) + ", from " + from;
+}
+
+/* Replaces this binary and the bridge with their newest releases and moves each installed
+ * package, or only those named, to what its source offers now, after one question, never to
+ * an older release. The skill moves with the CLI. */
+static int update_programs(app::Context& ctx, const std::vector<std::string>& named) {
+    bool all = named.empty();
+    std::vector<std::string> current;
+    net::Release cli;
     const net::Asset* a = nullptr;
-    if (numbers(cli.version) > numbers(RANT_CLI_VERSION)) {
-        std::string asset = "rant-" + cli.version + "-" + net::platform() + net::exe_suffix();
-        a = cli.asset(asset);
-        if (!a) throw app::Failure("the rant-cli " + cli.version + " release has no " + asset);
-    }
-    std::optional<net::Release> ex;
-    std::string ex_had = explorer::installed_version();
-    if (config::fs::is_regular_file(explorer::installed())) {
-        ex = explorer::latest();
-        if (ex->version == ex_had) ex.reset();
+    if (all) {
+        cli = net::release(cli_repo);
+        if (net::newer(cli.version, RANT_CLI_VERSION)) {
+            std::string asset = "rant-" + cli.version + "-" + net::platform() + net::exe_suffix();
+            a = cli.asset(asset);
+            if (!a) throw app::Failure("the rant-cli " + cli.version + " release has no " + asset);
+        } else {
+            current.push_back("rant-cli " RANT_CLI_VERSION);
+        }
     }
     std::optional<net::Release> br;
     std::string br_had = service::installed_version(bridge::service());
-    if (config::fs::is_regular_file(bridge::installed())) {
+    if (all && config::fs::is_regular_file(bridge::installed())) {
         try {
             net::Release latest = bridge::latest();
-            if (numbers(latest.version) > numbers(br_had)) br = latest;
+            if (net::newer(latest.version, br_had)) br = latest;
+            else current.push_back("the bridge " + br_had);
         } catch (const app::Failure& e) {
             ctx.out.warn(std::string("cannot check the bridge: ") + e.what());
         }
     }
-    if (!a && !ex && !br) {
-        std::vector<std::string> have = { "rant-cli " RANT_CLI_VERSION };
-        if (config::fs::is_regular_file(explorer::installed())) have.push_back("the explorer " + ex_had);
-        if (config::fs::is_regular_file(bridge::installed())) have.push_back("the bridge " + br_had);
-        std::string list;
-        for (size_t i = 0; i < have.size(); i++) list += (i == 0 ? "" : i + 1 == have.size() ? " and " : ", ") + have[i];
-        ctx.out.line(list + (have.size() > 1 ? " are" : " is") + " up to date");
-        return 0;
+    packages::Sources sources;
+    std::vector<packages::Update> moves;
+    int code = 0;
+    for (auto& name : all ? packages::installed() : named) {
+        try {
+            std::optional<packages::Update> u = packages::check(ctx, sources, name);
+            if (u && u->needed) moves.push_back(*u);
+            else if (u) current.push_back(name + (u->had.empty() ? "" : " " + u->had));
+        } catch (const app::Failure& e) {
+            ctx.out.error(e.what());
+            code = 1;
+        }
+    }
+    if (!a && !br && moves.empty()) {
+        if (!current.empty()) ctx.out.line(joined(current) + (current.size() > 1 ? " are" : " is") + " up to date");
+        return code;
     }
 
     config::fs::path self = process::self_path();
@@ -89,16 +98,23 @@ static int update_programs(app::Context& ctx) {
             if (agents::installed(agent.skills)) names += (names.empty() ? "" : ", ") + agent.name;
     ctx.out.line("This updates:");
     if (a) ctx.out.line("  rant-cli " RANT_CLI_VERSION " to " + cli.version + ", over " + config::to_utf8(self));
-    if (ex) ctx.out.line("  the explorer " + (ex_had.empty() ? std::string("") : ex_had + " ") + "to " + ex->version + ", over " +
-                         config::to_utf8(explorer::installed()));
     if (br) ctx.out.line("  the bridge " + (br_had.empty() ? std::string("") : br_had + " ") + "to " + br->version + ", over " +
                          config::to_utf8(bridge::installed()));
+    for (auto& m : moves) ctx.out.line("  " + shown(m));
     if (!names.empty()) ctx.out.line("  the rant skill for " + names);
     if (!ui::confirm("Update?", ctx.yes)) return 1;
 
-    if (ex) {
-        bool serving = service::running(web::service()).has_value();
-        explorer::install(ctx, *ex);
+    for (auto& m : moves) {
+        /* the web explorer runs a package's program as a service of its own */
+        service::Service web = web::service();
+        bool serving = util::holds(packages::dir() / m.source.name, web.exe) && service::running(web).has_value();
+        try {
+            packages::install(ctx, m.source, m.source.repo.empty() ? "" : m.to);
+        } catch (const app::Failure& e) {
+            ctx.out.error(e.what());
+            code = 1;
+            continue;
+        }
         if (serving) restart_updated(ctx, web::service());
     }
     if (br) {
@@ -106,7 +122,7 @@ static int update_programs(app::Context& ctx) {
         bridge::install(ctx, *br);
         if (was_running) restart_updated(ctx, bridge::service());
     }
-    if (!a) return 0;
+    if (!a) return code;
     net::download(a->url, self, true);
     ctx.out.line("updated to rant-cli " + cli.version);
     /* the new binary holds the new skill */
@@ -118,23 +134,29 @@ static int update_programs(app::Context& ctx) {
         if (config::fs::exists(hooks / file) &&
             process::run({ { config::to_utf8(self), "setup", shell }, config::fs::temp_directory_path(), {} }) != 0)
             ctx.out.warn(std::string("tab completion for ") + shell + " was not updated, run `rant setup " + shell + "`");
-    return 0;
+    return code;
 }
 
-/* The CLI, the explorer, the bridge and the VS Code extension first, then every package of
- * the workspace here that uses Rant, each after its own question. */
+/* The CLI, the bridge and the installed packages first, then every package of the workspace
+ * here that uses Rant, each after its own question. Named packages alone go without the rest. */
 static int run(app::Context& ctx) {
-    if (!ctx.args.words.empty()) throw app::UsageError("update takes no folder, see `rant lib update`");
-    int code = update_programs(ctx);
+    int code = update_programs(ctx, ctx.args.words);
+    if (!ctx.args.words.empty()) return code;
     const config::Workspace* ws = ctx.workspace();
     if (!ws || library::under(ws->root).empty()) return code;
     ctx.out.line();
     return library::update(ctx, ws->root, library::release("")) ? code : 1;
 }
 
+static complete::Candidates complete_words(complete::Request&) { return { packages::installed() }; }
+
 app::Command update() {
-    return { "update", "", "update rant-cli, the explorer, the bridge and the VS Code extension, then the Rant library of this workspace's packages",
-             app::Section::Setup, {}, run };
+    app::Command c{ "update", "[package...]",
+                    "update rant-cli, the bridge and the installed packages, then the Rant library of this workspace's packages. "
+                    "With packages named, only those",
+                    app::Section::Setup, {}, run };
+    c.complete = complete_words;
+    return c;
 }
 
 }

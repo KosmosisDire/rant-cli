@@ -64,7 +64,7 @@ expect_match("${calls}" "--install-extension [^\n]*ext-0[.]0[.]1[.]vsix\"? --for
 file(READ "${home}/packages/ext.json" record)
 expect_match("${record}" "\"id\": \"test[.]ext\"")
 rant(ls packages)
-expect_match("${OUT}" "\n  ext +package[.]rant +installed")
+expect_match("${OUT}" "\n  ext +package[.]rant +linked")
 
 # Remove takes it out of the recorded editor, and the build folder stays.
 rant(remove ext)

@@ -10,6 +10,7 @@
 #include "commands/format.hpp"
 #include "commands/web.hpp"
 #include "config/config.hpp"
+#include "packages/packages.hpp"
 #include "process/command.hpp"
 #include "util/home.hpp"
 
@@ -46,8 +47,7 @@ static service::Service service_at(const Address& a) {
     s.name = "the web explorer";
     s.command = "explore web";
     s.description = "Rant web explorer";
-    s.exe = explorer::installed();
-    s.version_file = explorer::version_file();
+    s.exe = explorer::program().value_or(fs::path());
     s.log = util::rant_home() / "logs" / "explorer-web.log";
     s.args = { "--web-server", "--port", std::to_string(a.port), "--bind", a.bind };
     s.windows_args = s.args;
@@ -58,6 +58,7 @@ static service::Service service_at(const Address& a) {
     s.run_name = "RantExplorerWeb";
     s.stop_event = "Local\\rant-explorer-web-stop";
     s.stays = "the explorer stays installed";
+    s.installs = "rant install explorer";
     return s;
 }
 
@@ -82,32 +83,17 @@ static web::Address requested(const app::Context& ctx) {
     return a;
 }
 
-/* The explorer in place, the file given, else the one installed, else the newest release.
- * --version came in the same release as --web-server, so an explorer that refuses it
- * cannot serve. */
-static void ensure_explorer(app::Context& ctx, const service::Service& s) {
-    if (auto from = ctx.args.get("from")) {
-        service::install_from(ctx, s, *from);
-    } else if (!fs::is_regular_file(s.exe)) {
-        net::Release r;
-        try {
-            r = explorer::latest();
-        } catch (const app::Failure& e) {
-            throw app::Failure(std::string(e.what()) + ". To use an explorer you built, run `rant explore web enable --from PATH`");
-        }
-        explorer::install(ctx, r);
-    }
-    if (!process::output({ { native(s.exe), "--version" }, fs::temp_directory_path(), {} })) {
-        std::string version = service::installed_version(s);
-        throw app::Failure("the explorer" + (version.empty() ? "" : " " + version) +
-                           " has no web server, `rant update` installs the newest explorer");
-    }
+/* --version came in the same release as --web-server, so an explorer that refuses it cannot serve. */
+static void ensure_explorer(const service::Service& s) {
+    service::require_installed(s);
+    if (!process::output({ { native(s.exe), "--version" }, fs::temp_directory_path(), {} }))
+        throw app::Failure("this explorer has no web server, `rant update explorer` installs the newest");
 }
 
 static int web_enable(app::Context& ctx) {
     web::Address a = requested(ctx);
     service::Service s = web::service_at(a);
-    ensure_explorer(ctx, s);
+    ensure_explorer(s);
     std::error_code ec;
     fs::create_directories(s.log.parent_path(), ec);
     std::ofstream(web::address_file()) << a.bind << " " << a.port << "\n";
@@ -128,7 +114,8 @@ static int web_enable(app::Context& ctx) {
 
 static int web_status(app::Context& ctx, const service::Service& s) {
     std::optional<service::State> st = service::running(s);
-    std::string version = service::installed_version(s);
+    std::optional<packages::Record> rec = packages::record("explorer");
+    std::string version = rec ? rec->version : "";
     bool installed = fs::is_regular_file(s.exe);
     web::Address a = web::saved();
     json j = { { "installed", installed },
@@ -141,14 +128,14 @@ static int web_status(app::Context& ctx, const service::Service& s) {
                { "bind", a.bind },
                { "port", a.port } };
     print_value(ctx, j);
-    if (!installed && !ctx.json) ctx.out.note("the explorer is not installed, run `rant explore web enable`");
+    if (!installed && !ctx.json) ctx.out.note("the explorer is not installed, run `rant install explorer`");
     return 0;
 }
 
 namespace web {
 
 const std::vector<std::string>& options() {
-    static const std::vector<std::string> list = { "from", "port", "bind" };
+    static const std::vector<std::string> list = { "port", "bind" };
     return list;
 }
 

@@ -88,6 +88,20 @@ std::string exe_suffix() {
 #endif
 }
 
+static std::vector<long> numbers(const std::string& v) {
+    std::vector<long> out;
+    size_t at = 0;
+    while (at < v.size()) {
+        size_t dot = v.find('.', at);
+        out.push_back(std::strtol(v.substr(at, dot - at).c_str(), nullptr, 10));
+        if (dot == std::string::npos) break;
+        at = dot + 1;
+    }
+    return out;
+}
+
+bool newer(const std::string& version, const std::string& than) { return numbers(version) > numbers(than); }
+
 Release parse_release(const std::string& body) {
     json j = json::parse(body, nullptr, false);
     if (!j.is_object() || !j.value("tag_name", json()).is_string()) throw app::Failure("cannot read the release from GitHub");
