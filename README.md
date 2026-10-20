@@ -23,12 +23,12 @@ rant new workspace demo --lang python  # a workspace with a talker, a listener a
 rant init                      # or make this folder an empty workspace
 rant new package cam --lang cpp  # a package with one node, Rant added (or python, csharp)
 rant build                     # build every package, dependencies first
-rant run NavGroup speed=2      # run a group of nodes, rant run NavGroup --help lists its params
+rant run Nav speed=2           # run a group of nodes, rant run Nav --help lists its params
 rant run node talker           # or one node alone
 rant ls                        # the running nodes and what they talk through
 rant sub Odom                  # print a topic
-rant log NavGroup -f           # follow what its nodes print
-rant stop NavGroup
+rant log Nav -f                # follow what its nodes print
+rant stop Nav
 rant lib update                # move every package here to the newest Rant
 rant setup                     # tab completion for your shells
 rant vscode install            # the VS Code extension, through its `code` command

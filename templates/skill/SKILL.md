@@ -25,7 +25,7 @@ writes the mesh. Full docs: https://docs.rantlib.dev/llms.txt (fetch the page yo
 ```
 cell/                     workspace: the folder holding workspace.rant
   workspace.rant
-  CellGroup.run           a group: which nodes run together, and how
+  Cell.run                a group: which nodes run together, and how
   drivers/                a package: CMakeLists.txt, pyproject.toml, a .csproj or Cargo.toml that uses Rant
     CMakeLists.txt
     lidar.cpp             a node: one program
@@ -75,7 +75,7 @@ package.rant in a package: `name`, `build` (commands replacing the default),
 `depend` (package names built first), `ignore`, `python` (the interpreter), and
 `node "name" { run = "./tool --flag" }` for programs rant cannot find itself.
 
-A group is `<Name>Group.run`:
+A group is `<Name>.run`:
 
 ```hcl
 description = "Both arms"
@@ -83,7 +83,7 @@ param "speed" {
   type    = float              # string, int, float or bool
   default = 1
 }
-include "ArmGroup" {           # another group, with its param values
+include "Arm" {                # another group, with its param values
   side        = "left"
   node_prefix = "left"
 }
@@ -284,7 +284,8 @@ rant_queue_dispatch(q, 0, 100);              /* on the thread that runs them */
     `src/bin/arm_controller.rs`. Name a node for what it is (`lidar`, not `lidar_node`).
   - Entities and namespaces are PascalCase, `/` between levels: `FrontLidar/JointState`,
     `Line1/Conveyor`. So are types and enum options.
-  - Groups are PascalCase and end in Group: `NavGroup.run`, run as `rant run NavGroup`.
+  - Groups are PascalCase: `Nav.run`, run as `rant run Nav`. Names match case exactly, so
+    `rant stop Nav` stops the group and `rant stop nav` the node.
     A group is how a system starts, so give every system one, even of one node.
     `rant new group` names them so.
   - Fields are snake_case on the wire. Write them in the language's style (`frame_id` in

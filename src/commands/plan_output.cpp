@@ -23,7 +23,7 @@ void note_names(app::Context& ctx, const std::vector<std::string>& groups, const
         std::string want = want_of(last);
         if (want != last) ctx.out.note(std::string("rename ") + kind + " `" + name + "` to `" + want + "`");
     };
-    for (auto& g : groups) check("group", g, util::group_name);
+    for (auto& g : groups) check("group", g, util::pascal);
     for (auto& n : nodes) check("node", n, util::snake);
 }
 

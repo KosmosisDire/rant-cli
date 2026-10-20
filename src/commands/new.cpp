@@ -133,7 +133,7 @@ static std::string chosen(app::Context& ctx, const std::string& kind) {
 
 /* Like dotnet new: a workspace or a package goes in the folder named, here by default, and
  * takes that folder's name. A node or a group is a file here, named as asked or after this
- * folder, a group in PascalCase ending in Group. */
+ * folder, a group in PascalCase. */
 static int run(app::Context& ctx) {
     auto& w = ctx.args.words;
     if (w.empty() || std::find(kinds.begin(), kinds.end(), w[0]) == kinds.end())
@@ -146,11 +146,11 @@ static int run(app::Context& ctx) {
     if (folder && w.size() == 2) dest = (ctx.cwd() / config::from_utf8(w[1])).lexically_normal();
     if (!dest.has_filename()) dest = dest.parent_path();
     std::string name = !folder && w.size() == 2 ? w[1] : config::to_utf8(dest.filename());
-    if (kind == "group") name = util::group_name(name);
+    if (kind == "group") name = util::pascal(name);
     /* a Rust node is a src/bin file of the Cargo package around it, which Cargo finds itself */
     std::optional<fs::path> crate;
     if (preset == "node-rust") dest = *(crate = cargo_package(ctx, name));
-    scaffold::Values values{ { "name", name }, { "Name", util::pascal(name) }, { "group", util::group_name(name) } };
+    scaffold::Values values{ { "name", name }, { "Name", util::pascal(name) } };
     if (preset.find("csharp") != std::string::npos) values["framework"] = dotnet_framework();
     scaffold::Files files = scaffold::plan(preset, dest, values);
 

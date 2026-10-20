@@ -16,11 +16,4 @@ std::string snake(const std::string& name) {
     return n ? std::string(out, n) : name;
 }
 
-std::string group_name(const std::string& name) {
-    static const std::string suffix = "Group";
-    std::string p = pascal(name);
-    bool has = p.size() >= suffix.size() && p.compare(p.size() - suffix.size(), suffix.size(), suffix) == 0;
-    return has ? p : p + suffix;
-}
-
 }

@@ -123,7 +123,7 @@ std::vector<std::string> params(const config::GroupInfo& group, const std::strin
     return out;
 }
 
-/* w starts with partial, whatever the case of either, since names mix NavGroup and talker. */
+/* w starts with partial, whatever the case of either, since names mix Nav and talker. */
 static bool starts_with(const std::string& w, const std::string& partial) {
     if (w.size() < partial.size()) return false;
     for (size_t i = 0; i < partial.size(); i++)

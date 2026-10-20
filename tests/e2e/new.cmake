@@ -3,16 +3,16 @@ include("${CMAKE_CURRENT_LIST_DIR}/lib.cmake")
 rant(init)
 
 rant(new group nav)
-expect_match("${OUT}" "created NavGroup[.]run")
-file(READ "${SCRATCH}/NavGroup.run" nav)
-expect_match("${nav}" "description = \"What NavGroup runs\"")
+expect_match("${OUT}" "created Nav[.]run")
+file(READ "${SCRATCH}/Nav.run" nav)
+expect_match("${nav}" "description = \"What Nav runs\"")
 rant(new group nav FAILS)
-expect_match("${ERR}" "NavGroup[.]run exists already, nothing was written")
+expect_match("${ERR}" "Nav[.]run exists already, nothing was written")
 
 # With no name a node or group takes the name of the folder it is made in.
 file(MAKE_DIRECTORY "${SCRATCH}/lidar")
 rant(new group IN "${SCRATCH}/lidar")
-expect_match("${OUT}" "created LidarGroup[.]run")
+expect_match("${OUT}" "created Lidar[.]run")
 
 # A node takes the language of the package it is made in.
 file(WRITE "${SCRATCH}/py/pyproject.toml" "[project]\nname = \"py\"\ndependencies = [\"rant-middleware\"]\n")
@@ -63,7 +63,7 @@ rant-middleware = \"0.0.24\"
   expect_match("${OUT}" "created rusty/src/bin/listener[.]rs
 created rusty/src/bin/talker[.]rs
 created rusty/workspace[.]rant
-created rusty/RustyGroup[.]run
+created rusty/Rusty[.]run
 created rusty/[.]gitignore
 created rusty/Cargo[.]toml
 ")
@@ -76,9 +76,9 @@ expect_match("${OUT}" "created demo/CMakeLists[.]txt
 created demo/src/listener[.]cpp
 created demo/src/talker[.]cpp
 created demo/workspace[.]rant
-created demo/DemoGroup[.]run
+created demo/Demo[.]run
 ")
-rant(run DemoGroup --dry-run IN "${SCRATCH}/demo" FAILS)
+rant(run Demo --dry-run IN "${SCRATCH}/demo" FAILS)
 expect_match("${ERR}" "no node named `talker`, `demo` is not built yet, run `rant build` first")
 
 # A package gets Rant through the same routine as rant lib install, which asks GitHub.

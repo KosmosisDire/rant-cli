@@ -11,7 +11,7 @@ namespace commands {
 int run_node(app::Context& ctx, const std::string& node);
 int run_group(app::Context& ctx, const std::string& group, const std::vector<std::string>& params);
 
-/* A group as the workspace names it in full, such as drivers/BaseGroup, or the word itself
+/* A group as the workspace names it in full, such as drivers/Base, or the word itself
  * when it names no group. */
 std::string group_name(app::Context& ctx, const std::string& group);
 

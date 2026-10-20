@@ -10,8 +10,8 @@ TEST(narrow_keeps_what_starts_with_the_word_sorted_once) {
 }
 
 TEST(narrow_ignores_case) {
-    complete::Candidates c{ { "NavGroup", "nav_tool", "talker" } };
-    CHECK_EQ(complete::narrow(c, "nav"), (Words{ "NavGroup", "nav_tool" }));
+    complete::Candidates c{ { "Nav", "nav_tool", "talker" } };
+    CHECK_EQ(complete::narrow(c, "nav"), (Words{ "Nav", "nav_tool" }));
     CHECK_EQ(complete::narrow(c, "TAL"), (Words{ "talker" }));
 }
 
