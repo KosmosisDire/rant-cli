@@ -32,7 +32,6 @@ app::Command install();
 app::Command remove();
 app::Command explore();
 app::Command bridge_();
-app::Command vscode_();
 app::Command update();
 app::Command uninstall();
 

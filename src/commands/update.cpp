@@ -8,7 +8,6 @@
 #include "commands/bridge.hpp"
 #include "commands/commands.hpp"
 #include "commands/explore.hpp"
-#include "commands/vscode.hpp"
 #include "commands/web.hpp"
 #include "config/config.hpp"
 #include "library/library.hpp"
@@ -73,22 +72,10 @@ static int update_programs(app::Context& ctx) {
             ctx.out.warn(std::string("cannot check the bridge: ") + e.what());
         }
     }
-    std::optional<net::Release> vs;
-    std::optional<vscode::Target> vs_at = vscode::recorded();
-    std::string vs_had = vs_at ? vscode::installed_version(*vs_at) : "";
-    if (!vs_had.empty()) {
-        try {
-            net::Release latest = vscode::latest();
-            if (numbers(latest.version) > numbers(vs_had)) vs = latest;
-        } catch (const app::Failure& e) {
-            ctx.out.warn(std::string("cannot check the VS Code extension: ") + e.what());
-        }
-    }
-    if (!a && !ex && !br && !vs) {
+    if (!a && !ex && !br) {
         std::vector<std::string> have = { "rant-cli " RANT_CLI_VERSION };
         if (config::fs::is_regular_file(explorer::installed())) have.push_back("the explorer " + ex_had);
         if (config::fs::is_regular_file(bridge::installed())) have.push_back("the bridge " + br_had);
-        if (!vs_had.empty()) have.push_back("the VS Code extension " + vs_had);
         std::string list;
         for (size_t i = 0; i < have.size(); i++) list += (i == 0 ? "" : i + 1 == have.size() ? " and " : ", ") + have[i];
         ctx.out.line(list + (have.size() > 1 ? " are" : " is") + " up to date");
@@ -106,7 +93,6 @@ static int update_programs(app::Context& ctx) {
                          config::to_utf8(explorer::installed()));
     if (br) ctx.out.line("  the bridge " + (br_had.empty() ? std::string("") : br_had + " ") + "to " + br->version + ", over " +
                          config::to_utf8(bridge::installed()));
-    if (vs) ctx.out.line("  the VS Code extension " + vs_had + " to " + vs->version + ", through " + vscode::shown(*vs_at));
     if (!names.empty()) ctx.out.line("  the rant skill for " + names);
     if (!ui::confirm("Update?", ctx.yes)) return 1;
 
@@ -115,7 +101,6 @@ static int update_programs(app::Context& ctx) {
         explorer::install(ctx, *ex);
         if (serving) restart_updated(ctx, web::service());
     }
-    if (vs) vscode::install(ctx, *vs_at, *vs);
     if (br) {
         bool was_running = service::running(bridge::service()).has_value();
         bridge::install(ctx, *br);

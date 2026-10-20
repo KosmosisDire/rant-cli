@@ -34,6 +34,9 @@ struct Record {
     fs::path    path;
     bool        once = false;    /* installed with --from, which update leaves alone */
     std::string version;         /* the release, empty from a path */
+    std::string extension;       /* the VS Code extension it installed, empty for none */
+    fs::path    editor;          /* and the editor and profile that took it */
+    std::string profile;
 };
 
 /* ~/.rant/packages. */
@@ -78,10 +81,12 @@ std::vector<std::string> installed();
 std::optional<Record> record(const std::string& name);
 
 /* Installs a package from its source, the release at version or the newest, over the one
- * installed. Throws app::Failure. */
+ * installed. A VS Code extension goes into the editor --editor and --profile pick. Throws
+ * app::Failure. */
 void install(app::Context& ctx, const Source& s, const std::string& version);
 
-/* Removes an installed package. Throws app::Failure, also while one of its nodes runs. */
+/* Removes an installed package, and its extension from the editor that took it. Throws
+ * app::Failure, also while one of its nodes runs. */
 void remove(app::Context& ctx, const std::string& name);
 
 /* Drops each package that links a folder, so removing rant's home never reaches into it. */

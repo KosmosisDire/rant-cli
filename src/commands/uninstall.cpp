@@ -5,12 +5,12 @@
 #include "agents/skill.hpp"
 #include "app/failure.hpp"
 #include "commands/bridge.hpp"
-#include "commands/vscode.hpp"
 #include "commands/web.hpp"
 #include "commands/commands.hpp"
 #include "complete/shells.hpp"
 #include "library/library.hpp"
 #include "packages/packages.hpp"
+#include "packages/vsix.hpp"
 #include "process/command.hpp"
 #include "process/supervisor.hpp"
 #include "ui/prompt.hpp"
@@ -160,8 +160,14 @@ static int run(app::Context& ctx) {
                              if (process::run({ { "dotnet", "nuget", "remove", "source", "rant" }, fs::temp_directory_path(), {} }) != 0)
                                  throw app::Failure("dotnet could not remove the NuGet source rant");
                          } });
-    if (auto at = vscode::recorded(); at && !vscode::installed_version(*at).empty())
-        steps.push_back({ {}, "the VS Code extension, through " + vscode::shown(*at), [t = *at] { vscode::remove(t); } });
+    for (auto& name : packages::installed()) {
+        std::optional<packages::Record> r = packages::record(name);
+        if (!r || r->extension.empty() || !fs::is_regular_file(r->editor)) continue;
+        packages::vsix::Target t{ r->editor, r->profile };
+        if (!packages::vsix::installed_version(t, r->extension).empty())
+            steps.push_back({ {}, "the VS Code extension " + r->extension + ", through " + packages::vsix::shown(t),
+                              [t, id = r->extension] { packages::vsix::remove(t, id); } });
+    }
     if (service::enabled(bridge::service()) || service::running(bridge::service()))
         steps.push_back({ bridge::installed(), "stopped and no longer started at login", [] { service::disable(bridge::service()); } });
     if (service::enabled(web::service()) || service::running(web::service()))

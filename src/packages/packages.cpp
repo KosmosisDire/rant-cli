@@ -10,6 +10,7 @@
 
 #include "app/failure.hpp"
 #include "net/github.hpp"
+#include "packages/vsix.hpp"
 #include "process/command.hpp"
 #include "state/state.hpp"
 #include "util/home.hpp"
@@ -193,6 +194,12 @@ std::optional<Record> record(const std::string& name) {
     r.path = config::from_utf8(j.value("path", ""));
     r.once = j.value("once", false);
     r.version = j.value("version", "");
+    json e = j.value("extension", json::object());
+    if (e.is_object()) {
+        r.extension = e.value("id", "");
+        r.editor = config::from_utf8(e.value("editor", ""));
+        r.profile = e.value("profile", "");
+    }
     return r;
 }
 
@@ -202,6 +209,7 @@ static void save(const Record& r) {
     if (!r.path.empty()) j["path"] = u8(r.path);
     if (r.once) j["once"] = true;
     if (!r.version.empty()) j["version"] = r.version;
+    if (!r.extension.empty()) j["extension"] = { { "id", r.extension }, { "editor", u8(r.editor) }, { "profile", r.profile } };
     std::ofstream(record_file(r.name), std::ios::binary) << j.dump(2) << "\n";
 }
 
@@ -283,13 +291,16 @@ static fs::path tar_program() {
     throw app::Failure("unpacking needs tar, which is not on PATH");
 }
 
-/* Unpacks an archive into the package's folder. It must hold package.rant at its top. */
-static void unpack(const std::string& name, const fs::path& archive) {
+/* Fills a new folder for the package, an archive unpacked or only the package.rant text of a
+ * release without one, then puts it in place of the old. */
+static void place(const std::string& name, const fs::path& archive, const std::string& text = "") {
     fs::path staging = dir() / ("." + name + ".new");
     std::error_code ec;
     fs::remove_all(staging, ec);
     fs::create_directories(staging, ec);
-    if (process::run({ { u8(tar_program()), "-xzf", u8(archive), "-C", u8(staging) }, fs::temp_directory_path(), {} }) != 0) {
+    if (archive.empty()) {
+        std::ofstream(staging / package_file, std::ios::binary) << text;
+    } else if (process::run({ { u8(tar_program()), "-xzf", u8(archive), "-C", u8(staging) }, fs::temp_directory_path(), {} }) != 0) {
         fs::remove_all(staging, ec);
         throw app::Failure("cannot unpack " + u8(archive));
     }
@@ -302,6 +313,27 @@ static void unpack(const std::string& name, const fs::path& archive) {
     if (ec) throw app::Failure("cannot place " + u8(dir() / name) + ": " + ec.message());
 }
 
+/* Installs an extension into the target and records where. */
+static void install_extension(app::Context& ctx, const vsix::Target& t, const fs::path& file, Record& rec) {
+    std::optional<Record> had = record(rec.name);
+    config::Vsix v = vsix::install(t, file);
+    rec.extension = v.id;
+    rec.editor = t.editor;
+    rec.profile = t.profile;
+    ctx.out.note("installed the extension " + v.id + " " + v.version + " through " + vsix::shown(t) + ", reload the editor window to start it");
+    if (had && !had->extension.empty() && (had->editor != t.editor || had->profile != t.profile))
+        ctx.out.note("it stays in " + vsix::shown({ had->editor, had->profile }) + " as well, where rant no longer updates it");
+}
+
+/* A file the downloads put in rant's cache, gone with this. */
+struct Download {
+    fs::path path;
+    ~Download() {
+        std::error_code ec;
+        fs::remove(path, ec);
+    }
+};
+
 static bool is_archive(const fs::path& p) {
     std::string s = u8(p.filename());
     return s.size() > 7 && s.compare(s.size() - 7, 7, ".tar.gz") == 0;
@@ -312,7 +344,9 @@ static void install_release(app::Context& ctx, const Source& s, const std::strin
     net::Release r = net::release(s.repo, version);
     std::optional<Record> had = record(s.name);
     std::error_code ec;
-    if (had && had->repo == s.repo && !had->once && had->version == r.version && fs::is_directory(dir() / s.name, ec)) {
+    bool retarget = ctx.args.has("editor") || ctx.args.has("profile");
+    if (had && had->repo == s.repo && !had->once && had->version == r.version && fs::is_directory(dir() / s.name, ec) &&
+        !(retarget && !had->extension.empty())) {
         ctx.out.note(s.name + " " + r.version + " is already installed");
         rec = *had;
         return;
@@ -324,37 +358,60 @@ static void install_release(app::Context& ctx, const Source& s, const std::strin
     if (!rel.diagnostics.empty()) throw app::Failure(s.repo + " " + r.tag + ": " + rel.diagnostics[0].str());
     if (rel.archive.empty() && rel.vsix.empty())
         throw app::Failure(s.name + " " + r.version + " names no `archive` or `vsix` in its package.rant, so it has nothing to install");
-    if (!rel.vsix.empty()) throw app::Failure(s.name + " is a VS Code extension, which this rant cannot install yet");
-    const net::Asset* a = r.asset(rel.archive);
-    if (!a) throw app::Failure("the " + s.name + " " + r.version + " release has no " + rel.archive + ", it is not built for " + net::platform());
-    ctx.out.note("downloading " + rel.archive);
-    fs::path file = util::rant_home() / "cache" / (rel.archive + "-" + stamp());
-    struct Gone {
-        fs::path p;
-        ~Gone() { std::error_code e; fs::remove(p, e); }
-    } gone{ file };
-    net::download(a->url, file);
-    unpack(s.name, file);
+    if (rel.vsix.empty() && retarget) throw app::Failure(s.name + " is no VS Code extension, so --editor and --profile do not apply");
+    const net::Asset* archive = rel.archive.empty() ? nullptr : r.asset(rel.archive);
+    const net::Asset* extension = rel.vsix.empty() ? nullptr : r.asset(rel.vsix);
+    for (auto [name, asset] : { std::pair{ rel.archive, archive }, std::pair{ rel.vsix, extension } })
+        if (!name.empty() && !asset) throw app::Failure("the " + s.name + " " + r.version + " release has no " + name + ", built for " + net::platform());
+    /* the editor and profile first, since picking one may ask */
+    std::optional<vsix::Target> t;
+    if (extension) t = vsix::target(ctx);
+    std::vector<Download> files;
+    for (auto* a : { archive, extension }) {
+        if (!a) continue;
+        ctx.out.note("downloading " + a->name);
+        files.push_back({ util::rant_home() / "cache" / (stamp() + "-" + a->name) });
+        net::download(a->url, files.back().path);
+    }
+    if (extension) install_extension(ctx, *t, files.back().path, rec);
+    place(s.name, archive ? files.front().path : fs::path(), *text);
     rec.version = r.version;
     ctx.out.note("installed " + s.name + " " + r.version + " from " + s.repo);
 }
 
-/* A local build folder, linked so each new build counts at once, or an archive, unpacked. */
-static void install_path(app::Context& ctx, const Source& s) {
+/* The newest .vsix in a build folder, which its build wrote last. */
+static fs::path newest_vsix(const fs::path& folder) {
+    fs::path out;
+    fs::file_time_type when{};
     std::error_code ec;
+    for (fs::directory_iterator it(folder, ec), end; !ec && it != end; it.increment(ec))
+        if (it->path().extension() == ".vsix" && (out.empty() || it->last_write_time(ec) > when)) {
+            out = it->path();
+            when = it->last_write_time(ec);
+        }
+    if (out.empty()) throw app::Failure(u8(folder) + " holds no .vsix to install, build one there first");
+    return out;
+}
+
+/* A local build folder, linked so each new build counts at once, or an archive, unpacked. */
+static void install_path(app::Context& ctx, const Source& s, Record& rec) {
+    std::error_code ec;
+    bool retarget = ctx.args.has("editor") || ctx.args.has("profile");
     if (fs::is_directory(s.path, ec)) {
         fs::path file = s.path / package_file;
         if (!fs::is_regular_file(file, ec)) throw app::Failure(u8(s.path) + " holds no package.rant, so it is no package");
         config::PackageRelease rel = config::read_release(s.path, read_file(file), "", net::platform());
         if (!rel.diagnostics.empty()) throw app::Failure(rel.diagnostics[0].str());
-        if (!rel.vsix.empty()) throw app::Failure(s.name + " is a VS Code extension, which this rant cannot install yet");
+        if (rel.vsix.empty() && retarget) throw app::Failure(s.name + " is no VS Code extension, so --editor and --profile do not apply");
+        if (!rel.vsix.empty()) install_extension(ctx, vsix::target(ctx), newest_vsix(s.path), rec);
         retire(s.name);
         make_link(dir() / s.name, fs::absolute(s.path).lexically_normal());
-        ctx.out.note("linked " + s.name + " to " + u8(s.path) + ", so its builds there count at once");
+        ctx.out.note("linked " + s.name + " to " + u8(s.path) + (rel.vsix.empty() ? ", so its builds there count at once" : ""));
         return;
     }
+    if (retarget) throw app::Failure("--editor and --profile go with a VS Code extension, which an archive holds none of");
     if (is_archive(s.path) && fs::is_regular_file(s.path, ec)) {
-        unpack(s.name, s.path);
+        place(s.name, s.path);
         ctx.out.note("installed " + s.name + " from " + u8(s.path));
         return;
     }
@@ -369,7 +426,7 @@ void install(app::Context& ctx, const Source& s, const std::string& version) {
     Record rec{ s.name, s.repo, s.path, s.named_by == "--from", "" };
     if (s.repo.empty()) {
         refuse_running(s.name);
-        install_path(ctx, s);
+        install_path(ctx, s, rec);
     } else {
         install_release(ctx, s, version, rec);
     }
@@ -382,6 +439,14 @@ void remove(app::Context& ctx, const std::string& name) {
     bool there = is_link(target) || fs::exists(target, ec);
     if (!there && !fs::exists(record_file(name), ec)) throw app::Failure(name + " is not installed, see `rant ls packages`");
     refuse_running(name);
+    std::optional<Record> rec = record(name);
+    if (rec && !rec->extension.empty()) {
+        vsix::Target t{ rec->editor, rec->profile };
+        if (!fs::is_regular_file(t.editor, ec))
+            ctx.out.warn(u8(t.editor) + " is gone, so the extension " + rec->extension + " stays wherever it went");
+        else if (!vsix::installed_version(t, rec->extension).empty())
+            vsix::remove(t, rec->extension);
+    }
     sweep(name);
     retire(name);
     fs::remove(record_file(name), ec);

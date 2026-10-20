@@ -37,7 +37,6 @@ add_library(rant_cli_core STATIC
   commands/summary.cpp
   commands/uninstall.cpp
   commands/update.cpp
-  commands/vscode.cpp
   commands/web.cpp
   complete/complete.cpp
   complete/shells.cpp
@@ -54,6 +53,7 @@ add_library(rant_cli_core STATIC
   net/github.cpp
   net/interfaces.cpp
   packages/packages.cpp
+  packages/vsix.cpp
   process/command.cpp
   process/quote.cpp
   run/logs.cpp

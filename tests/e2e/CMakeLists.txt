@@ -41,7 +41,7 @@ e2e_test(log)
 e2e_test(uninstall)
 e2e_test(bridge)
 e2e_test(explore_web)
-e2e_test(vscode)
+e2e_test(vsix)
 e2e_test(installed)
 e2e_test(packages)
 

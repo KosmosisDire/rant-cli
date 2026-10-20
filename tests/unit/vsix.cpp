@@ -1,8 +1,10 @@
 #include "check.hpp"
-#include "commands/vscode.hpp"
+#include "packages/vsix.hpp"
 
 namespace fs = std::filesystem;
-namespace vscode = commands::vscode;
+namespace vsix = packages::vsix;
+
+static const std::string id = "kosmosisdire.vscode-rant";
 
 using Ids = std::vector<std::string>;
 
@@ -30,20 +32,21 @@ static const std::string storage = R"({
 })";
 
 TEST(listing_gives_the_extension_version) {
-    CHECK_EQ(vscode::version_in("ms-python.python@2026.1.0\nkosmosisdire.vscode-rant@0.2.1\n"), std::string("0.2.1"));
+    CHECK_EQ(vsix::version_in("ms-python.python@2026.1.0\nkosmosisdire.vscode-rant@0.2.1\n", id), std::string("0.2.1"));
 }
 
 TEST(listing_matches_the_id_without_case_and_line_ends) {
-    CHECK_EQ(vscode::version_in("KosmosisDire.vscode-rant@1.0.0\r\n"), std::string("1.0.0"));
+    CHECK_EQ(vsix::version_in("KosmosisDire.vscode-rant@1.0.0\r\n", id), std::string("1.0.0"));
+    CHECK_EQ(vsix::version_in("kosmosisdire.vscode-rant@1.0.0\n", "KosmosisDire.vscode-rant"), std::string("1.0.0"));
 }
 
 TEST(listing_without_the_extension_is_empty) {
-    CHECK_EQ(vscode::version_in(""), std::string());
-    CHECK_EQ(vscode::version_in("kosmosisdire.vscode-rant-extra@1.0.0\nother.vscode-rant@1.0.0\n"), std::string());
+    CHECK_EQ(vsix::version_in("", id), std::string());
+    CHECK_EQ(vsix::version_in("kosmosisdire.vscode-rant-extra@1.0.0\nother.vscode-rant@1.0.0\n", id), std::string());
 }
 
 TEST(profiles_start_with_the_default) {
-    auto p = vscode::profiles_in(storage);
+    auto p = vsix::profiles_in(storage);
     CHECK_EQ(p.size(), 4u);
     CHECK_EQ(p[0].id, std::string());
     CHECK_EQ(p[0].name, std::string("Default"));
@@ -52,43 +55,43 @@ TEST(profiles_start_with_the_default) {
 }
 
 TEST(profiles_sharing_the_default_extensions_are_marked) {
-    auto p = vscode::profiles_in(storage);
+    auto p = vsix::profiles_in(storage);
     CHECK(p[1].shared);
     CHECK(!p[0].shared);
     CHECK(!p[3].shared);
 }
 
 TEST(unreadable_storage_has_only_the_default) {
-    CHECK_EQ(vscode::profiles_in("").size(), 1u);
-    CHECK_EQ(vscode::profiles_in("{ \"userDataProfiles\": 3 }").size(), 1u);
-    CHECK_EQ(vscode::profiles_in("{ \"userDataProfiles\": [ 1, { \"name\": \"Lost\" } ] }").size(), 1u);
+    CHECK_EQ(vsix::profiles_in("").size(), 1u);
+    CHECK_EQ(vsix::profiles_in("{ \"userDataProfiles\": 3 }").size(), 1u);
+    CHECK_EQ(vsix::profiles_in("{ \"userDataProfiles\": [ 1, { \"name\": \"Lost\" } ] }").size(), 1u);
 }
 
 TEST(a_folder_gives_its_profile) {
-    CHECK_EQ(vscode::folder_profiles(storage, root), Ids({ "-500e13d6" }));
-    CHECK_EQ(vscode::folder_profiles(storage, root / "src" / "app"), Ids({ "-500e13d6" }));
+    CHECK_EQ(vsix::folder_profiles(storage, root), Ids({ "-500e13d6" }));
+    CHECK_EQ(vsix::folder_profiles(storage, root / "src" / "app"), Ids({ "-500e13d6" }));
 }
 
 TEST(nested_folders_give_each_profile) {
-    CHECK_EQ(vscode::folder_profiles(storage, root / "cli-rant" / "src"), Ids({ "-500e13d6", "-3b410830" }));
+    CHECK_EQ(vsix::folder_profiles(storage, root / "cli-rant" / "src"), Ids({ "-500e13d6", "-3b410830" }));
 }
 
 TEST(the_default_profile_is_empty) {
-    CHECK_EQ(vscode::folder_profiles(storage, fs::path(root.u8string() + " Old")), Ids({ "" }));
+    CHECK_EQ(vsix::folder_profiles(storage, fs::path(root.u8string() + " Old")), Ids({ "" }));
 }
 
 TEST(a_name_that_only_starts_like_a_folder_is_not_inside_it) {
-    CHECK_EQ(vscode::folder_profiles(storage, fs::path(root.u8string() + "X")), Ids());
-    CHECK_EQ(vscode::folder_profiles(storage, root.parent_path()), Ids());
+    CHECK_EQ(vsix::folder_profiles(storage, fs::path(root.u8string() + "X")), Ids());
+    CHECK_EQ(vsix::folder_profiles(storage, root.parent_path()), Ids());
 }
 
 TEST(folders_without_associations_give_none) {
-    CHECK_EQ(vscode::folder_profiles("", root), Ids());
-    CHECK_EQ(vscode::folder_profiles("{ \"profileAssociations\": [] }", root), Ids());
+    CHECK_EQ(vsix::folder_profiles("", root), Ids());
+    CHECK_EQ(vsix::folder_profiles("{ \"profileAssociations\": [] }", root), Ids());
 }
 
 #ifdef _WIN32
 TEST(windows_folders_match_without_case) {
-    CHECK_EQ(vscode::folder_profiles(storage, "c:/main/rant"), Ids({ "-500e13d6" }));
+    CHECK_EQ(vsix::folder_profiles(storage, "c:/main/rant"), Ids({ "-500e13d6" }));
 }
 #endif

@@ -51,7 +51,9 @@ app::Command install() {
                     "`rant ls sources` shows where it looks",
                     app::Section::Setup,
                     { { "version", 0, "V", "with one package: this release instead of the newest" },
-                      { "from", 0, "PATH", "with one package: a local build folder, linked, or a .tar.gz archive, instead of its source" } },
+                      { "from", 0, "PATH", "with one package: a local build folder, linked, or a .tar.gz archive, instead of its source" },
+                      { "editor", 0, "PROGRAM", "for a VS Code extension: the editor's command line program, default `code`, such as `cursor`" },
+                      { "profile", 0, "NAME", "for a VS Code extension: the editor profile, default the one this VS Code terminal's folder opens in, else asked" } },
                     run };
     c.complete = complete_words;
     return c;

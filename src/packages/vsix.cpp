@@ -1,28 +1,24 @@
+#include "packages/vsix.hpp"
+
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
 #include <fstream>
 #include <iterator>
+#include <optional>
 #include <sstream>
 
 #include <nlohmann/json.hpp>
 
 #include "app/failure.hpp"
-#include "commands/commands.hpp"
-#include "commands/vscode.hpp"
-#include "complete/complete.hpp"
-#include "config/config.hpp"
 #include "process/command.hpp"
 #include "ui/prompt.hpp"
 #include "util/home.hpp"
 
-namespace commands {
+namespace packages::vsix {
 
 namespace fs = std::filesystem;
 using json = nlohmann::json;
-
-static const char* vscode_repo = "KosmosisDire/rant-vscode";
-static const char* extension_id = "kosmosisdire.vscode-rant";
 
 static std::string u8(const fs::path& p) { return config::to_utf8(p); }
 
@@ -37,22 +33,17 @@ static json parse_file(const fs::path& p) {
     return json::parse(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>(), nullptr, false);
 }
 
-namespace vscode {
-
-/* Holds the editor and profile rant installed the extension into, so update and uninstall
- * leave an extension someone else installed alone. */
-static fs::path marker() { return util::rant_home() / "vscode.editor"; }
-
 std::string shown(const Target& t) { return u8(t.editor) + (t.profile.empty() ? "" : " in the profile " + t.profile); }
 
-std::string version_in(const std::string& listing) {
-    const std::string prefix = std::string(extension_id) + "@";
+std::string version_in(const std::string& listing, const std::string& id) {
+    std::string prefix = id + "@";
+    for (char& c : prefix) c = (char)std::tolower((unsigned char)c);
     std::istringstream in(listing);
     for (std::string line; std::getline(in, line);) {
         while (!line.empty() && std::isspace((unsigned char)line.back())) line.pop_back();
-        std::string id = line.substr(0, prefix.size());
-        for (char& c : id) c = (char)std::tolower((unsigned char)c);
-        if (id == prefix) return line.substr(prefix.size());
+        std::string head = line.substr(0, prefix.size());
+        for (char& c : head) c = (char)std::tolower((unsigned char)c);
+        if (head == prefix) return line.substr(prefix.size());
     }
     return {};
 }
@@ -163,16 +154,6 @@ static fs::path storage_of(const fs::path& editor) {
     return data / "User" / "globalStorage" / "storage.json";
 }
 
-std::optional<Target> recorded() {
-    std::ifstream in(marker());
-    std::string path, profile;
-    if (!std::getline(in, path) || path.empty()) return std::nullopt;
-    std::getline(in, profile);
-    fs::path p = config::from_utf8(path);
-    if (!fs::is_regular_file(p)) return std::nullopt;
-    return Target{ p, profile };
-}
-
 /* The editor's command line with these arguments, acting on the target's profile. */
 static process::Command command(const Target& t, std::vector<std::string> args) {
     args.insert(args.begin(), u8(t.editor));
@@ -183,45 +164,22 @@ static process::Command command(const Target& t, std::vector<std::string> args) 
     return { args, fs::temp_directory_path(), {} };
 }
 
-std::string installed_version(const Target& t) {
+std::string installed_version(const Target& t, const std::string& id) {
     std::optional<std::string> listing = process::output(command(t, { "--list-extensions", "--show-versions" }));
-    return listing ? version_in(*listing) : std::string();
+    return listing ? version_in(*listing, id) : std::string();
 }
 
-net::Release latest() { return net::release(vscode_repo); }
-
-/* Installs a vsix through the editor, then remembers the target. version is the release's, empty for a
- * built vsix, which is then read back: a running editor may list it a moment later. */
-static void install_file(const app::Context& ctx, const Target& t, const fs::path& vsix, std::string version = {}) {
-    if (process::run(command(t, { "--install-extension", u8(vsix), "--force" })) != 0)
-        throw app::Failure(u8(t.editor) + " could not install " + u8(vsix));
-    std::error_code ec;
-    fs::create_directories(marker().parent_path(), ec);
-    std::ofstream(marker()) << u8(t.editor) << "\n" << t.profile << "\n";
-    if (version.empty()) version = installed_version(t);
-    ctx.out.note("installed the VS Code extension" + (version.empty() ? "" : " " + version) + " through " + shown(t) +
-                 ", reload the editor window to start it");
+config::Vsix install(const Target& t, const fs::path& file) {
+    config::Vsix v = config::read_vsix(file);
+    if (!v.diagnostics.empty()) throw app::Failure(v.diagnostics[0].message);
+    if (process::run(command(t, { "--install-extension", u8(file), "--force" })) != 0)
+        throw app::Failure(u8(t.editor) + " could not install " + u8(file));
+    return v;
 }
 
-void install(const app::Context& ctx, const Target& t, const net::Release& r) {
-    std::string asset = "rant-vscode-" + r.version + ".vsix";
-    const net::Asset* a = r.asset(asset);
-    if (!a) throw app::Failure("the extension " + r.version + " release has no " + asset);
-    ctx.out.note("downloading " + asset);
-    struct Download {
-        fs::path path;
-        ~Download() { std::error_code ec; fs::remove(path, ec); }
-    } vsix{ fs::temp_directory_path() / asset };
-    net::download(a->url, vsix.path);
-    install_file(ctx, t, vsix.path, r.version);
-}
-
-void remove(const Target& t) {
-    if (process::run(command(t, { "--uninstall-extension", extension_id })) != 0)
-        throw app::Failure(u8(t.editor) + " could not remove the extension " + extension_id);
-    std::optional<Target> r = recorded();
-    std::error_code ec;
-    if (r && r->editor == t.editor && r->profile == t.profile) fs::remove(marker(), ec);
+void remove(const Target& t, const std::string& id) {
+    if (process::run(command(t, { "--uninstall-extension", id })) != 0)
+        throw app::Failure(u8(t.editor) + " could not remove the extension " + id);
 }
 
 /* The name to install into for a profile, empty for one that holds the default's extensions. */
@@ -233,8 +191,6 @@ static bool in_editor_terminal() {
     return v && std::string(v) == "vscode";
 }
 
-/* --profile, else the profile this VS Code terminal's folder opens in, else the default when
- * no other profile has its own extensions, else the one the user picks. */
 static std::string profile_of(const app::Context& ctx, const fs::path& editor) {
     if (auto given = ctx.args.get("profile")) return *given;
     fs::path storage_file = storage_of(editor);
@@ -267,9 +223,6 @@ static std::string profile_of(const app::Context& ctx, const fs::path& editor) {
     }
 }
 
-}
-
-/* The editor's command line program: --editor when given, else VS Code's `code`. */
 static fs::path editor_of(const app::Context& ctx) {
     std::optional<std::string> given = ctx.args.get("editor");
     if (given) {
@@ -281,85 +234,9 @@ static fs::path editor_of(const app::Context& ctx) {
                        "or pass --editor for another editor");
 }
 
-static vscode::Target target_of(const app::Context& ctx) {
+Target target(const app::Context& ctx) {
     fs::path editor = editor_of(ctx);
-    return { editor, vscode::profile_of(ctx, editor) };
-}
-
-static int install_(app::Context& ctx) {
-    std::optional<fs::path> vsix;
-    if (auto from = ctx.args.get("from")) {
-        fs::path p = ctx.cwd() / config::from_utf8(*from);
-        if (!fs::is_regular_file(p) || p.extension() != ".vsix") throw app::Failure("no file `" + *from + "`, give the path of a .vsix you built");
-        vsix = p;
-    }
-    vscode::Target t = target_of(ctx);
-    if (vsix) {
-        vscode::install_file(ctx, t, *vsix);
-        return 0;
-    }
-    net::Release r;
-    try {
-        r = vscode::latest();
-    } catch (const app::Failure& e) {
-        throw app::Failure(std::string(e.what()) + ". To install an extension you built, run `rant vscode install --from PATH`");
-    }
-    vscode::install(ctx, t, r);
-    return 0;
-}
-
-static int uninstall_(app::Context& ctx) {
-    bool chosen = ctx.args.has("editor") || ctx.args.has("profile");
-    std::optional<vscode::Target> recorded = chosen ? std::nullopt : vscode::recorded();
-    vscode::Target t = recorded ? *recorded : target_of(ctx);
-    if (vscode::installed_version(t).empty()) {
-        ctx.out.note("the VS Code extension is not installed in " + vscode::shown(t));
-        return 0;
-    }
-    vscode::remove(t);
-    ctx.out.note("removed the VS Code extension from " + vscode::shown(t));
-    return 0;
-}
-
-struct Sub {
-    const char* name;
-    int       (*run)(app::Context&);
-};
-
-static const std::vector<Sub>& subs() {
-    static const std::vector<Sub> list = { { "install", install_ }, { "uninstall", uninstall_ } };
-    return list;
-}
-
-static int run(app::Context& ctx) {
-    auto& w = ctx.args.words;
-    if (w.empty()) throw app::UsageError("vscode needs a command, see `rant vscode --help`");
-    if (w.size() > 1) throw app::UsageError("vscode " + w[0] + " takes no arguments");
-    for (auto& s : subs()) {
-        if (w[0] != s.name) continue;
-        if (w[0] != "install" && ctx.args.has("from")) throw app::UsageError("--from goes with `rant vscode install`");
-        return s.run(ctx);
-    }
-    throw app::UsageError("unknown vscode command `" + w[0] + "`, see `rant vscode --help`");
-}
-
-static complete::Candidates complete_words(complete::Request& r) {
-    if (!r.words.empty()) return {};
-    std::vector<std::string> out;
-    for (auto& s : subs()) out.emplace_back(s.name);
-    return { out };
-}
-
-app::Command vscode_() {
-    app::Command c{ "vscode", "install | uninstall",
-                    "install the VS Code extension through the editor's `code` command, in a remote terminal onto that remote",
-                    app::Section::Setup,
-                    { { "from", 0, "PATH", "with install: install this .vsix instead of downloading the newest release" },
-                      { "editor", 0, "PROGRAM", "the editor's command line program, default `code`, such as `cursor`" },
-                      { "profile", 0, "NAME", "the editor profile, default the one this VS Code terminal's folder opens in, else asked" } },
-                    run };
-    c.complete = complete_words;
-    return c;
+    return { editor, profile_of(ctx, editor) };
 }
 
 }
