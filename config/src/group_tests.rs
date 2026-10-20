@@ -173,7 +173,35 @@ fn a_bare_reference_looks_in_its_own_package_first() {
     assert_eq!(names(&p), ["camera_left"]);
     let groups_model = model(&t);
     let groups = Groups::new(&groups_model);
-    assert!(groups.find("cameras", None).unwrap_err().contains("did you mean drivers/cameras"));
+    assert!(groups.find("planner/cameras", None).unwrap_err().contains("did you mean drivers/cameras"));
+}
+
+#[test]
+fn a_bare_group_name_finds_the_one_package_that_has_it() {
+    let t = workspace_with(&[]);
+    let m = model(&t);
+    let groups = Groups::new(&m);
+    let file = |name: &str| m.groups.iter().find(|g| g.name == name).unwrap();
+    assert_eq!(groups.find("cameras", None).unwrap().name, "drivers/cameras");
+    assert_eq!(groups.short_name(file("drivers/cameras"), None), "cameras");
+    assert_eq!(groups.short_name(file("nav"), Some("drivers")), "nav");
+
+    // a second package with the name makes the bare name ambiguous, except inside either
+    t.write("planner/cameras.run", "  node \"planner/odom\" {}\n");
+    let m = model(&t);
+    let groups = Groups::new(&m);
+    let file = |name: &str| m.groups.iter().find(|g| g.name == name).unwrap();
+    let err = groups.find("cameras", None).unwrap_err();
+    assert_eq!(err, "`cameras` is a group in several packages, name one: drivers/cameras, planner/cameras");
+    assert_eq!(groups.find("cameras", Some("planner")).unwrap().name, "planner/cameras");
+    assert_eq!(groups.short_name(file("drivers/cameras"), None), "drivers/cameras");
+    assert_eq!(groups.short_name(file("drivers/cameras"), Some("drivers")), "cameras");
+
+    // a group outside every package comes before one in a package
+    t.write("cameras.run", "  node \"planner/odom\" {}\n");
+    let m = model(&t);
+    let groups = Groups::new(&m);
+    assert_eq!(groups.find("cameras", None).unwrap().name, "cameras");
 }
 
 #[test]

@@ -32,6 +32,16 @@ pub struct GroupFile {
     pub path: PathBuf,
 }
 
+impl GroupFile {
+    /// The name without its package: `drivers/cameras` is `cameras`.
+    pub fn stem(&self) -> &str {
+        match &self.package {
+            Some(p) => self.name.strip_prefix(p.as_str()).and_then(|s| s.strip_prefix('/')).unwrap_or(&self.name),
+            None => &self.name,
+        }
+    }
+}
+
 /// Names group files after their name without SUFFIX and their package. Two files of one
 /// name are an error, and the second is dropped.
 pub fn name_files(files: Vec<PathBuf>, packages: &[Package], diags: &mut Vec<Diag>) -> Vec<GroupFile> {
@@ -157,7 +167,7 @@ impl<'m> Groups<'m> {
     }
 
     /// A group by reference. A bare name is looked for in `package` first, then among the
-    /// groups outside any package. A group in another package must be qualified.
+    /// groups outside any package, then in the one package that has it, as a bare node name is.
     pub fn find(&self, reference: &str, package: Option<&str>) -> Result<&'m GroupFile, String> {
         let groups = &self.model.groups;
         if reference.contains('/') {
@@ -171,12 +181,29 @@ impl<'m> Groups<'m> {
         if let Some(g) = groups.iter().find(|g| g.package.is_none() && g.name == reference) {
             return Ok(g);
         }
-        Err(self.unknown(reference))
+        let in_packages: Vec<&'m GroupFile> = groups.iter().filter(|g| g.package.is_some() && g.stem() == reference).collect();
+        match in_packages.as_slice() {
+            [one] => Ok(one),
+            [] => Err(format!("no group named `{reference}`")),
+            many => Err(format!(
+                "`{reference}` is a group in several packages, name one: {}",
+                many.iter().map(|g| g.name.as_str()).collect::<Vec<_>>().join(", ")
+            )),
+        }
+    }
+
+    /// The shortest name that finds `file` from `package`: its stem where a bare name lands
+    /// on it, else its full name.
+    pub fn short_name(&self, file: &GroupFile, package: Option<&str>) -> String {
+        match self.find(file.stem(), package) {
+            Ok(g) if g.name == file.name => file.stem().to_string(),
+            _ => file.name.clone(),
+        }
     }
 
     fn unknown(&self, reference: &str) -> String {
         let stem = reference.rsplit('/').next().unwrap_or(reference);
-        let near: Vec<&str> = self.model.groups.iter().filter(|g| g.name.rsplit('/').next() == Some(stem)).map(|g| g.name.as_str()).collect();
+        let near: Vec<&str> = self.model.groups.iter().filter(|g| g.stem() == stem).map(|g| g.name.as_str()).collect();
         if near.is_empty() {
             format!("no group named `{reference}`")
         } else {

@@ -70,10 +70,12 @@ pub struct RantConfigPackage {
     pub node_count: usize,
 }
 
-/// A group file and the name it goes by.
+/// A group file and the name it goes by. short_name is the shortest name that finds it from
+/// start_dir, the bare name where that is enough.
 #[repr(C)]
 pub struct RantConfigGroupFile {
     pub name: *const c_char,
+    pub short_name: *const c_char,
     pub file: *const c_char,
 }
 
@@ -317,6 +319,7 @@ pub(crate) unsafe fn arg_path(s: *const c_char) -> PathBuf {
 
 /// The workspace enclosing a directory, its model when asked for, and every error met.
 struct Loaded {
+    start: PathBuf,
     config: Option<WorkspaceConfig>,
     model: Option<Model>,
     diags: Vec<Diag>,
@@ -336,7 +339,7 @@ fn load(start: &Path, packages: bool) -> Loaded {
         }
         _ => None,
     };
-    Loaded { config, model, diags }
+    Loaded { start: start.to_path_buf(), config, model, diags }
 }
 
 fn workspace_handle(loaded: &Loaded, extra: Vec<Diag>) -> *mut RantConfigWorkspace {
@@ -346,12 +349,15 @@ fn workspace_handle(loaded: &Loaded, extra: Vec<Diag>) -> *mut RantConfigWorkspa
     let (packages, package_count) = store.array(packages);
     let loose: Vec<RantConfigNodeType> = loaded.model.iter().flat_map(|m| m.loose.iter()).map(|n| store.node_type(n)).collect();
     let (loose, loose_count) = store.array(loose);
-    let groups: Vec<RantConfigGroupFile> = loaded
-        .model
-        .iter()
-        .flat_map(|m| m.groups.iter())
-        .map(|g| RantConfigGroupFile { name: store.str(&g.name), file: store.path(&g.path) })
-        .collect();
+    let mut groups: Vec<RantConfigGroupFile> = Vec::new();
+    if let Some(m) = &loaded.model {
+        let here = m.package_holding(&paths::normalize(&loaded.start)).map(|p| p.name.clone());
+        let lookup = Groups::new(m);
+        for g in &m.groups {
+            let short = lookup.short_name(g, here.as_deref());
+            groups.push(RantConfigGroupFile { name: store.str(&g.name), short_name: store.str(&short), file: store.path(&g.path) });
+        }
+    }
     let (groups, group_count) = store.array(groups);
     let diags: Vec<Diag> = loaded.diags.iter().cloned().chain(extra).collect();
     let (diagnostics, diagnostic_count) = store.diags(&diags);
@@ -430,7 +436,7 @@ pub unsafe extern "C" fn rant_config_open(start_dir: *const c_char, flags: u32) 
 pub unsafe extern "C" fn rant_config_init(dir: *const c_char) -> *mut RantConfigWorkspace {
     match workspace::init(&arg_path(dir)) {
         Ok(root) => workspace_handle(&load(&root, false), Vec::new()),
-        Err(d) => workspace_handle(&Loaded { config: None, model: None, diags: Vec::new() }, vec![d]),
+        Err(d) => workspace_handle(&Loaded { start: PathBuf::new(), config: None, model: None, diags: Vec::new() }, vec![d]),
     }
 }
 

@@ -83,7 +83,7 @@ param "speed" {
   type    = float              # string, int, float or bool
   default = 1
 }
-include "Arm" {                # another group, with its param values
+include "Arm" {                # another group, package/Arm when unclear, with its param values
   side        = "left"
   node_prefix = "left"
 }

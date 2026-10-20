@@ -52,7 +52,8 @@ struct Package {
 };
 
 struct GroupFile {
-    std::string name;    /* package/stem, or stem outside a package */
+    std::string name;          /* package/stem, or stem outside a package */
+    std::string short_name;    /* the shortest name that finds it from where it was opened */
     fs::path    file;
 };
 

@@ -80,7 +80,7 @@ static Opened read(Handle h) {
     }
     for (size_t i = 0; i < v->loose_count; i++) ws.loose.push_back(node_type(v->loose[i]));
     for (size_t i = 0; i < v->group_count; i++)
-        ws.groups.push_back({ str(v->groups[i].name), from_utf8(str(v->groups[i].file)) });
+        ws.groups.push_back({ str(v->groups[i].name), str(v->groups[i].short_name), from_utf8(str(v->groups[i].file)) });
     out.workspace = std::move(ws);
     return out;
 }

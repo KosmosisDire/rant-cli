@@ -34,20 +34,19 @@ std::vector<std::string> Request::node_types() {
     if (!ws) return out;
     std::map<std::string, int> uses;
     for (auto& p : ws->packages)
-        for (auto& n : p.nodes) {
-            out.push_back(n.ref());
-            uses[n.name]++;
-        }
+        for (auto& n : p.nodes) uses[n.name]++;
     for (auto& n : ws->loose) uses[n.name]++;
-    for (auto& [name, count] : uses)
-        if (count == 1) out.push_back(name);
+    for (auto& p : ws->packages)
+        for (auto& n : p.nodes) out.push_back(uses[n.name] == 1 ? n.name : n.ref());
+    for (auto& n : ws->loose)
+        if (uses[n.name] == 1) out.push_back(n.name);
     return out;
 }
 
 std::vector<std::string> Request::groups() {
     std::vector<std::string> out;
     if (const config::Workspace* ws = workspace())
-        for (auto& g : ws->groups) out.push_back(g.name);
+        for (auto& g : ws->groups) out.push_back(g.short_name);
     return out;
 }
 
@@ -73,8 +72,15 @@ std::vector<std::string> Request::logged_nodes() {
 
 std::vector<std::string> Request::running_groups() {
     std::vector<std::string> out;
-    for (auto& r : run::snapshot(ctx_).roots)
-        if (r.kind == "group") out.push_back(r.name);
+    const config::Workspace* ws = workspace();
+    for (auto& r : run::snapshot(ctx_).roots) {
+        if (r.kind != "group") continue;
+        std::string name = r.name;
+        if (ws)
+            for (auto& g : ws->groups)
+                if (g.name == r.name) name = g.short_name;
+        out.push_back(name);
+    }
     return out;
 }
 

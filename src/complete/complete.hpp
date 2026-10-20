@@ -34,8 +34,8 @@ public:
     const std::vector<std::string> words;      /* after the command, options left out */
     const std::string              partial;    /* the word at the cursor, maybe empty */
 
-    std::vector<std::string> node_types();     /* package/name, and the bare name when unique */
-    std::vector<std::string> groups();
+    std::vector<std::string> node_types();     /* the bare name, package/name where another package has it */
+    std::vector<std::string> groups();         /* each by the shortest name that finds it from here */
     std::vector<std::string> packages();
     config::GroupInfo        group(const std::string& name);
     std::vector<std::string> running_nodes();  /* the instances rant started */

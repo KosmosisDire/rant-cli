@@ -37,7 +37,15 @@ expect_match("${OUT}" "^restart\nrun\n$")
 complete(run CUR "")
 expect_match("${OUT}" "^base\nnav\nnode\nopts\npick\n$")
 complete(run node CUR "")
-expect_match("${OUT}" "^demo/sensor\ndemo/test_node\nsensor\ntest_node\n$")
+expect_match("${OUT}" "^sensor\ntest_node\n$")
+
+# A group in a package goes by its bare name where that finds it.
+file(WRITE "${SCRATCH}/demo/Drive.run" "node \"demo/sensor\" {}\n")
+complete(run CUR D)
+expect_match("${OUT}" "^Drive\n$")
+rant(info group Drive)
+expect_match("${OUT}" "demo/Drive")
+file(REMOVE "${SCRATCH}/demo/Drive.run")
 
 # A group's params end in = and give way to their options.
 complete(run nav CUR "")
