@@ -21,6 +21,9 @@ const char* kind_word(Kind k);
 /* What ls offers after it, plural, and info, singular, for completion. */
 std::vector<std::string> kind_words(bool plural);
 
+/* Each kind's plural with what ls lists for it, for its help. */
+std::vector<std::pair<std::string, std::string>> kinds_listed();
+
 bool on_mesh(Kind k);
 
 /* An entity kind matches k when k is Entity or names that kind. */

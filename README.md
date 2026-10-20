@@ -25,7 +25,7 @@ rant new package cam --lang cpp  # a package with one node, Rant added (or pytho
 rant build                     # build every package, dependencies first
 rant run Nav speed=2           # run a group of nodes, rant run Nav --help lists its params
 rant run node talker           # or one node alone
-rant ls                        # the running nodes and what they talk through
+rant ls nodes                  # the running nodes, and those that could start
 rant sub Odom                  # print a topic
 rant log Nav -f                # follow what its nodes print
 rant stop Nav

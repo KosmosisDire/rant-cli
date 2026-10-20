@@ -46,7 +46,7 @@ to override something. A folder may be a workspace and a package, with both file
 | run | `rant run <Group> key=value...`, one node alone with `rant run node <node>`, `--dry-run` first. It builds what it starts (`--no-build` skips that), waits up to 10 s for the nodes to come up (`--wait S`), watches them 2 s more (`--watch S`) and fails with the log of one that exited or never came up |
 | stop, restart | `rant stop [name]` (nothing named: all this workspace started), `rant stop --all` (every node on this machine), `rant restart [name]`, which stops, builds, then starts, the last build when the build fails. An included group runs inside the group that includes it and `rant ls nodes` lists it there: stopping or restarting it by name acts on just its own nodes |
 | node output | `rant log [name...]`, `-f` to follow, `-n N` lines, a group shows all its nodes |
-| see the mesh | `rant ls [nodes\|entities\|topics\|variables\|functions\|tasks\|types\|packages\|groups]`, `rant ls nodes --no-mesh` for only what this workspace started, without joining the mesh |
+| see the mesh | `rant ls <nodes\|entities\|topics\|variables\|functions\|tasks\|types\|packages\|groups> [pattern]`, `rant ls` alone lists the kinds, `rant ls nodes --no-mesh` for only what this workspace started, without joining the mesh |
 | explain one thing | `rant info [kind] <name>`, a type shows its fields and who uses it, a node its source file |
 | read and write | `rant sub <topic> -n 1`, `rant pub <topic> <value>`, `rant get <var>`, `rant set <var> <value>`, `rant call <fn> [value]` |
 | Rant version in packages | `rant lib [folder]` shows it, `rant lib install [folder]` adds it, `rant lib update [folder]` moves it, both take `--version V` |
@@ -305,7 +305,7 @@ rant_queue_dispatch(q, 0, 100);              /* on the thread that runs them */
 
 ## Debugging
 
-1. `rant ls` shows what runs, `rant ls nodes` also what could.
+1. `rant ls nodes` shows what runs and what could, `rant ls entities` what they talk through.
 2. Not seeing a node: check the domain on both sides (`--domain`, `domain`, `RANT_DOMAIN`).
 3. A node that died: read `logs/<node>.log`.
 4. Wrong config: `rant run X --dry-run`, `rant build --dry-run`, `rant info group X`.

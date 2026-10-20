@@ -69,7 +69,7 @@ expect_match("${OUT}" "\"name\": \"lidar\",\n +\"type\": \"demo/sensor\",\n +\"d
 expect_match("${OUT}" "\"group\": \"pick\"")
 expect_match("${OUT}" "\"nodes\": \\[\\]")
 expect_no_match("${OUT}" "on_mesh")
-rant(ls --no-mesh FAILS)
+rant(ls topics --no-mesh FAILS)
 expect_match("${ERR}" "--no-mesh goes with `rant ls nodes`")
 rant(stop planner IN "${OTHER}")
 

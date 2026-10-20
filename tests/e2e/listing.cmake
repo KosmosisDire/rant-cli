@@ -19,9 +19,14 @@ expect_match("${OUT}" "^GROUPS\n  pick")
 expect_no_match("${OUT}" "nav")
 rant(ls nodes --json)
 expect_match("${OUT}" "\"not_running\": [[]\n +{\n +\"name\": \"demo/sensor\"")
+
+# ls alone lists nothing, it names what it can list.
 rant(ls)
-expect_match("${OUT}" "^NODES\n  [(]none[)]\n\n")
-expect_no_match("${OUT}" "NOT RUNNING")
+expect_match("${OUT}" "^Usage: rant ls <kind> [[]pattern[]]\n")
+expect_match("${OUT}" "\nKinds:\n  nodes +running nodes")
+expect_match("${OUT}" "\n  groups +the groups of this workspace\n")
+rant(ls nope FAILS)
+expect_match("${ERR}" "`nope` is not a kind ls lists, see `rant ls`")
 rant(ls nodes a b FAILS)
 expect_match("${ERR}" "ls takes a kind and one pattern at most")
 

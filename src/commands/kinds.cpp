@@ -7,19 +7,20 @@ struct Words {
     const char* singular;
     const char* plural;
     std::vector<std::string_view> more;    /* other words a user may type */
+    const char* listed;                    /* what ls lists for it */
 };
 
 static const std::vector<Words>& table() {
     static const std::vector<Words> t = {
-        { Kind::Node, "node", "nodes", {} },
-        { Kind::Entity, "entity", "entities", {} },
-        { Kind::Topic, "topic", "topics", {} },
-        { Kind::Variable, "var", "vars", { "variable", "variables" } },
-        { Kind::Function, "fn", "fns", { "function", "functions" } },
-        { Kind::Task, "task", "tasks", {} },
-        { Kind::Type, "type", "types", {} },
-        { Kind::Package, "package", "packages", { "pkg", "pkgs" } },
-        { Kind::Group, "group", "groups", {} },
+        { Kind::Node, "node", "nodes", {}, "running nodes, and in a workspace the ones that could start" },
+        { Kind::Entity, "entity", "entities", {}, "every topic, variable, function and task on the mesh" },
+        { Kind::Topic, "topic", "topics", {}, "topics on the mesh" },
+        { Kind::Variable, "var", "vars", { "variable", "variables" }, "variables on the mesh" },
+        { Kind::Function, "fn", "fns", { "function", "functions" }, "functions on the mesh" },
+        { Kind::Task, "task", "tasks", {}, "tasks on the mesh" },
+        { Kind::Type, "type", "types", {}, "message types, the standard ones and those the mesh uses" },
+        { Kind::Package, "package", "packages", { "pkg", "pkgs" }, "the packages of this workspace" },
+        { Kind::Group, "group", "groups", {}, "the groups of this workspace" },
     };
     return t;
 }
@@ -42,6 +43,12 @@ const char* kind_word(Kind k) {
 std::vector<std::string> kind_words(bool plural) {
     std::vector<std::string> out;
     for (auto& w : table()) out.emplace_back(plural ? w.plural : w.singular);
+    return out;
+}
+
+std::vector<std::pair<std::string, std::string>> kinds_listed() {
+    std::vector<std::pair<std::string, std::string>> out;
+    for (auto& w : table()) out.emplace_back(w.plural, w.listed);
     return out;
 }
 

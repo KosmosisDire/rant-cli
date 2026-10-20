@@ -1,13 +1,14 @@
 include("${CMAKE_CURRENT_LIST_DIR}/lib.cmake")
 
 # An empty mesh lists nothing, and says so.
-rant(ls)
+rant(ls nodes)
 expect_match("${OUT}" "NODES\n  [(]none[)]")
 
 set(node "--name;talker;--pub;chatter;--var;speed;--fn;double;--task;count")
 
-rant_beside_node("${node}" ls)
+rant_beside_node("${node}" ls nodes)
 expect_match("${OUT}" "NODES\n  talker\n")
+rant_beside_node("${node}" ls entities)
 expect_match("${OUT}" "chatter +topic")
 expect_match("${OUT}" "speed +var")
 expect_match("${OUT}" "double +fn")

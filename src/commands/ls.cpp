@@ -153,28 +153,27 @@ static int list_types(app::Context& ctx, const std::string& pattern) {
     return 0;
 }
 
-/* The running nodes and entities, the default. kind narrows to nodes or one entity kind, and
- * nodes alone also list the ones that could start. */
-static int list_mesh(app::Context& ctx, std::optional<Kind> kind, const std::string& pattern) {
-    if (kind && *kind == Kind::Type) return list_types(ctx, pattern);
-    bool show_nodes = !kind || *kind == Kind::Node, show_entities = !kind || *kind != Kind::Node;
-    bool all = kind && *kind == Kind::Node;
+/* The nodes, running ones and those that could start, or the entities of one kind. */
+static int list_mesh(app::Context& ctx, Kind kind, const std::string& pattern) {
+    if (kind == Kind::Type) return list_types(ctx, pattern);
+    bool show_nodes = kind == Kind::Node;
     bool no_mesh = ctx.args.has("no-mesh");
-    if (no_mesh && !all) throw app::UsageError("--no-mesh goes with `rant ls nodes`");
+    if (no_mesh && !show_nodes) throw app::UsageError("--no-mesh goes with `rant ls nodes`");
     std::optional<mesh::Client> mesh;
     if (!no_mesh) {
         mesh.emplace(ctx.domain());
         mesh->settle();
     }
     Listing nodes;
-    if (show_nodes) nodes = list_nodes(ctx, mesh ? &*mesh : nullptr, pattern);
     std::vector<const config::NodeType*> idle;
-    if (all) idle = not_running(ctx, pattern);
     std::vector<rant::Entity> entities;
-    if (show_entities)
+    if (show_nodes) {
+        nodes = list_nodes(ctx, mesh ? &*mesh : nullptr, pattern);
+        idle = not_running(ctx, pattern);
+    } else {
         for (auto& e : mesh->entities())
-            if (util::name_matches(pattern, e.name) && entity_matches(kind.value_or(Kind::Entity), mesh::kind_name(e.kind)))
-                entities.push_back(e);
+            if (util::name_matches(pattern, e.name) && entity_matches(kind, mesh::kind_name(e.kind))) entities.push_back(e);
+    }
 
     if (ctx.json) {
         json out = json::object();
@@ -203,14 +202,11 @@ static int list_mesh(app::Context& ctx, std::optional<Kind> kind, const std::str
                 out["groups"].push_back({ { "group", nodes.groups[i].header }, { "nodes", n } });
             }
             out["nodes"] = rows(nodes.loose);
-        }
-        if (all) {
             out["not_running"] = json::array();
             for (auto* n : idle)
                 out["not_running"].push_back({ { "name", n->ref() }, { "kind", config::kind_name(n->kind) },
                                                { "path", n->path ? json(config::to_utf8(*n->path)) : json(nullptr) } });
-        }
-        if (show_entities) {
+        } else {
             out["entities"] = json::array();
             for (auto& e : entities) out["entities"].push_back({ { "name", e.name }, { "kind", mesh::kind_name(e.kind) } });
         }
@@ -246,16 +242,12 @@ static int list_mesh(app::Context& ctx, std::optional<Kind> kind, const std::str
             for (auto& l : laid[i]) lines.push_back(in + l);
         }
         section(ctx, "NODES", lines);
-    }
-    if (all) {
         ui::Table t;
         auto dim = [&](const std::string& x) { return ctx.out.paint(ui::Style::Dim, x); };
         for (auto* n : idle) t.row({ n->ref(), dim(config::kind_name(n->kind)), dim(n->path ? ctx.shown(*n->path) : process::shown(n->run)) });
         ctx.out.line();
         section(ctx, "NOT RUNNING", t.lines());
-    }
-    if (show_nodes && show_entities) ctx.out.line();
-    if (show_entities) {
+    } else {
         std::vector<std::vector<std::string>> cells;
         for (auto& e : entities) cells.push_back({ e.name, ctx.out.paint(kind_style(e.kind), mesh::kind_name(e.kind)) });
         section(ctx, "ENTITIES", ui::columns(cells, width(), "  "));
@@ -325,15 +317,24 @@ static int list_workspace(app::Context& ctx, Kind kind, const std::string& patte
     return 0;
 }
 
+/* With nothing to list, the help, which names every kind. */
 static int run(app::Context& ctx) {
     auto& w = ctx.args.words;
-    std::optional<Kind> kind;
-    size_t at = 0;
-    if (!w.empty() && (kind = kind_named(w[0]))) at = 1;
-    if (w.size() > at + 1) throw app::UsageError("ls takes a kind and one pattern at most, such as `rant ls types cam`");
-    std::string pattern = at < w.size() ? w[at] : "";
-    if (kind && !on_mesh(*kind)) return list_workspace(ctx, *kind, pattern);
-    return list_mesh(ctx, kind, pattern);
+    if (w.empty() || ctx.args.has("help")) {
+        std::string s = app::command_help(ls()) + "\nKinds:\n";
+        for (auto& [word, listed] : kinds_listed()) {
+            word.resize(std::max<size_t>(word.size(), 22), ' ');
+            s += "  " + word + " " + listed + "\n";
+        }
+        ctx.out.line(s);
+        return 0;
+    }
+    std::optional<Kind> kind = kind_named(w[0]);
+    if (!kind) throw app::UsageError("`" + w[0] + "` is not a kind ls lists, see `rant ls`");
+    if (w.size() > 2) throw app::UsageError("ls takes a kind and one pattern at most, such as `rant ls types cam`");
+    std::string pattern = w.size() == 2 ? w[1] : "";
+    if (!on_mesh(*kind)) return list_workspace(ctx, *kind, pattern);
+    return list_mesh(ctx, *kind, pattern);
 }
 
 static complete::Candidates complete_words(complete::Request& r) {
@@ -342,11 +343,12 @@ static complete::Candidates complete_words(complete::Request& r) {
 }
 
 app::Command ls() {
-    app::Command c{ "ls", "[kind] [pattern]",
-                    "list the running nodes and entities, or types, packages or groups",
+    app::Command c{ "ls", "<kind> [pattern]",
+                    "list nodes, entities, types, packages or groups",
                     app::Section::Mesh,
                     { { "no-mesh", 0, "", "with nodes: only what this workspace declares and started, without joining the mesh" } },
                     run };
+    c.own_help = true;
     c.complete = complete_words;
     return c;
 }

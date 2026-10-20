@@ -80,7 +80,7 @@ complete(nonsense CUR "")
 expect_match("${OUT}" "^$")
 
 # The mesh comes from what earlier commands saw, a path one segment at a time.
-rant_beside_node("--name;cam;--pub;camera/left;--var;camera/rate" ls)
+rant_beside_node("--name;cam;--pub;camera/left;--var;camera/rate" ls entities)
 complete(sub CUR "")
 expect_match("${OUT}" "^camera/\n$")
 complete(sub CUR camera/)
@@ -91,7 +91,7 @@ complete(info CUR c)
 expect_match("${OUT}" "^cam\ncamera/\n$")
 
 # A full look at the mesh replaces the snapshot, so what left is no longer offered.
-rant(ls)
+rant(ls entities)
 complete(sub CUR "")
 expect_match("${OUT}" "^$")
 
