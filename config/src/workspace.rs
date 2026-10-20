@@ -14,8 +14,12 @@ pub const WORKSPACE_FILE: &str = "workspace.rant";
 pub struct WorkspaceConfig {
     pub root: PathBuf,
     pub logs: PathBuf,
+    /// rant's own data: the state file and caches.
+    pub data: PathBuf,
     pub ignore: Vec<String>,
     pub placement: Placement,
+    /// No workspace: rant's home stands in, with only the installed packages.
+    pub home: bool,
 }
 
 /// Walks up from `start` to the nearest folder holding a `workspace.rant`.
@@ -49,7 +53,20 @@ fn parse(src: &Source, dir: &Path) -> Result<WorkspaceConfig, Diag> {
         None => Vec::new(),
     };
     let placement = Placement::read(src, &fields.attrs, &scope)?;
-    Ok(WorkspaceConfig { root: dir.to_path_buf(), logs, ignore, placement })
+    Ok(WorkspaceConfig { root: dir.to_path_buf(), logs, data: data_dir(dir), ignore, placement, home: false })
+}
+
+/// What stands in for a workspace outside every one: rant's home, which keeps the logs and
+/// the state of what it starts.
+pub fn home(rant_home: &Path) -> WorkspaceConfig {
+    WorkspaceConfig {
+        root: rant_home.to_path_buf(),
+        logs: rant_home.join("logs"),
+        data: rant_home.to_path_buf(),
+        ignore: Vec::new(),
+        placement: Placement::default(),
+        home: true,
+    }
 }
 
 /// The workspace's own data directory, `.rant/` at the root, made on first use with a

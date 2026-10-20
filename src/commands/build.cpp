@@ -42,7 +42,7 @@ static json node_types_json(const std::vector<config::NodeType>& types) {
 static json dry_run_json(const config::Workspace& ws, const config::Build& b) {
     json packages = json::array();
     for (auto& p : ws.packages)
-        packages.push_back({ { "name", p.name }, { "dir", config::to_utf8(p.dir) }, { "nodes", node_types_json(p.nodes) } });
+        if (!p.installed) packages.push_back({ { "name", p.name }, { "dir", config::to_utf8(p.dir) }, { "nodes", node_types_json(p.nodes) } });
     json edges = json::array();
     for (auto& e : b.edges) edges.push_back({ { "from", e.from }, { "to", e.to }, { "source", e.source } });
     json steps = json::array();
@@ -64,15 +64,16 @@ static json dry_run_json(const config::Workspace& ws, const config::Build& b) {
              { "build", steps } };
 }
 
-/* Everything a build would do, and why: the packages, their node types, every dependency
- * with where it was found, the order and the exact commands. */
+/* Everything a build would do, and why: the workspace's packages, their node types, every
+ * dependency with where it was found, the order and the exact commands. */
 static void dry_run(app::Context& ctx, const config::Workspace& ws, const config::Build& b) {
     if (ctx.json) {
         ctx.out.line(dry_run_json(ws, b).dump(2));
         return;
     }
     std::vector<const config::Package*> sorted;
-    for (auto& p : ws.packages) sorted.push_back(&p);
+    for (auto& p : ws.packages)
+        if (!p.installed) sorted.push_back(&p);
     std::sort(sorted.begin(), sorted.end(), [](auto* a, auto* b) { return a->name < b->name; });
     ui::Table packages, nodes, edges;
     auto node_row = [&](const config::NodeType& n) {
@@ -167,12 +168,12 @@ int build_steps(app::Context& ctx, const config::Build& b, bool clean) {
 
 bool build_for(app::Context& ctx, const std::vector<config::Plan>& plans) {
     if (ctx.args.has("no-build")) return true;
-    const config::Workspace& ws = ctx.require_workspace(true);
+    const config::Workspace& ws = ctx.require_scope(true);
     std::vector<std::string> packages;
     for (auto& plan : plans)
         for (auto& i : plan.instances) {
             std::string pkg = i.type.substr(0, i.type.find('/'));
-            bool known = std::any_of(ws.packages.begin(), ws.packages.end(), [&](const config::Package& p) { return p.name == pkg; });
+            bool known = std::any_of(ws.packages.begin(), ws.packages.end(), [&](const config::Package& p) { return p.name == pkg && !p.installed; });
             if (known && std::find(packages.begin(), packages.end(), pkg) == packages.end()) packages.push_back(pkg);
         }
     if (packages.empty()) return true;
@@ -202,10 +203,16 @@ static int run(app::Context& ctx) {
     int built = build_steps(ctx, b, ctx.args.has("clean"));
     if (built == 0) ctx.out.line("nothing to build: no package here has a build step");
     else ctx.out.line("built " + std::to_string(built) + (built == 1 ? " package" : " packages"));
+    /* only what the workspace itself names, never an installed package */
     std::vector<std::string> groups, nodes;
-    for (auto& g : ws.groups) groups.push_back(g.name);
+    auto installed = [&](const std::string& package) {
+        return std::any_of(ws.packages.begin(), ws.packages.end(), [&](const config::Package& p) { return p.installed && p.name == package; });
+    };
+    for (auto& g : ws.groups)
+        if (!installed(g.name.substr(0, g.name.find('/')))) groups.push_back(g.name);
     for (auto& p : ws.packages)
-        for (auto& n : p.nodes) nodes.push_back(n.name);
+        for (auto& n : p.nodes)
+            if (!p.installed) nodes.push_back(n.name);
     for (auto& n : ws.loose) nodes.push_back(n.name);
     note_names(ctx, groups, nodes);
     return 0;
@@ -213,7 +220,7 @@ static int run(app::Context& ctx) {
 
 static complete::Candidates complete_words(complete::Request& r) {
     std::vector<std::string> out;
-    for (auto& p : r.packages())
+    for (auto& p : r.packages(false))
         if (std::find(r.words.begin(), r.words.end(), p) == r.words.end()) out.push_back(p);
     return { out };
 }

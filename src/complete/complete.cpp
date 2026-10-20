@@ -50,10 +50,11 @@ std::vector<std::string> Request::groups() {
     return out;
 }
 
-std::vector<std::string> Request::packages() {
+std::vector<std::string> Request::packages(bool installed) {
     std::vector<std::string> out;
     if (const config::Workspace* ws = workspace())
-        for (auto& p : ws->packages) out.push_back(p.name);
+        for (auto& p : ws->packages)
+            if (installed || !p.installed) out.push_back(p.name);
     return out;
 }
 

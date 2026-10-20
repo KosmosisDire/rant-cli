@@ -10,11 +10,10 @@ use crate::diag::Diag;
 use crate::discover::{self, Candidate};
 use crate::group::{self, GroupFile};
 use crate::manifest::{Manifest, ManifestKind};
-use crate::package::PackageBlock;
+use crate::package::{self, PackageBlock, PACKAGE_FILE};
 use crate::paths;
 use crate::placement::Placement;
 use crate::scan::{self, Cache, NodeKind};
-use crate::package::PACKAGE_FILE;
 use crate::workspace::WorkspaceConfig;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -39,6 +38,8 @@ pub struct Package {
     pub manifests: Vec<Manifest>,
     pub block: Option<PackageBlock>,
     pub nodes: Vec<NodeType>,
+    /// Put in rant's home by `rant install`, already built.
+    pub installed: bool,
 }
 
 pub struct Model {
@@ -49,43 +50,21 @@ pub struct Model {
     pub groups: Vec<GroupFile>,
 }
 
-pub fn cache_dir(root: &Path) -> PathBuf {
-    crate::workspace::data_dir(root).join("cache")
-}
-
 impl Model {
-    pub fn load(config: WorkspaceConfig) -> (Model, Vec<Diag>) {
+    /// The workspace's packages, then those `rant install` put in `<home>/packages` that no
+    /// workspace package of the same name hides. Outside every workspace only the installed.
+    pub fn load(config: WorkspaceConfig, home: Option<&Path>) -> (Model, Vec<Diag>) {
         let mut diags = Vec::new();
-        let cache_path = cache_dir(&config.root).join("scan.json");
-        let mut cache = Cache::load(&cache_path);
-        let mut found = discover::walk(&config, &mut cache, &mut diags);
-        let mut candidates = without_cmake_subdirectories(std::mem::take(&mut found.packages));
-        candidates.sort_by(|a, b| a.dir.cmp(&b.dir));
-        let mut packages = name_packages(candidates, &mut diags);
-        let groups = group::name_files(found.group_files, &packages, &mut diags);
-
-        let dirs: Vec<PathBuf> = packages.iter().map(|p| p.dir.clone()).collect();
-        for pkg in &mut packages {
-            let nested: Vec<PathBuf> =
-                dirs.iter().filter(|d| **d != pkg.dir && paths::within(d, &pkg.dir)).cloned().collect();
-            let ignore = match &pkg.block {
-                Some(b) => discover::glob_set(&b.ignore, &b.file).unwrap_or_else(|d| {
-                    diags.push(d);
-                    GlobSet::empty()
-                }),
-                None => GlobSet::empty(),
-            };
-            let found = scan::scan(&pkg.dir, &nested, &ignore, &mut cache);
-            pkg.nodes = node_types(pkg, found, &config.root);
+        let (mut packages, mut group_files, loose) = match config.home {
+            true => (Vec::new(), Vec::new(), Vec::new()),
+            false => workspace_packages(&config, &mut diags),
+        };
+        if let Some(home) = home {
+            let (more, files) = installed(&home.join("packages"), &config.root, &packages, &mut diags);
+            packages.extend(more);
+            group_files.extend(files);
         }
-        cache.save(&cache_path);
-        let mut loose: Vec<NodeType> = found
-            .python_nodes
-            .into_iter()
-            .filter(|f| !dirs.iter().any(|d| paths::within(f, d)))
-            .map(|f| loose_node(f, &config.root))
-            .collect();
-        loose.sort_by(|a, b| a.path.cmp(&b.path));
+        let groups = group::name_files(group_files, &packages, &mut diags);
         (Model { config, packages, loose, groups }, diags)
     }
 
@@ -112,6 +91,76 @@ impl Model {
     pub fn package_holding(&self, p: &Path) -> Option<&Package> {
         self.packages.iter().filter(|pkg| paths::within(p, &pkg.dir)).max_by_key(|pkg| pkg.dir.components().count())
     }
+}
+
+/// What the walk of a workspace finds: its packages, each scanned for node types, its group
+/// files, and the Python nodes outside every package.
+fn workspace_packages(config: &WorkspaceConfig, diags: &mut Vec<Diag>) -> (Vec<Package>, Vec<PathBuf>, Vec<NodeType>) {
+    let cache_path = config.data.join("cache").join("scan.json");
+    let mut cache = Cache::load(&cache_path);
+    let mut found = discover::walk(config, &mut cache, diags);
+    let mut candidates = without_cmake_subdirectories(std::mem::take(&mut found.packages));
+    candidates.sort_by(|a, b| a.dir.cmp(&b.dir));
+    let mut packages = name_packages(candidates, diags);
+
+    let dirs: Vec<PathBuf> = packages.iter().map(|p| p.dir.clone()).collect();
+    for pkg in &mut packages {
+        let nested: Vec<PathBuf> = dirs.iter().filter(|d| **d != pkg.dir && paths::within(d, &pkg.dir)).cloned().collect();
+        let ignore = match &pkg.block {
+            Some(b) => discover::glob_set(&b.ignore, &b.file).unwrap_or_else(|d| {
+                diags.push(d);
+                GlobSet::empty()
+            }),
+            None => GlobSet::empty(),
+        };
+        let scanned = scan::scan(&pkg.dir, &nested, &ignore, &mut cache);
+        pkg.nodes = node_types(pkg, scanned, &config.root);
+    }
+    cache.save(&cache_path);
+    let mut loose: Vec<NodeType> = found
+        .python_nodes
+        .into_iter()
+        .filter(|f| !dirs.iter().any(|d| paths::within(f, d)))
+        .map(|f| loose_node(f, &config.root))
+        .collect();
+    loose.sort_by(|a, b| a.path.cmp(&b.path));
+    (packages, found.group_files, loose)
+}
+
+/// The packages `rant install` put in `dir`, a folder each named after the package, with the
+/// nodes its package.rant declares and the groups beside it. One in `shown` hides its namesake.
+fn installed(dir: &Path, root: &Path, shown: &[Package], diags: &mut Vec<Diag>) -> (Vec<Package>, Vec<PathBuf>) {
+    let (mut packages, mut group_files) = (Vec::new(), Vec::new());
+    let Ok(entries) = std::fs::read_dir(dir) else { return (packages, group_files) };
+    let mut dirs: Vec<PathBuf> = entries.flatten().map(|e| e.path()).filter(|p| p.is_dir()).collect();
+    dirs.sort();
+    for pkg_dir in dirs {
+        let name = pkg_dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        if name.starts_with('.') || shown.iter().any(|p| p.name == name) {
+            continue;
+        }
+        let block = match package::read(&pkg_dir, root) {
+            Ok(Some(b)) => b,
+            Ok(None) => continue,
+            Err(d) => {
+                diags.push(d);
+                continue;
+            }
+        };
+        let mut pkg = Package { name, dir: pkg_dir.clone(), manifests: Vec::new(), block: Some(block), nodes: Vec::new(), installed: true };
+        pkg.nodes = declared(&pkg).collect();
+        let mut runs: Vec<PathBuf> = std::fs::read_dir(&pkg_dir)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.is_file() && p.file_name().is_some_and(|n| n.to_string_lossy().ends_with(group::SUFFIX)))
+            .collect();
+        runs.sort();
+        group_files.extend(runs);
+        packages.push(pkg);
+    }
+    (packages, group_files)
 }
 
 /// A CMake folder inside another CMake package is part of it, since CMake nests projects
@@ -149,7 +198,7 @@ fn name_packages(candidates: Vec<Candidate>, diags: &mut Vec<Diag>) -> Vec<Packa
             ));
             continue;
         }
-        out.push(Package { name, dir: c.dir, manifests: c.manifests, block: c.block, nodes: Vec::new() });
+        out.push(Package { name, dir: c.dir, manifests: c.manifests, block: c.block, nodes: Vec::new(), installed: false });
     }
     out
 }
@@ -237,22 +286,24 @@ fn node_types(pkg: &Package, mut found: Vec<scan::Found>, root: &Path) -> Vec<No
             by_name.insert(name.clone(), node);
         }
     }
-    for d in pkg.block.iter().flat_map(|b| b.nodes.iter()) {
-        by_name.insert(
-            d.name.clone(),
-            NodeType {
-                package: pkg.name.clone(),
-                name: d.name.clone(),
-                kind: NodeKind::Declared,
-                path: None,
-                run: d.run.clone(),
-                cwd: pkg.dir.clone(),
-                shadowed: Vec::new(),
-                source: None,
-            },
-        );
+    for d in declared(pkg) {
+        by_name.insert(d.name.clone(), d);
     }
     by_name.into_values().collect()
+}
+
+/// The nodes package.rant declares, programs rant cannot find itself.
+fn declared(pkg: &Package) -> impl Iterator<Item = NodeType> + '_ {
+    pkg.block.iter().flat_map(|b| b.nodes.iter()).map(|d| NodeType {
+        package: pkg.name.clone(),
+        name: d.name.clone(),
+        kind: NodeKind::Declared,
+        path: None,
+        run: d.run.clone(),
+        cwd: pkg.dir.clone(),
+        shadowed: Vec::new(),
+        source: None,
+    })
 }
 
 /// Where cargo builds a package: CARGO_TARGET_DIR, else the target folder of the Cargo

@@ -44,6 +44,17 @@ uint16_t Context::domain() {
 }
 
 const config::Workspace* Context::workspace() {
+    const config::Workspace* ws = scope();
+    return ws && !ws->home ? ws : nullptr;
+}
+
+const config::Workspace& Context::require_workspace(bool packages) {
+    const config::Workspace& ws = require_scope(packages);
+    if (ws.home) throw Failure("no workspace here, `rant init` makes one");
+    return ws;
+}
+
+const config::Workspace* Context::scope() {
     open(false);
     if (!opened_->diagnostics.empty()) {
         for (auto& d : opened_->diagnostics) out.warn(d.str());
@@ -52,14 +63,13 @@ const config::Workspace* Context::workspace() {
     return opened_->workspace ? &*opened_->workspace : nullptr;
 }
 
-const config::Workspace& Context::require_workspace(bool packages) {
+const config::Workspace& Context::require_scope(bool packages) {
     open(packages);
     if (!opened_->diagnostics.empty()) {
         for (auto& d : opened_->diagnostics) out.error(d.str());
         throw Failure("");
     }
-    if (!opened_->workspace)
-        throw Failure("no workspace here, `rant init` makes one");
+    if (!opened_->workspace) throw Failure("no workspace here, `rant init` makes one");
     return *opened_->workspace;
 }
 

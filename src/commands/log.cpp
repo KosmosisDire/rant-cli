@@ -38,7 +38,7 @@ static std::vector<std::string> nodes_of(app::Context& ctx, const std::string& n
 }
 
 static int run(app::Context& ctx) {
-    const config::Workspace& ws = ctx.require_workspace();
+    const config::Workspace& ws = ctx.require_scope();
     size_t count = 20;
     if (auto n = ctx.args.get("lines")) {
         char* end = nullptr;

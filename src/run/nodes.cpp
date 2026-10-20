@@ -12,7 +12,7 @@ Session::Session(const config::Workspace& ws) : ws_(ws), store_(ws.data) {
 }
 
 state::State snapshot(app::Context& ctx) {
-    const config::Workspace* ws = ctx.workspace();
+    const config::Workspace* ws = ctx.scope();
     if (!ws) return {};
     Session s(*ws);
     s.save();

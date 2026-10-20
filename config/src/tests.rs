@@ -1,5 +1,7 @@
 //! Whole workspace tests: discovery, naming, scanning and references working together.
 
+use crate::build_plan;
+use crate::group::Groups;
 use crate::model::Model;
 use crate::paths;
 use crate::refs;
@@ -31,7 +33,7 @@ fn mixed() -> TestDir {
 
 fn load(t: &TestDir) -> Model {
     let config = workspace::open(t.root()).unwrap().unwrap();
-    let (model, diags) = Model::load(config);
+    let (model, diags) = Model::load(config, None);
     assert!(diags.is_empty(), "{diags:?}");
     model
 }
@@ -69,7 +71,7 @@ fn duplicate_package_names_are_an_error() {
     t.write("workspace.rant", "");
     t.write("a/package.rant", "name = \"same\"\n");
     t.write("b/package.rant", "name = \"same\"\n");
-    let (_, diags) = Model::load(workspace::open(t.root()).unwrap().unwrap());
+    let (_, diags) = Model::load(workspace::open(t.root()).unwrap().unwrap(), None);
     assert_eq!(diags.len(), 1);
     assert!(diags[0].message.contains("also used by"));
 }
@@ -207,4 +209,37 @@ fn python_nodes_outside_packages_have_no_package() {
     let ft = refs::resolve(&m, "ft", t.root()).unwrap();
     assert_eq!(ft.package, "");
     assert!(paths::same(&ft.cwd, &t.path("IO/ft")));
+}
+
+#[test]
+fn installed_packages_join_a_workspace_and_stand_alone_outside_one() {
+    let t = TestDir::new();
+    t.write("ws/workspace.rant", "");
+    t.write("ws/tools/package.rant", "name = \"tools\"\nnode \"helper\" {\n  run = \"helper\"\n}\n");
+    t.write("home/packages/bridge/package.rant", "node \"bridge\" {\n  run = \"${path.package}/bin/rant-bridge\"\n}\n");
+    t.write("home/packages/bridge/Bridge.run", "node \"bridge\" {}\n");
+    t.write("home/packages/tools/package.rant", "node \"old\" {\n  run = \"old\"\n}\n");
+    t.write("home/packages/notes/readme.txt", "no package.rant, no package\n");
+    let home = t.path("home");
+
+    let (m, diags) = Model::load(workspace::open(&t.path("ws")).unwrap().unwrap(), Some(&home));
+    assert!(diags.is_empty(), "{diags:?}");
+    let packages: Vec<(&str, bool)> = m.packages.iter().map(|p| (p.name.as_str(), p.installed)).collect();
+    assert_eq!(packages, [("tools", false), ("bridge", true)], "the workspace tools hides the installed one");
+    let groups: Vec<&str> = m.groups.iter().map(|g| g.name.as_str()).collect();
+    assert_eq!(groups, ["bridge/Bridge"]);
+    assert_eq!(Groups::new(&m).find("Bridge", None).unwrap().name, "bridge/Bridge");
+    let bridge = refs::resolve(&m, "bridge", &t.path("ws")).unwrap();
+    assert_eq!(bridge.kind, NodeKind::Declared);
+    assert!(bridge.run[0].ends_with("packages/bridge/bin/rant-bridge"), "{:?}", bridge.run);
+    assert!(paths::same(&bridge.cwd, &t.path("home/packages/bridge")));
+    let steps: Vec<String> = build_plan::plan(&m, &[]).unwrap().steps.into_iter().map(|s| s.package).collect();
+    assert_eq!(steps, ["tools"], "an installed package came built");
+    assert!(build_plan::plan(&m, &["bridge".into()]).unwrap_err().message.contains("`bridge` is installed"));
+
+    let (m, diags) = Model::load(workspace::home(&home), Some(&home));
+    assert!(diags.is_empty(), "{diags:?}");
+    let packages: Vec<&str> = m.packages.iter().map(|p| p.name.as_str()).collect();
+    assert_eq!(packages, ["bridge", "tools"]);
+    assert!(m.loose.is_empty());
 }

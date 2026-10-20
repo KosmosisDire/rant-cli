@@ -77,7 +77,7 @@ fn workspace_with(extra: &[(&str, &str)]) -> TestDir {
 }
 
 fn model(t: &TestDir) -> Model {
-    let (m, diags) = Model::load(workspace::open(t.root()).unwrap().unwrap());
+    let (m, diags) = Model::load(workspace::open(t.root()).unwrap().unwrap(), None);
     assert!(diags.is_empty(), "{diags:?}");
     m
 }

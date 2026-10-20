@@ -165,7 +165,7 @@ std::string group_name(app::Context& ctx, const std::string& group) {
 }
 
 bool names_group(app::Context& ctx, const std::string& name) {
-    if (!ctx.workspace()) return false;
+    if (!ctx.scope()) return false;
     config::Named n = config::named(ctx.cwd(), name);
     if (n.group && n.node) fail_with(ctx, n.diagnostics);
     if (n.group) return true;

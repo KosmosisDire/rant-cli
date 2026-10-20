@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 use std::ffi::{c_char, CStr, CString};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::sync::Mutex;
 
 use crate::build_plan;
 use crate::diag::Diag;
@@ -68,6 +69,8 @@ pub struct RantConfigPackage {
     pub file_count: usize,
     pub nodes: *const RantConfigNodeType,
     pub node_count: usize,
+    /// Put in rant's home by `rant install`, already built.
+    pub installed: bool,
 }
 
 /// A group file and the name it goes by. short_name is the shortest name that finds it from
@@ -79,14 +82,16 @@ pub struct RantConfigGroupFile {
     pub file: *const c_char,
 }
 
-/// What rant_config_open found. root is NULL when no workspace encloses the directory.
-/// data is the workspace's .rant directory. packages and groups are filled only when
-/// RANT_CONFIG_PACKAGES was asked for.
+/// What rant_config_open found. With no workspace around the directory, rant's home stands
+/// in when one was set, and root is NULL when none was. data holds the state and caches.
+/// packages and groups are filled only when RANT_CONFIG_PACKAGES was asked for.
 #[repr(C)]
 pub struct RantConfigWorkspaceView {
     pub root: *const c_char,
     pub logs: *const c_char,
     pub data: *const c_char,
+    /// root is rant's home, which holds only the installed packages.
+    pub home: bool,
     /// The workspace's domain, -1 when it sets none.
     pub domain: i32,
     pub packages: *const RantConfigPackage,
@@ -259,7 +264,17 @@ impl Store {
             files.push(crate::eval::slash(&p.dir.join(crate::package::PACKAGE_FILE)));
         }
         let (files, file_count) = self.strs(&files);
-        RantConfigPackage { name: self.str(&p.name), dir: self.path(&p.dir), kinds, kind_count, files, file_count, nodes, node_count }
+        RantConfigPackage {
+            name: self.str(&p.name),
+            dir: self.path(&p.dir),
+            kinds,
+            kind_count,
+            files,
+            file_count,
+            nodes,
+            node_count,
+            installed: p.installed,
+        }
     }
 
     fn instance(&mut self, i: &plan::Instance) -> RantConfigInstance {
@@ -283,7 +298,7 @@ impl Store {
     /// The root, logs and data paths of a view, all NULL outside a workspace.
     fn roots(&mut self, config: Option<&WorkspaceConfig>) -> [*const c_char; 3] {
         match config {
-            Some(c) => [self.path(&c.root), self.path(&c.logs), self.path(&workspace::data_dir(&c.root))],
+            Some(c) => [self.path(&c.root), self.path(&c.logs), self.path(&c.data)],
             None => [std::ptr::null(); 3],
         }
     }
@@ -325,15 +340,40 @@ struct Loaded {
     diags: Vec<Diag>,
 }
 
+/// rant's home, set once before any other call. Installed packages live in its `packages`
+/// folder, and it stands in for a workspace outside every one.
+static HOME: Mutex<Option<PathBuf>> = Mutex::new(None);
+
+fn home() -> Option<PathBuf> {
+    HOME.lock().ok().and_then(|h| h.clone())
+}
+
+/// Sets rant's home, NULL or empty for none.
+///
+/// # Safety
+/// `dir` must be NULL or a NUL terminated UTF-8 string.
+#[no_mangle]
+pub unsafe extern "C" fn rant_config_set_home(dir: *const c_char) {
+    let dir = (!dir.is_null()).then(|| arg_path(dir)).filter(|d| !d.as_os_str().is_empty());
+    if let Ok(mut h) = HOME.lock() {
+        *h = dir;
+    }
+}
+
 fn load(start: &Path, packages: bool) -> Loaded {
     let mut diags = Vec::new();
-    let config = workspace::open(start).unwrap_or_else(|d| {
-        diags.push(d);
-        None
-    });
+    let home = home();
+    let config = match workspace::open(start) {
+        Ok(Some(c)) => Some(c),
+        Ok(None) => home.as_deref().map(workspace::home),
+        Err(d) => {
+            diags.push(d);
+            None
+        }
+    };
     let model = match (&config, packages) {
         (Some(c), true) => {
-            let (m, d) = Model::load(c.clone());
+            let (m, d) = Model::load(c.clone(), home.as_deref());
             diags.extend(d);
             Some(m)
         }
@@ -366,6 +406,7 @@ fn workspace_handle(loaded: &Loaded, extra: Vec<Diag>) -> *mut RantConfigWorkspa
         root,
         logs,
         data,
+        home: loaded.config.as_ref().is_some_and(|c| c.home),
         domain: loaded.config.as_ref().and_then(|c| c.placement.domain).map_or(-1, i32::from),
         packages,
         package_count,

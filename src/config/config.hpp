@@ -49,6 +49,7 @@ struct Package {
     std::vector<std::string> kinds;    /* "cmake", "python", "csharp", "rust", "package.rant" */
     std::vector<fs::path>    files;    /* its build files, then its package.rant */
     std::vector<NodeType>    nodes;
+    bool                     installed = false;    /* put in rant's home by rant install, already built */
 };
 
 struct GroupFile {
@@ -60,7 +61,8 @@ struct GroupFile {
 struct Workspace {
     fs::path               root;
     fs::path               logs;
-    fs::path               data;        /* .rant/, the state file and caches */
+    fs::path               data;        /* the state file and caches */
+    bool                   home = false;    /* rant's home outside every workspace, only installed packages */
     std::optional<uint16_t> domain;     /* the domain its config sets */
     std::vector<Package>   packages;    /* filled when opened with packages */
     std::vector<NodeType>  loose;       /* Python nodes outside every package, likewise */
@@ -180,10 +182,13 @@ struct Folders {
 
 Folders folders_under(const fs::path& start);
 
-/* Finds the enclosing workspace. With packages it also discovers every package and scans
- * it for node types, which reads the tree and is slower. */
+/* rant's home, which holds the installed packages and stands in for a workspace outside
+ * every one. Set once before anything is opened. */
+void set_home(const fs::path& home);
+
+/* Finds the enclosing workspace, else rant's home. With packages it also discovers every
+ * package and scans it for node types, which reads the tree and is slower. */
 Opened open(const fs::path& start, bool packages = false);
 Opened init(const fs::path& dir);
-
 
 }

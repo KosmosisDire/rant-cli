@@ -38,6 +38,14 @@ public:
      * also holds every package and node type, and any config error is a failure. */
     const config::Workspace& require_workspace(bool packages = false);
 
+    /* Where nodes run from: the enclosing workspace, else rant's home, which holds only the
+     * installed packages. nullptr when there is neither. A broken config is a warning. */
+    const config::Workspace* scope();
+
+    /* The scope, or a failure. With packages it also holds every package and node type, and
+     * any config error is a failure. */
+    const config::Workspace& require_scope(bool packages = false);
+
 private:
     void open(bool packages);
     static std::filesystem::path here();

@@ -139,14 +139,19 @@ pub fn edges(model: &Model) -> Result<Vec<Edge>, Diag> {
 /// The build plan for `wanted` (empty = every package) and all they depend on, in
 /// dependency order with ties broken by path.
 pub fn plan(model: &Model, wanted: &[String]) -> Result<BuildPlan, Diag> {
-    let edges = edges(model)?;
+    // an installed package came built, so nothing waits for it
+    let installed = |name: &str| model.package(name).is_some_and(|p| p.installed);
+    let edges: Vec<Edge> = edges(model)?.into_iter().filter(|e| !installed(&e.to)).collect();
     for w in wanted {
-        if model.package(w).is_none() {
-            return Err(Diag::plain(format!("no package named `{w}`, see `rant ls packages`")));
+        match model.package(w) {
+            None => return Err(Diag::plain(format!("no package named `{w}`, see `rant ls packages`"))),
+            Some(p) if p.installed => return Err(Diag::plain(format!("`{w}` is installed, it came built"))),
+            Some(_) => {}
         }
     }
 
-    let mut selected: Vec<bool> = model.packages.iter().map(|p| wanted.is_empty() || wanted.contains(&p.name)).collect();
+    let mut selected: Vec<bool> =
+        model.packages.iter().map(|p| !p.installed && (wanted.is_empty() || wanted.contains(&p.name))).collect();
     loop {
         let mut grew = false;
         for e in &edges {
@@ -215,7 +220,7 @@ mod tests {
     use crate::workspace;
 
     fn model(t: &TestDir) -> Model {
-        let (m, d) = Model::load(workspace::open(t.root()).unwrap().unwrap());
+        let (m, d) = Model::load(workspace::open(t.root()).unwrap().unwrap(), None);
         assert!(d.is_empty(), "{d:?}");
         m
     }

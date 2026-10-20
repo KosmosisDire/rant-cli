@@ -250,9 +250,9 @@ static Answer group_answer(app::Context& ctx, const state::State& st, const conf
  * or bare name, and the group a reference finds. */
 static void workspace_answers(app::Context& ctx, std::optional<Kind> kind, const std::string& name, const state::State& st,
                               std::vector<std::pair<Kind, Answer>>& out) {
-    const config::Workspace* ws = ctx.workspace();
+    const config::Workspace* ws = ctx.scope();
     if (!ws) return;
-    const config::Workspace& full = ctx.require_workspace(true);
+    const config::Workspace& full = ctx.require_scope(true);
     auto want = [&](Kind k) { return !kind || *kind == k; };
     if (want(Kind::Package)) {
         std::error_code ec;

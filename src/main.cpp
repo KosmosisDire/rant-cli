@@ -3,8 +3,10 @@
 
 #include "app/command.hpp"
 #include "app/failure.hpp"
+#include "config/config.hpp"
 #include "process/supervisor.hpp"
 #include "ui/terminal.hpp"
+#include "util/home.hpp"
 
 int main(int argc, char** argv) {
     if (auto code = process::helper_main(argc, argv)) return *code;
@@ -15,6 +17,7 @@ int main(int argc, char** argv) {
 #else
     unsetenv("RANT_NODE_NAME");
 #endif
+    config::set_home(util::rant_home());
     app::Context ctx;
     try {
         return app::run(ctx, ui::utf8_args(argc, argv));

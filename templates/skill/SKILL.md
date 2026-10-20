@@ -36,6 +36,10 @@ cell/                     workspace: the folder holding workspace.rant
 A build file that uses Rant makes a package by itself. Add a package.rant beside it only
 to override something. A folder may be a workspace and a package, with both files. A CMake folder inside a CMake package belongs to it.
 
+Installed packages live in `~/.rant/packages`, built already. Every workspace sees them after
+its own packages, and a package of the same name in the workspace hides one. Outside every
+workspace `run`, `stop`, `log` and `ls` act on them alone, with logs in `~/.rant/logs`.
+
 ## Commands
 
 | goal | command |

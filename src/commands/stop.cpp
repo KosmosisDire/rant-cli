@@ -77,7 +77,7 @@ struct Held {
 static std::vector<Held> started_anywhere(app::Context& ctx) {
     std::vector<config::fs::path> dirs = state::remembered();
     std::sort(dirs.begin(), dirs.end());
-    if (const config::Workspace* ws = ctx.workspace()) dirs.insert(dirs.begin(), ws->data);
+    if (const config::Workspace* ws = ctx.scope()) dirs.insert(dirs.begin(), ws->data);
     std::vector<Held> out;
     std::vector<std::string> seen;
     for (auto& d : dirs) {
@@ -169,7 +169,7 @@ static int stop_everything(app::Context& ctx) {
  * another workspace, then without rant. */
 static int stop_node(app::Context& ctx, const std::string& name) {
     auto held = started_anywhere(ctx);
-    const config::Workspace* ws = ctx.workspace();
+    const config::Workspace* ws = ctx.scope();
     auto own = [&](const Held& h) { return ws && util::path_key(h.root) == util::path_key(ws->root); };
     std::vector<std::pair<Held*, state::Instance*>> found;
     for (auto& h : held)
@@ -259,7 +259,7 @@ static int stop_inside(app::Context& ctx, run::Session& s, const std::string& gr
 /* Stops what the group started. A node of the same name it did not start keeps running. A
  * group that runs only inside others stops its own nodes there. */
 static int stop_group(app::Context& ctx, const std::string& group, const std::vector<std::string>& params) {
-    run::Session s(ctx.require_workspace());
+    run::Session s(ctx.require_scope());
     if (params.empty()) {
         std::string name = group_name(ctx, group);
         bool own = std::any_of(s.state().roots.begin(), s.state().roots.end(), [&](const state::Root& r) { return r.kind == "group" && r.name == name; });

@@ -119,11 +119,11 @@ static void section(app::Context& ctx, const char* title, const std::vector<std:
     if (lines.empty()) ctx.out.line(ctx.out.paint(ui::Style::Faint, "  (none)"));
 }
 
-/* The nodes a workspace could start that are not running, outside a workspace none. */
+/* The nodes this scope could start that are not running. */
 static std::vector<const config::NodeType*> not_running(app::Context& ctx, const std::string& pattern) {
     std::vector<const config::NodeType*> out;
-    if (!ctx.workspace()) return out;
-    const config::Workspace& ws = ctx.require_workspace(true);
+    if (!ctx.scope()) return out;
+    const config::Workspace& ws = ctx.require_scope(true);
     state::State st = run::snapshot(ctx);
     auto add = [&](const config::NodeType& n) {
         bool runs = std::any_of(st.instances.begin(), st.instances.end(), [&](const state::Instance& i) { return i.type == n.planned(); });
@@ -276,9 +276,9 @@ static std::string params_short(const config::GroupInfo& g) {
     return joined(v);
 }
 
-/* Packages or groups: what the workspace offers, running or not. */
+/* Packages or groups: what the workspace and the installed packages offer, running or not. */
 static int list_workspace(app::Context& ctx, Kind kind, const std::string& pattern) {
-    const config::Workspace& ws = ctx.require_workspace(true);
+    const config::Workspace& ws = ctx.require_scope(true);
     json out = json::array();
     ui::Table t;
     auto dim = [&](const std::string& s) { return ctx.out.paint(ui::Style::Dim, s); };
@@ -291,8 +291,9 @@ static int list_workspace(app::Context& ctx, Kind kind, const std::string& patte
             json files = json::array();
             for (auto& f : p.files) files.push_back(config::to_utf8(f));
             out.push_back({ { "name", p.name }, { "kinds", p.kinds }, { "folder", config::to_utf8(p.dir) }, { "files", files },
-                            { "rant", version.empty() ? json(nullptr) : json(version) } });
-            t.row({ p.name, dim(joined(p.kinds, ", ")), version.empty() ? dim("no Rant") : "Rant " + version, dim(ctx.shown(p.dir)) });
+                            { "rant", version.empty() ? json(nullptr) : json(version) }, { "installed", p.installed } });
+            std::string uses = p.installed ? dim("installed") : version.empty() ? dim("no Rant") : "Rant " + version;
+            t.row({ p.name, dim(joined(p.kinds, ", ")), uses, dim(ctx.shown(p.dir)) });
         }
     } else {
         title = "GROUPS";

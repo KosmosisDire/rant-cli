@@ -168,7 +168,7 @@ static int restart_all(app::Context& ctx) {
     Summary summary(ctx, "");
     bool built;
     {
-        run::Session s(ctx.require_workspace());
+        run::Session s(ctx.require_scope());
         std::vector<Target> targets;
         for (auto& r : s.state().roots) {
             if (r.kind == "group") {
@@ -206,7 +206,7 @@ static int restart_nodes(app::Context& ctx, const std::vector<std::string>& name
     Summary summary(ctx, header);
     bool built;
     {
-        run::Session s(ctx.require_workspace());
+        run::Session s(ctx.require_scope());
         std::vector<Target> targets;
         for (auto& name : names) {
             state::Instance* inst = s.state().instance(name);
@@ -243,7 +243,7 @@ static int run(app::Context& ctx) {
     std::string group;
     bool built;
     {
-        run::Session s(ctx.require_workspace());
+        run::Session s(ctx.require_scope());
         auto roots = group_roots(ctx, s.state(), w[0], params);
         group = roots.front().name;
         std::vector<Target> targets;
