@@ -8,8 +8,9 @@ cmake_minimum_required(VERSION 3.21)
 # workspace started.
 set(OTHER "${SCRATCH}-other")
 
-# A run that failed may have left nodes running in its scratch workspaces. They are
-# stopped through the CLI first, since a running executable cannot be replaced.
+# A run that failed may have left nodes running in its scratch workspaces or its scratch
+# home. They are stopped through the CLI first, since a running executable cannot be replaced.
+set(ENV{RANT_HOME} "${SCRATCH}/home/.rant")
 file(GLOB_RECURSE leftover_states "${SCRATCH}/.rant/state" "${SCRATCH}/*/.rant/state" "${OTHER}/.rant/state")
 foreach(state_file IN LISTS leftover_states)
   get_filename_component(workspace "${state_file}" DIRECTORY)
@@ -32,7 +33,6 @@ endforeach()
 file(REMOVE_RECURSE "${SCRATCH}" "${OTHER}")
 file(MAKE_DIRECTORY "${SCRATCH}")
 set(CWD "${SCRATCH}")
-set(ENV{RANT_HOME} "${SCRATCH}/home/.rant")
 file(WRITE "${SCRATCH}/.empty-stdin" "")
 
 # Checks one CLI run's exit code against FAILS and hands its output to the caller's caller
