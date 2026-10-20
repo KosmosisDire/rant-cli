@@ -11,7 +11,7 @@ file(WRITE "${home}/.config/fish/conf.d/rant.fish" "fish_add_path -g \"${home}/.
 file(WRITE "${home}/.config/fish/conf.d/other.fish" "set -g x 1\n")
 file(MAKE_DIRECTORY "${home}/.claude")
 rant(setup skill)
-file(WRITE "${home}/.rant/bin/rant-explorer.version" "0.0.8\n")
+file(WRITE "${home}/.rant/packages/explorer/package.rant" "description = \"The explorer\"\n")
 
 rant(uninstall)
 expect_match("${OUT}" "removing:\n")

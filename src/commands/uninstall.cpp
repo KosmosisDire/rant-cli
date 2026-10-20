@@ -116,8 +116,8 @@ static std::vector<fs::path> removable(const fs::path& home) {
     return out;
 }
 
-/* ~/.rant and all in it but the bridge config: this rant, the explorer, the bridge, the shell
- * hooks, caches, the workspace list and the NuGet feed. */
+/* ~/.rant and all in it but the bridge config: this rant, the bridge, the installed packages,
+ * the shell hooks, caches, the workspace list and the NuGet feed. */
 static void remove_home(const fs::path& home) {
     packages::unlink_all();
     std::error_code ec;
@@ -202,7 +202,7 @@ static int run(app::Context& ctx) {
 }
 
 app::Command uninstall() {
-    return { "uninstall", "", "remove rant-cli, the explorer, the bridge, the VS Code extension and what setup added, never touching workspaces",
+    return { "uninstall", "", "remove rant-cli, the bridge, the installed packages and what setup added, never touching workspaces",
              app::Section::Setup, {}, run };
 }
 

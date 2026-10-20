@@ -40,6 +40,21 @@ Installed packages live in `~/.rant/packages`, built already. Every workspace se
 its own packages, and a package of the same name in the workspace hides one. Outside every
 workspace `run`, `stop`, `log` and `ls` act on them alone, with logs in `~/.rant/logs`.
 
+`rant install <name>` finds a package in `~/.rant/sources.rant` first, then the official
+package database, then the databases sources.rant adds, in order. sources.rant is written by
+hand and points a package at a local build folder, which is linked so each build counts at
+once, or at another repo:
+
+```hcl
+package "explorer" {
+  path = "C:/src/explorer-rant"   # a folder with package.rant, its run files and bin/
+}
+package "tool" {
+  repo = "someone/rant-tool"      # its GitHub releases
+}
+database "someone/rant-packages" {}
+```
+
 ## Commands
 
 | goal | command |
@@ -50,15 +65,16 @@ workspace `run`, `stop`, `log` and `ls` act on them alone, with logs in `~/.rant
 | run | `rant run <Group> key=value...`, one node alone with `rant run node <node>`, `--dry-run` first. It builds what it starts (`--no-build` skips that), waits up to 10 s for the nodes to come up (`--wait S`), watches them 2 s more (`--watch S`) and fails with the log of one that exited or never came up |
 | stop, restart | `rant stop [name]` (nothing named: all this workspace started), `rant stop --all` (every node on this machine), `rant restart [name]`, which stops, builds, then starts, the last build when the build fails. An included group runs inside the group that includes it and `rant ls nodes` lists it there: stopping or restarting it by name acts on just its own nodes |
 | node output | `rant log [name...]`, `-f` to follow, `-n N` lines, a group shows all its nodes |
-| see the mesh | `rant ls <nodes\|entities\|topics\|variables\|functions\|tasks\|types\|packages\|groups> [pattern]`, `rant ls` alone lists the kinds, `rant ls nodes --no-mesh` for only what this workspace started, without joining the mesh |
+| see the mesh | `rant ls <nodes\|entities\|topics\|variables\|functions\|tasks\|types\|packages\|groups\|sources> [pattern]`, `rant ls` alone lists the kinds, `rant ls nodes --no-mesh` for only what this workspace started, without joining the mesh |
 | explain one thing | `rant info [kind] <name>`, a type shows its fields and who uses it, a node its source file |
 | read and write | `rant sub <topic> -n 1`, `rant pub <topic> <value>`, `rant get <var>`, `rant set <var> <value>`, `rant call <fn> [value]` |
 | Rant version in packages | `rant lib [folder]` shows it, `rant lib install [folder]` adds it, `rant lib update [folder]` moves it, both take `--version V` |
-| update | `rant update`: the CLI, the explorer, the bridge, the VS Code extension and the skill where installed, then the workspace's packages |
-| visual debugger | `rant explore` |
+| packages | `rant install <package>...` (`--version V` for one release, `--from PATH` for a local build folder, linked, or a .tar.gz), `rant remove <package>...`, `rant ls packages --available` for what there is, `rant ls sources` for where it looks, `rant info package <name>` before installing. A package's nodes must be stopped before it changes |
+| update | `rant update`: the CLI, the bridge, the installed packages and the skill, then the workspace's packages. `rant update <package>...` updates only those. A package from `--from` stays until `rant install` replaces it |
+| visual debugger | `rant explore`, after `rant install explorer` |
 | web frontends | `rant bridge enable`, see Bridge |
 | explorer in a browser | `rant explore web enable`, see Web explorer |
-| VS Code | `rant vscode install` (`--editor cursor` for another editor, `--from PATH` for a built .vsix, `--profile NAME` for a VS Code profile), `rant vscode uninstall`. Without `--profile` it takes the profile a VS Code terminal's folder opens in, else asks when several profiles have their own extensions. In a remote terminal it installs on that remote. Its Mesh view joins the mesh itself, or through the bridge the setting `rant.bridgeUrl` names |
+| VS Code | `rant install vscode` (`--editor cursor` for another editor, `--profile NAME` for a VS Code profile), `rant remove vscode`. Without `--profile` it takes the profile it went into before, else the one a VS Code terminal's folder opens in, else asks when several profiles have their own extensions. In a remote terminal it installs on that remote. Its Mesh view joins the mesh itself, or through the bridge the setting `rant.bridgeUrl` names |
 
 Values on the command line are forgiving JSON: `{x: 1, y: 2}`, `[1, 2]`, or field words
 like `position.x=1`. Add `--json` to any command for output a program can read, `-y` to
@@ -164,12 +180,13 @@ node.subscriber("Pose", types.Pose2D, (p) => draw(p));
 ## Web explorer
 
 `rant explore web` serves the explorer as a web page, so any browser on the network opens it. It
-runs the installed explorer with `--web-server`, as a service of the user like the bridge.
-The page reaches the mesh through the bridge on the same host, so enable both.
+runs the explorer `rant install explorer` installed with `--web-server`, as a service of the
+user like the bridge. The page reaches the mesh through the bridge on the same host, so enable
+both.
 
 | goal | command |
 |---|---|
-| install, start now and at every login | `rant explore web enable` (prints the url), `--port N` and `--bind IP` set where it listens (6732 on every address unless set before), `--from PATH` uses an explorer you built |
+| start now and at every login | `rant explore web enable` (prints the url), `--port N` and `--bind IP` set where it listens (6732 on every address unless set before) |
 | stop it and stop it starting at login | `rant explore web disable` (the explorer stays) |
 | control | `rant explore web start`, `stop`, `restart`, `status` (`--json` for tools) |
 | output | `rant explore web logs`, `-f` to follow |
