@@ -5,6 +5,7 @@
 #include <csignal>
 #include <cstring>
 #include <fstream>
+#include <map>
 #include <optional>
 #include <sstream>
 #include <thread>
@@ -132,6 +133,12 @@ static pid_t fork_exec(const Command& c, bool detached, int out_fd) {
     return pid;
 }
 
+static int exit_code(int status) {
+    if (WIFEXITED(status)) return WEXITSTATUS(status);
+    if (WIFSIGNALED(status)) return 128 + WTERMSIG(status);
+    return 1;
+}
+
 int run(const Command& c, const fs::path& out_file) {
     int out = -1;
     if (!out_file.empty()) {
@@ -148,9 +155,7 @@ int run(const Command& c, const fs::path& out_file) {
     if (out >= 0) close(out);
     int status = 0;
     while (waitpid(pid, &status, 0) < 0 && errno == EINTR) {}
-    if (WIFEXITED(status)) return WEXITSTATUS(status);
-    if (WIFSIGNALED(status)) return 128 + WTERMSIG(status);
-    return 1;
+    return exit_code(status);
 }
 
 /* When the process started, in a unit the OS keeps for its life: clock ticks since boot on
@@ -173,7 +178,7 @@ static std::optional<uint64_t> start_time(pid_t pid) {
 #endif
 }
 
-Tracking start_detached(const Command& c, const fs::path& log, const std::string&) {
+Child start_child(const Command& c, const fs::path& log, const std::string&) {
     int fd = open(log.c_str(), O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0644);
     if (fd < 0) throw app::Failure("cannot open " + log.string() + ": " + std::strerror(errno));
     pid_t pid;
@@ -184,15 +189,35 @@ Tracking start_detached(const Command& c, const fs::path& log, const std::string
         throw;
     }
     close(fd);
-    Tracking t;
-    t.pid = (uint64_t)pid;
-    t.start_time = start_time(pid).value_or(0);
-    return t;
+    Child child;
+    child.tracking_.pid = (uint64_t)pid;
+    child.tracking_.start_time = start_time(pid).value_or(0);
+    return child;
 }
+
+Tracking start_detached(const Command& c, const fs::path& log, const std::string& job) {
+    return start_child(c, log, job).tracking();
+}
+
+Child::Child(Child&& o) noexcept : tracking_(o.tracking_), code_(o.code_) {}
+
+Child& Child::operator=(Child&& o) noexcept {
+    tracking_ = o.tracking_;
+    code_ = o.code_;
+    return *this;
+}
+
+Child::~Child() = default;
+
+/* The exit codes of our own children that reap collected, until a Child asks for its own. */
+static std::map<pid_t, int> reaped;
 
 /* Collects our own exited child, so a node started in this same run never lingers as a
  * zombie that still counts as a group member. Not our child: nothing happens. */
-static void reap(pid_t pid) { waitpid(pid, nullptr, WNOHANG); }
+static void reap(pid_t pid) {
+    int status = 0;
+    if (waitpid(pid, &status, WNOHANG) == pid) reaped[pid] = exit_code(status);
+}
 
 /* kill(-0) would signal our own group and kill(-1) every process we may signal, so a
  * tracked id below 2, which no started node can have, is never used. */
@@ -207,6 +232,14 @@ bool alive(const Tracking& t) {
      * another start time means the id was given to a new group. */
     auto st = start_time(pgid);
     return !st || !t.start_time || *st == t.start_time;
+}
+
+std::optional<int> Child::ended() {
+    if (code_ || alive(tracking_)) return code_;    /* alive reaps the leader */
+    auto it = reaped.find((pid_t)tracking_.pid);
+    code_ = it == reaped.end() ? 1 : it->second;    /* a code never seen is no success */
+    if (it != reaped.end()) reaped.erase(it);
+    return code_;
 }
 
 bool owns(const Tracking& t, uint64_t pid) {

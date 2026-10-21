@@ -180,7 +180,7 @@ static uint64_t creation_time(HANDLE process) {
     return ((uint64_t)created.dwHighDateTime << 32) | created.dwLowDateTime;
 }
 
-Tracking start_detached(const Command& c, const fs::path& log, const std::string& job_name) {
+Child start_child(const Command& c, const fs::path& log, const std::string& job_name) {
     SECURITY_ATTRIBUTES sa = inheritable();
     Handle out(CreateFileW(log.wstring().c_str(), FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                            &sa, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr));
@@ -204,13 +204,34 @@ Tracking start_detached(const Command& c, const fs::path& log, const std::string
         throw app::Failure("cannot track " + c.argv[0] + " in a job: " + why);
     }
     ResumeThread(pi.hThread);
-    Tracking t;
-    t.pid = pi.dwProcessId;
-    t.start_time = creation_time(pi.hProcess);
-    t.job = job_name;
+    Child child;
+    child.tracking_.pid = pi.dwProcessId;
+    child.tracking_.start_time = creation_time(pi.hProcess);
+    child.tracking_.job = job_name;
+    child.handle_ = pi.hProcess;
     CloseHandle(pi.hThread);
-    CloseHandle(pi.hProcess);
-    return t;
+    return child;
+}
+
+Tracking start_detached(const Command& c, const fs::path& log, const std::string& job_name) {
+    return start_child(c, log, job_name).tracking();
+}
+
+Child::Child(Child&& o) noexcept : tracking_(o.tracking_), handle_(o.handle_), code_(o.code_) { o.handle_ = nullptr; }
+
+Child& Child::operator=(Child&& o) noexcept {
+    if (this != &o) {
+        if (handle_) CloseHandle(handle_);
+        tracking_ = o.tracking_;
+        handle_ = o.handle_;
+        code_ = o.code_;
+        o.handle_ = nullptr;
+    }
+    return *this;
+}
+
+Child::~Child() {
+    if (handle_) CloseHandle(handle_);
 }
 
 static Handle open_job(const Tracking& t, DWORD access) {
@@ -226,6 +247,13 @@ static DWORD active_processes(HANDLE job) {
 bool alive(const Tracking& t) {
     Handle job = open_job(t, JOB_OBJECT_QUERY);
     return job && active_processes(job.get()) > 0;
+}
+
+std::optional<int> Child::ended() {
+    DWORD code = 0;
+    if (code_ || alive(tracking_) || !handle_ || !GetExitCodeProcess(handle_, &code) || code == STILL_ACTIVE) return code_;
+    code_ = (int)code;
+    return code_;
 }
 
 bool owns(const Tracking& t, uint64_t pid) {

@@ -25,6 +25,33 @@ struct Tracking {
  * Throws app::Failure when it cannot start. */
 Tracking start_detached(const Command& c, const fs::path& log, const std::string& job);
 
+/* A detached process this one started and stays the parent of, so it learns the exit code,
+ * which only the parent can. */
+class Child {
+public:
+    Child() = default;
+    Child(Child&& o) noexcept;
+    Child& operator=(Child&& o) noexcept;
+    Child(const Child&) = delete;
+    Child& operator=(const Child&) = delete;
+    ~Child();
+
+    const Tracking& tracking() const { return tracking_; }
+
+    /* Its exit code once all of it ended, 128 plus the signal on POSIX, nullopt while any
+     * process of it runs. */
+    std::optional<int> ended();
+
+private:
+    friend Child start_child(const Command& c, const fs::path& log, const std::string& job);
+    Tracking           tracking_;
+    void*              handle_ = nullptr;    /* the Windows process handle */
+    std::optional<int> code_;
+};
+
+/* start_detached, keeping the process as a child. */
+Child start_child(const Command& c, const fs::path& log, const std::string& job);
+
 /* This executable's own path. */
 fs::path self_path();
 

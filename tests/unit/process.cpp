@@ -71,6 +71,29 @@ TEST(a_process_that_exits_is_not_alive) {
     CHECK(!process::alive(t));
 }
 
+TEST(a_child_tells_its_exit_code) {
+    auto dir = scratch("child");
+    process::Child ok = process::start_child({ { cmake(), "-E", "true" }, dir, {} }, dir / "ok.log", "Local\\rant-unit-child-ok");
+    process::Child bad = process::start_child({ { cmake(), "-E", "false" }, dir, {} }, dir / "bad.log", "Local\\rant-unit-child-bad");
+    process::Child slow = process::start_child({ { cmake(), "-E", "sleep", "30" }, dir, {} }, dir / "slow.log", "Local\\rant-unit-child-slow");
+    std::optional<int> a, b;
+    for (int i = 0; i < 200 && !(a && b); i++) {
+        if (!a) a = ok.ended();
+        if (!b) b = bad.ended();
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+    CHECK(a == 0);
+    CHECK(b == 1);
+    CHECK(!slow.ended().has_value());
+    process::stop(slow.tracking(), std::chrono::seconds(3));
+    std::optional<int> c;
+    for (int i = 0; i < 200 && !c; i++) {
+        c = slow.ended();
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+    CHECK(c.has_value());
+}
+
 TEST(an_untrackable_id_is_never_signalled) {
     for (uint64_t pid : { 0ull, 1ull }) {
         process::Tracking t;
