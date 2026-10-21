@@ -31,7 +31,6 @@ app::Command lib();
 app::Command install();
 app::Command remove();
 app::Command explore();
-app::Command bridge_();
 app::Command update();
 app::Command uninstall();
 

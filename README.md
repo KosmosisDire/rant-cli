@@ -12,9 +12,9 @@ irm https://raw.githubusercontent.com/KosmosisDire/rant-cli/main/install.ps1 | i
 ```
 
 Each lists what it will do and asks first: the `rant` command goes to `~/.rant/bin`, that
-folder onto PATH, then `rant setup` adds tab completion. Later, `rant update` moves it, the
-bridge and the installed packages to their newest releases, and `rant uninstall` removes all
-of it again, leaving workspaces as they are.
+folder onto PATH, then `rant setup` adds tab completion. Later, `rant update` moves it and
+the installed packages to their newest releases, and `rant uninstall` removes all of it again,
+leaving workspaces as they are.
 
 ## Use
 

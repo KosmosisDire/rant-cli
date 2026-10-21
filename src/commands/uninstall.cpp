@@ -4,8 +4,6 @@
 
 #include "agents/skill.hpp"
 #include "app/failure.hpp"
-#include "commands/bridge.hpp"
-#include "commands/web.hpp"
 #include "commands/commands.hpp"
 #include "complete/shells.hpp"
 #include "library/library.hpp"
@@ -13,6 +11,7 @@
 #include "packages/vsix.hpp"
 #include "process/command.hpp"
 #include "process/supervisor.hpp"
+#include "services/entry.hpp"
 #include "ui/prompt.hpp"
 #include "util/home.hpp"
 
@@ -27,6 +26,9 @@ namespace commands {
 
 namespace fs = std::filesystem;
 using complete::Added;
+
+/* The bridge package's config, which holds the user's passphrase and settings. */
+static fs::path bridge_config() { return util::rant_home() / "bridge.yaml"; }
 
 #ifdef _WIN32
 /* A path as the user PATH compares it: normalized, without a trailing slash, any case. */
@@ -86,7 +88,7 @@ static void remove_later(const fs::path& home) {
     std::vector<fs::path> files, dirs;
     std::error_code ec;
     for (fs::recursive_directory_iterator it(home, ec), end; !ec && it != end; it.increment(ec)) {
-        if (it->path() == bridge::config_path()) continue;
+        if (it->path() == bridge_config()) continue;
         (it->is_directory(ec) ? dirs : files).push_back(it->path());
     }
     std::sort(dirs.begin(), dirs.end(), [](const fs::path& a, const fs::path& b) { return a.native().size() > b.native().size(); });
@@ -112,12 +114,12 @@ static std::vector<fs::path> removable(const fs::path& home) {
     std::vector<fs::path> out;
     std::error_code ec;
     for (fs::directory_iterator it(home, ec), end; !ec && it != end; it.increment(ec))
-        if (it->path() != bridge::config_path()) out.push_back(it->path());
+        if (it->path() != bridge_config()) out.push_back(it->path());
     return out;
 }
 
-/* ~/.rant and all in it but the bridge config: this rant, the bridge, the installed packages,
- * the shell hooks, caches, the workspace list and the NuGet feed. */
+/* ~/.rant and all in it but the bridge config: this rant, the installed packages, the shell
+ * hooks, caches, the workspace list and the NuGet feed. */
 static void remove_home(const fs::path& home) {
     packages::unlink_all();
     std::error_code ec;
@@ -168,12 +170,10 @@ static int run(app::Context& ctx) {
             steps.push_back({ {}, "the VS Code extension " + r->extension + ", through " + packages::vsix::shown(t),
                               [t, id = r->extension] { packages::vsix::remove(t, id); } });
     }
-    if (service::enabled(bridge::service()) || service::running(bridge::service()))
-        steps.push_back({ bridge::installed(), "stopped and no longer started at login", [] { service::disable(bridge::service()); } });
-    if (service::enabled(web::service()) || service::running(web::service()))
-        steps.push_back({ {}, "the web explorer, stopped and no longer started at login", [] { service::disable(web::service()); } });
+    if (services::entry::present())
+        steps.push_back({ {}, "the login entry that starts what rant enable named", [] { services::entry::remove(); } });
     std::error_code ec;
-    bool config_only = fs::exists(bridge::config_path(), ec) && removable(home).empty();
+    bool config_only = fs::exists(bridge_config(), ec) && removable(home).empty();
     if (fs::exists(home, ec) && !config_only) steps.push_back({ home, "", [home] { remove_home(home); } });
 
     if (steps.empty()) {
@@ -186,7 +186,7 @@ static int run(app::Context& ctx) {
         ctx.out.line("  " + (s.path.empty() ? s.part : s.part.empty() ? where : where + " (" + s.part + ")"));
     }
     ctx.out.line("Workspaces stay as they are, and running nodes keep running.");
-    if (fs::exists(bridge::config_path(), ec)) ctx.out.line(bridge::config_path().u8string() + " stays, it holds your bridge passphrase and settings.");
+    if (fs::exists(bridge_config(), ec)) ctx.out.line(bridge_config().u8string() + " stays, it holds your bridge passphrase and settings.");
     if (!ui::confirm("Uninstall?", ctx.yes)) return 1;
     bool ok = true;
     for (auto& s : steps) {
@@ -202,7 +202,7 @@ static int run(app::Context& ctx) {
 }
 
 app::Command uninstall() {
-    return { "uninstall", "", "remove rant-cli, the bridge, the installed packages and what setup added, never touching workspaces",
+    return { "uninstall", "", "remove rant-cli, the installed packages and what setup added, never touching workspaces",
              app::Section::Setup, {}, run };
 }
 

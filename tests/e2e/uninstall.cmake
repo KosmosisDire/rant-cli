@@ -38,16 +38,10 @@ endforeach()
 rant(uninstall)
 expect_match("${OUT}" "^rant-cli left nothing here to remove\n$")
 
-# The bridge config holds the user's passphrase, so it stays when the rest goes. The bridge
-# here is a stand in file and no service of this home exists, so the registry stays untouched.
-get_filename_component(ext "${RANT}" LAST_EXT)
-if(NOT ext STREQUAL ".exe")
-  set(ext "")
-endif()
+# The bridge config holds the user's passphrase, so it stays when the rest goes. No login
+# entry names this home, so the real one stays untouched.
 file(WRITE "${home}/.rant/bridge.yaml" "passphrase: secret\n")
-file(WRITE "${home}/.rant/bin/rant-bridge${ext}" "stand in\n")
-file(WRITE "${home}/.rant/bin/rant-bridge.version" "0.1.0\n")
-file(WRITE "${home}/.rant/bridge.state" "pid: 2147483000\nurl: ws://127.0.0.1:7480\n")
+file(WRITE "${home}/.rant/packages/bridge/package.rant" "name = \"bridge\"\n")
 rant(uninstall)
 expect_match("${OUT}" "[.]rant\n")
 expect_match("${OUT}" "bridge[.]yaml stays, it holds your bridge passphrase and settings")

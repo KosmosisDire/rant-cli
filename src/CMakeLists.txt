@@ -9,7 +9,6 @@ add_library(rant_cli_core STATIC
   app/args.cpp
   app/context.cpp
   app/run.cpp
-  commands/bridge.cpp
   commands/build.cpp
   commands/call.cpp
   commands/commands.cpp
@@ -29,7 +28,6 @@ add_library(rant_cli_core STATIC
   commands/remove.cpp
   commands/restart.cpp
   commands/run.cpp
-  commands/service.cpp
   commands/set.cpp
   commands/setup.cpp
   commands/stop.cpp
@@ -37,7 +35,6 @@ add_library(rant_cli_core STATIC
   commands/summary.cpp
   commands/uninstall.cpp
   commands/update.cpp
-  commands/web.cpp
   complete/complete.cpp
   complete/shells.cpp
   config/config.cpp
@@ -59,6 +56,7 @@ add_library(rant_cli_core STATIC
   run/logs.cpp
   run/nodes.cpp
   scaffold/scaffold.cpp
+  services/entry.cpp
   services/services.cpp
   state/state.cpp
   ui/csv.cpp

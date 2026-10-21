@@ -70,10 +70,10 @@ database "someone/rant-packages" {}
 | read and write | `rant sub <topic> -n 1`, `rant pub <topic> <value>`, `rant get <var>`, `rant set <var> <value>`, `rant call <fn> [value]` |
 | Rant version in packages | `rant lib [folder]` shows it, `rant lib install [folder]` adds it, `rant lib update [folder]` moves it, both take `--version V` |
 | packages | `rant install <package>...` (`--version V` for one release, `--from PATH` for a local build folder, linked, or a .tar.gz), `rant remove <package>...`, `rant ls packages --available` for what there is, `rant ls sources` for where it looks, `rant info package <name>` before installing. A package's nodes must be stopped before it changes |
-| update | `rant update`: the CLI, the bridge, the installed packages and the skill, then the workspace's packages. `rant update <package>...` updates only those. A package from `--from` stays until `rant install` replaces it |
+| update | `rant update`: the CLI, the installed packages and the skill, then the workspace's packages. `rant update <package>...` updates only those. A package from `--from` stays until `rant install` replaces it |
 | visual debugger | `rant explore`, after `rant install explorer` |
-| web frontends | `rant bridge enable`, see Bridge |
-| explorer in a browser | `rant explore web enable`, see Web explorer |
+| web frontends | `rant install bridge`, then `rant run Bridge`, see Bridge |
+| explorer in a browser | `rant install explorer`, then `rant run WebExplorer`, see Web explorer |
 | VS Code | `rant install vscode` (`--editor cursor` for another editor, `--profile NAME` for a VS Code profile), `rant remove vscode`. Without `--profile` it takes the profile it went into before, else the one a VS Code terminal's folder opens in, else asks when several profiles have their own extensions. In a remote terminal it installs on that remote. Its Mesh view joins the mesh itself, or through the bridge the setting `rant.bridgeUrl` names |
 
 Values on the command line are forgiving JSON: `{x: 1, y: 2}`, `[1, 2]`, or field words
@@ -140,21 +140,18 @@ it for good.
 ## Bridge
 
 The bridge is a background server that lends this host's UDP sockets to Rant nodes elsewhere:
-pages, which have none, and programs on another network, so they join this host's mesh. rant
-installs it and keeps it running as a service of the user, no admin needed.
+pages, which have none, and programs on another network, so they join this host's mesh. It is
+the package `bridge`, and its group `Bridge` runs it like any group, no admin needed.
 
 | goal | command |
 |---|---|
-| install, start now and at every login | `rant bridge enable` (prints the url), `--from PATH` uses a bridge you built |
-| where it listens, the passphrase | `rant bridge enable --bind IP --port N --pass TEXT`, any of them, restarts a running bridge. Every interface on 6731 by default, `--bind 127.0.0.1` this computer only, `--pass ""` no passphrase |
-| stop it and stop it starting at login | `rant bridge disable` (the binary and the config stay) |
-| control | `rant bridge start`, `stop`, `restart`, `status` (`--json` for tools) |
-| output | `rant bridge logs`, `-f` to follow |
-| in the foreground | `rant bridge run [-- bridge args]` |
+| install | `rant install bridge`, `--from PATH` for a bridge you built |
+| run it | `rant run Bridge`, `rant stop Bridge`, `rant restart Bridge` |
+| output | `rant log Bridge`, `-f` to follow |
 
-- The config is `~/.rant/bridge.yaml`, which holds a random passphrase until one is set.
-  `enable` changes its address and passphrase through the bridge. For the rest edit it by
-  hand, then run `rant bridge restart`.
+- Its config is `~/.rant/bridge.yaml`, written at its first start with a random passphrase.
+  It listens on every interface on 6731 unless the config says otherwise. Edit it by hand,
+  then run `rant restart Bridge`.
 - Bridges find each other over mDNS: each answers `rant-bridges.local` and lists the others,
   which `findBridges()` from `rant-middleware/tunnel` reads with no passphrase. `advertise:
   false` in the config turns it off.
@@ -185,18 +182,16 @@ node.subscriber("Pose", types.Pose2D, (p) => draw(p));
 
 ## Web explorer
 
-`rant explore web` serves the explorer as a web page, so any browser on the network opens it. It
-runs the explorer `rant install explorer` installed with `--web-server`, as a service of the
-user like the bridge. The page reaches the mesh through the bridge on the same host, so enable
+The explorer package's group `WebExplorer` serves the explorer as a web page, so any browser
+on the network opens it. The page reaches the mesh through the bridge on the same host, so run
 both.
 
 | goal | command |
 |---|---|
-| start now and at every login | `rant explore web enable` (prints the url), `--port N` and `--bind IP` set where it listens (6732 on every address unless set before) |
-| stop it and stop it starting at login | `rant explore web disable` (the explorer stays) |
-| control | `rant explore web start`, `stop`, `restart`, `status` (`--json` for tools) |
-| output | `rant explore web logs`, `-f` to follow |
-| in the foreground | `rant explore web run [-- explorer args]` |
+| install | `rant install explorer` |
+| run it | `rant run WebExplorer`, `port=N` and `bind=IP` set where it listens, 6732 on every address by default |
+| stop it | `rant stop WebExplorer` |
+| output | `rant log WebExplorer`, `-f` to follow |
 
 ## Writing nodes
 

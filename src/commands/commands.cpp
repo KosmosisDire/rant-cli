@@ -27,7 +27,6 @@ const std::vector<app::Command>& all() {
         update(),
         uninstall(),
         explore(),
-        bridge_(),
     };
     return list;
 }
