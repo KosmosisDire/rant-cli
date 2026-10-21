@@ -53,7 +53,8 @@ process::Child start(const config::fs::path& data, const state::Instance& rec) {
         config::fs::rename(log, previous, ec);
     }
 
-    process::Command c{ rec.argv, config::from_utf8(rec.cwd), rec.env };
+    process::Command c{ rec.argv, config::from_utf8(rec.cwd), rec.env, {}, std::nullopt };
+    if (!rec.launch_env.empty()) c.base = rec.launch_env;
     /* Launcher variables: the node's mesh name, read by the Rant library, and unbuffered
      * Python so its log keeps up. The name holds its node prefix already. */
     c.env["RANT_NODE_NAME"] = rec.name;
@@ -76,8 +77,12 @@ state::Instance spawn(const config::Workspace& ws, const config::Instance& inst,
     rec.restart = inst.restart;
     state::remember(ws.data);
     /* running first, so no command drops the record as dead before it starts the node */
-    if (rec.restart != "never") services::ensure_running();
-    else rec.tracking = start(ws.data, rec).tracking();
+    if (rec.restart != "never") {
+        services::ensure_running();
+        rec.launch_env = process::environment({});
+    } else {
+        rec.tracking = start(ws.data, rec).tracking();
+    }
     return rec;
 }
 

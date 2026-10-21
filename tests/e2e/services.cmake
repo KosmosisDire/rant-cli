@@ -44,6 +44,24 @@ expect_no_match("${LOG}" "plain")
 file(READ "${SCRATCH}/.rant/state" state)
 expect_match("${state}" "\"restarts\": [1-9]")
 
+# A node the service process starts, running already, has the environment of the rant run
+# that asked for it.
+file(WRITE "${SCRATCH}/tools/package.rant" "name = \"tools\"
+node \"dump\" {
+  run = [\"${CMAKE_COMMAND}\", \"-E\", \"environment\"]
+  expect_mesh = false
+}
+")
+file(WRITE "${SCRATCH}/Dump.run" "restart = \"on-failure\"
+node \"tools/dump\" {}
+")
+set(ENV{RANT_TEST_MARK} "from-the-shell")
+rant(run Dump --watch 0)
+unset(ENV{RANT_TEST_MARK})
+wait_for_service_log("dump exited with code 0")
+file(READ "${SCRATCH}/logs/dump.log" dumped)
+expect_match("${dumped}" "RANT_TEST_MARK=from-the-shell")
+
 # A stopped node stays stopped, whatever its restart says.
 rant(stop Keep)
 file(READ "$ENV{RANT_HOME}/logs/services.log" before)

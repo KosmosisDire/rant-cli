@@ -39,6 +39,7 @@ struct Instance {
     bool                               expect_mesh = true;    /* false for a program that never joins the mesh */
     std::string                        restart = "never";     /* or "on-failure" or "always", which the service process does */
     int                                restarts = 0;          /* how often the service process started it again */
+    std::vector<std::string>           launch_env;            /* the environment of the command that left it to the service process */
 
     /* Same type, argv, env and working directory. */
     bool same_spec(const Instance& o) const;

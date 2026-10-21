@@ -43,6 +43,14 @@ TEST(environment_applies_overrides_and_leaves_out_unset_names) {
     CHECK(!path);
 }
 
+TEST(a_base_environment_replaces_the_inherited_one) {
+    process::Command c{ {}, {}, { { "RANT_UNIT_B", "2" } }, {}, std::vector<std::string>{ "RANT_UNIT_A=1" } };
+    auto env = process::environment(c);
+    CHECK(env.size() == 2u);
+    CHECK(env[0] == "RANT_UNIT_A=1");
+    CHECK(env[1] == "RANT_UNIT_B=2");
+}
+
 TEST(find_program_searches_path_and_takes_relative_paths) {
     CHECK(process::find_program(fs::path(cmake()).filename().u8string(), fs::current_path()).has_value() ||
           !std::getenv("PATH"));

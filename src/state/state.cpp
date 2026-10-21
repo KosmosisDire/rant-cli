@@ -64,6 +64,7 @@ static State from_json(const json& j) {
         in.expect_mesh = i.value("expect_mesh", true);
         in.restart = i.value("restart", "never");
         in.restarts = i.value("restarts", 0);
+        in.launch_env = i.value("launch_env", std::vector<std::string>{});
         s.instances.push_back(std::move(in));
     }
     return s;
@@ -72,8 +73,8 @@ static State from_json(const json& j) {
 static json to_json(const State& s) {
     json roots = json::array(), instances = json::array();
     for (auto& r : s.roots) roots.push_back({ { "kind", r.kind }, { "name", r.name }, { "params", r.params } });
-    for (auto& i : s.instances)
-        instances.push_back({ { "name", i.name },
+    for (auto& i : s.instances) {
+        json rec = { { "name", i.name },
                               { "type", i.type },
                               { "argv", i.argv },
                               { "env", i.env },
@@ -86,7 +87,10 @@ static json to_json(const State& s) {
                               { "group", i.group },
                               { "expect_mesh", i.expect_mesh },
                               { "restart", i.restart },
-                              { "restarts", i.restarts } });
+                              { "restarts", i.restarts } };
+        if (!i.launch_env.empty()) rec["launch_env"] = i.launch_env;
+        instances.push_back(rec);
+    }
     return { { "format", FORMAT }, { "roots", roots }, { "instances", instances } };
 }
 
