@@ -91,6 +91,16 @@ execute_process(COMMAND "${CMAKE_COMMAND}" -E touch "${SCRATCH}/tool.tar.gz")
 rant(update tool -y)
 expect_match("${ERR}" "installed tool from")
 
+# An update stops the nodes running from the package and starts them again after.
+rant(run Tool)
+execute_process(COMMAND "${CMAKE_COMMAND}" -E sleep 1.1)
+execute_process(COMMAND "${CMAKE_COMMAND}" -E touch "${SCRATCH}/tool.tar.gz")
+rant(update tool -y)
+expect_match("${ERR}" "stopped worker while tool changes.*installed tool from.*started worker again")
+rant(ls nodes --no-mesh)
+expect_match("${OUT}" "Tool:\n +worker\n")
+rant(stop Tool)
+
 # What --from installed stays until rant install says otherwise.
 rant(install tool --from tool-build)
 rant(update tool)

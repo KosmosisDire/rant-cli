@@ -13,6 +13,7 @@
 #include "packages/packages.hpp"
 #include "process/command.hpp"
 #include "process/supervisor.hpp"
+#include "run/nodes.hpp"
 #include "ui/prompt.hpp"
 #include "util/home.hpp"
 
@@ -80,12 +81,24 @@ static int update_programs(app::Context& ctx, const std::vector<std::string>& na
     if (!ui::confirm("Update?", ctx.yes)) return 1;
 
     for (auto& m : moves) {
+        /* Windows will not replace a folder a node runs from, so its nodes stop meanwhile */
+        config::fs::path folder = packages::dir() / m.source.name;
+        std::vector<run::Paused> paused;
+        if (!packages::is_link(folder)) paused = run::pause_from(folder);
+        std::string stopped;
+        for (auto& p : paused) stopped += (stopped.empty() ? "" : ", ") + p.rec.name;
+        if (!paused.empty()) ctx.out.note("stopped " + stopped + " while " + m.source.name + " changes");
         try {
             packages::install(ctx, m.source, m.source.repo.empty() ? "" : m.to);
         } catch (const app::Failure& e) {
             ctx.out.error(e.what());
             code = 1;
         }
+        if (paused.empty()) continue;
+        std::vector<std::string> failed = run::resume(paused);
+        for (auto& f : failed) ctx.out.warn("not started again, " + f);
+        if (failed.empty()) ctx.out.note("started " + stopped + " again");
+        else code = 1;
     }
     if (!a) return code;
     net::download(a->url, self, true);

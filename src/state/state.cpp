@@ -23,6 +23,12 @@ bool Instance::same_spec(const Instance& o) const {
     return type == o.type && argv == o.argv && env == o.env && cwd == o.cwd;
 }
 
+bool Instance::runs_from(const fs::path& folder) const {
+    bool from = util::holds(folder, fs::u8path(cwd));
+    for (auto& a : argv) from = from || util::holds(folder, fs::u8path(a));
+    return from;
+}
+
 Instance* State::instance(const std::string& name) {
     for (auto& i : instances)
         if (i.name == name) return &i;

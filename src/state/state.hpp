@@ -42,6 +42,9 @@ struct Instance {
 
     /* Same type, argv, env and working directory. */
     bool same_spec(const Instance& o) const;
+
+    /* Its program or its working directory lies inside folder. */
+    bool runs_from(const fs::path& folder) const;
 };
 
 struct State {

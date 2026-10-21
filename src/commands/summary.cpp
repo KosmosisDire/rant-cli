@@ -177,7 +177,7 @@ int bring_up(app::Context& ctx, Summary& summary, const config::Workspace& ws, s
         return *std::find_if(summary.rows.begin(), summary.rows.end(), [&](auto& r) { return r.name == name; });
     };
     try {
-        started = run::hand_over(ws, std::move(started));
+        started = run::hand_over(ws.data, std::move(started));
     } catch (...) {
         summary.finish();
         throw;

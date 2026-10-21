@@ -290,11 +290,8 @@ static std::vector<std::string> running_from(const fs::path& folder) {
         state::Store store(d);
         state::prune(store.state(), services::running());
         store.save();
-        for (auto& i : store.state().instances) {
-            bool from = util::holds(folder, config::from_utf8(i.cwd));
-            for (auto& a : i.argv) from = from || util::holds(folder, config::from_utf8(a));
-            if (from) out.push_back(i.name);
-        }
+        for (auto& i : store.state().instances)
+            if (i.runs_from(folder)) out.push_back(i.name);
     }
     return out;
 }

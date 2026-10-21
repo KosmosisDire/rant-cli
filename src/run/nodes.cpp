@@ -81,10 +81,10 @@ state::Instance spawn(const config::Workspace& ws, const config::Instance& inst,
     return rec;
 }
 
-std::vector<state::Instance> hand_over(const config::Workspace& ws, std::vector<state::Instance> started) {
+std::vector<state::Instance> hand_over(const config::fs::path& data, std::vector<state::Instance> started) {
     auto waiting = [&] { return std::any_of(started.begin(), started.end(), [](const state::Instance& i) { return i.tracking.pid == 0; }); };
     if (!waiting()) return started;
-    state::remember(ws.data);    /* again, since the state file it needs now exists */
+    state::remember(data);    /* again, since the state file it needs now exists */
     services::wake();
     for (int i = 0; waiting(); i++) {
         if (i == 300) throw app::Failure("rant's service process did not start the nodes in 15 s, see " + config::to_utf8(services::log_file()));
@@ -93,7 +93,7 @@ std::vector<state::Instance> hand_over(const config::Workspace& ws, std::vector<
             services::ensure_running();    /* it ended just before the records came */
             services::wake();
         }
-        state::Store store(ws.data);
+        state::Store store(data);
         for (auto& rec : started) {
             if (rec.tracking.pid) continue;
             const state::Instance* now = store.state().instance(rec.name);
@@ -102,6 +102,62 @@ std::vector<state::Instance> hand_over(const config::Workspace& ws, std::vector<
         }
     }
     return started;
+}
+
+std::vector<Paused> pause_from(const config::fs::path& folder) {
+    std::vector<Paused> out;
+    for (auto& data : state::remembered()) {
+        state::Store store(data);
+        state::State& st = store.state();
+        state::prune(st, services::running());
+        std::vector<std::string> names;
+        for (auto it = st.instances.rbegin(); it != st.instances.rend(); ++it) {
+            if (!it->runs_from(folder)) continue;
+            halt(*it);
+            out.push_back({ data, *it });
+            names.push_back(it->name);
+        }
+        for (auto& name : names) forget(st, name);
+        store.save();
+    }
+    return out;
+}
+
+std::vector<std::string> resume(const std::vector<Paused>& paused) {
+    std::vector<std::string> failed;
+    std::vector<config::fs::path> folders;
+    for (auto& p : paused)
+        if (std::find(folders.begin(), folders.end(), p.data) == folders.end()) folders.push_back(p.data);
+    for (auto& data : folders) {
+        std::vector<state::Instance> started;
+        {
+            state::Store store(data);
+            state::State& st = store.state();
+            for (auto it = paused.rbegin(); it != paused.rend(); ++it) {
+                if (it->data != data || st.instance(it->rec.name)) continue;
+                state::Instance rec = it->rec;
+                rec.tracking = {};
+                try {
+                    if (rec.restart != "never") services::ensure_running();
+                    else rec.tracking = start(data, rec).tracking();
+                } catch (const app::Failure& e) {
+                    failed.push_back(rec.name + ": " + e.what());
+                    continue;
+                }
+                for (auto& key : rec.roots)
+                    if (key == "node " + rec.name && !st.root(key)) st.roots.push_back({ "node", rec.name, {} });
+                st.instances.push_back(rec);
+                started.push_back(rec);
+            }
+            store.save();
+        }
+        try {
+            hand_over(data, started);
+        } catch (const app::Failure& e) {
+            failed.push_back(e.what());
+        }
+    }
+    return failed;
 }
 
 process::Stopped halt(const state::Instance& inst) {

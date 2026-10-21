@@ -45,9 +45,25 @@ state::Instance spawn(const config::Workspace& ws, const config::Instance& inst,
  * its last log moved aside first. Throws app::Failure. */
 process::Child start(const config::fs::path& data, const state::Instance& rec);
 
-/* Once the state holding started is saved and unlocked: waits until the service process
- * started those spawn left to it, and returns them with their processes. Throws app::Failure. */
-std::vector<state::Instance> hand_over(const config::Workspace& ws, std::vector<state::Instance> started);
+/* Once the state holding started, in the data folder data, is saved and unlocked: waits until
+ * the service process started those spawn left to it, and returns them with their processes.
+ * Throws app::Failure. */
+std::vector<state::Instance> hand_over(const config::fs::path& data, std::vector<state::Instance> started);
+
+/* A node stopped for a while, such as while its package is replaced. */
+struct Paused {
+    config::fs::path data;
+    state::Instance  rec;
+};
+
+/* Stops every node any workspace started from inside folder, last started first, and drops
+ * it from its state until resume. */
+std::vector<Paused> pause_from(const config::fs::path& folder);
+
+/* Starts paused nodes again in their first order, under their names and roots, those with
+ * restart set through the service process. One a command started meanwhile is left be.
+ * Returns why each that did not start failed. */
+std::vector<std::string> resume(const std::vector<Paused>& paused);
 
 /* An instance that exited, and how long after the watch began it was seen gone. */
 struct Exit {
