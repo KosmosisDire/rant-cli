@@ -28,8 +28,8 @@ std::optional<fs::path> find_program(const std::string& program, const fs::path&
 /* find_program for a command's argv[0], or a failure saying where it was looked for. */
 fs::path require_program(const Command& c);
 
-/* Runs a command to its end with this process's stdin, stdout and stderr, stdout to the
- * file out when given, and returns its exit code. Throws app::Failure when it cannot start. */
+/* Runs a command to its end with this process's stdin, stdout and stderr, and returns its exit
+ * code. With a file out, stdout goes there and stderr nowhere. Throws app::Failure when it cannot start. */
 int run(const Command& c, const fs::path& out = {});
 
 /* run as an administrator: through the admin prompt on Windows, which passes no env and
@@ -37,7 +37,8 @@ int run(const Command& c, const fs::path& out = {});
  * it cannot start or the prompt is declined. */
 int run_elevated(const Command& c);
 
-/* What a command printed on stdout, nullopt when it cannot start or exits nonzero. */
+/* What a command printed on stdout, nullopt when it cannot start or exits nonzero. What it
+ * says on stderr is dropped, since a caller only probes. */
 std::optional<std::string> output(const Command& c);
 
 /* The inherited environment, or the command's base, with its env and unset applied, as sorted

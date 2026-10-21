@@ -83,7 +83,7 @@ static void close_other_fds(int keep) {
  * caller learns of it rather than reading an exit code. */
 static pid_t fork_exec(const Command& c, bool detached, int out_fd) {
     Prepared p = prepare(c);
-    int nul = detached ? open("/dev/null", O_RDONLY | O_CLOEXEC) : -1;
+    int nul = detached || out_fd >= 0 ? open("/dev/null", O_RDWR | O_CLOEXEC) : -1;
     int pipefd[2];
     if (pipe(pipefd) != 0) throw app::Failure(std::string("pipe: ") + std::strerror(errno));
     fcntl(pipefd[0], F_SETFD, FD_CLOEXEC);
@@ -101,6 +101,7 @@ static pid_t fork_exec(const Command& c, bool detached, int out_fd) {
             dup2(out_fd, 2);
         } else if (out_fd >= 0) {
             dup2(out_fd, 1);
+            dup2(nul, 2);
         }
         int report = fcntl(pipefd[1], F_DUPFD_CLOEXEC, 3);
         close_other_fds(report);

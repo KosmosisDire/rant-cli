@@ -2,7 +2,18 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <functional>
+#include <iterator>
 #include <thread>
+
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+#else
+#include <fcntl.h>
+#include <unistd.h>
+#endif
 
 #include "check.hpp"
 #include "process/command.hpp"
@@ -30,6 +41,36 @@ TEST(run_returns_the_exit_code) {
 
 TEST(run_refuses_a_missing_program) {
     CHECK_THROWS(process::run({ { "no-such-program-rant-test" }, fs::current_path(), {} }));
+}
+
+/* What lands on this process's stderr while f runs. */
+static std::string stderr_of(const fs::path& file, const std::function<void()>& f) {
+#ifdef _WIN32
+    HANDLE h = CreateFileW(file.wstring().c_str(), GENERIC_WRITE, FILE_SHARE_READ, nullptr, CREATE_ALWAYS, 0, nullptr);
+    HANDLE old = GetStdHandle(STD_ERROR_HANDLE);
+    SetStdHandle(STD_ERROR_HANDLE, h);
+    f();
+    SetStdHandle(STD_ERROR_HANDLE, old);
+    CloseHandle(h);
+#else
+    int fd = open(file.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    int old = dup(2);
+    dup2(fd, 2);
+    f();
+    dup2(old, 2);
+    close(old);
+    close(fd);
+#endif
+    std::ifstream in(file, std::ios::binary);
+    return std::string(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+}
+
+TEST(output_takes_stdout_and_drops_stderr) {
+    auto dir = scratch("output");
+    CHECK(process::output({ { cmake(), "-E", "echo", "hi" }, dir, {} }) == std::optional<std::string>("hi\n"));
+    process::Command fails{ { cmake(), "-E", "cat", "missing" }, dir, {} };
+    CHECK(!stderr_of(dir / "shown.txt", [&] { process::run(fails); }).empty());
+    CHECK(stderr_of(dir / "dropped.txt", [&] { CHECK(!process::output(fails)); }).empty());
 }
 
 TEST(environment_applies_overrides_and_leaves_out_unset_names) {
