@@ -165,7 +165,8 @@ int run(const Command& c, const fs::path& out_file) {
         if (out.get() == INVALID_HANDLE_VALUE) throw app::Failure("cannot write " + out_file.u8string() + ": " + last_error_text());
     }
     Handle err = std_copy(STD_ERROR_HANDLE, GENERIC_WRITE);
-    PROCESS_INFORMATION pi = create(c, 0, in.get(), out.get(), err.get(), {});
+    /* a rant without a console window, as the service process starts one, never opens one for a child */
+    PROCESS_INFORMATION pi = create(c, GetConsoleWindow() ? 0 : CREATE_NO_WINDOW, in.get(), out.get(), err.get(), {});
     CloseHandle(pi.hThread);
     WaitForSingleObject(pi.hProcess, INFINITE);
     DWORD code = 1;
