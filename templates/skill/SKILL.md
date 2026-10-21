@@ -1,6 +1,6 @@
 ---
 name: rant
-description: Rant robotics middleware and the rant CLI. Use when a project uses Rant (workspace.rant, package.rant, *.run, rant.hpp, import rant, using Rant) or the user asks to make, build, run, debug or inspect Rant nodes, topics, variables, functions or tasks.
+description: Rant robotics middleware, the rant CLI and the Rant HMI. Use when a project uses Rant (workspace.rant, package.rant, *.run, rant.hpp, import rant, using Rant) or is an HMI project (hmi.toml, pages/*.html, components/*.html), or the user asks to make, build, run, debug or inspect Rant nodes, topics, variables, functions or tasks, or to make or change an HMI.
 ---
 
 # Rant
@@ -195,6 +195,186 @@ both.
 | stop it | `rant stop WebExplorer` |
 | at every boot | `rant enable WebExplorer`, with the same params, `rant disable WebExplorer` |
 | output | `rant log WebExplorer`, `-f` to follow |
+
+## HMI
+
+The package `hmi` makes HMIs and apps: pages operators use in a browser, designed in a
+browser editor, while their logic runs in a native backend that is the Rant node. A project
+is a folder of plain text files, and you may write them directly. Each saved file reaches
+every open screen at once. A file with a mistake is refused and the HMI keeps the last good
+one.
+
+| goal | command |
+|---|---|
+| install | `rant install hmi` |
+| run a project | `rant run Hmi project=C:/work/line-hmi`, a full path. An empty folder becomes a new project. `port=N` and `bind=IP` set where it listens, 6739 on every address by default |
+| open it | `http://localhost:6739` designs it, `http://localhost:6739/run` is an operator's screen |
+| check an edit | `rant log Hmi -n 20` names a refused file and the reason |
+| stop it | `rant stop Hmi` |
+| at every boot | `rant enable Hmi project=...`, `rant disable Hmi` |
+
+- The full file format is https://raw.githubusercontent.com/KosmosisDire/rant-hmi/main/docs/files.md,
+  the expression math `docs/math.md` beside it. Fetch them for anything this section leaves out.
+- Work against a simulator on its own domain (`--domain N`), never on the domain of a
+  machine in use. `rant ls entities` and `rant info <name>` give the names, types and fields
+  to import.
+- There are no logins yet: whoever reaches the port can change the project and press its
+  buttons. Use `bind=127.0.0.1` on a shared network, or put access control in front.
+
+### Project
+
+```
+hmi.toml                 name, and start = "overview", the page screens open on
+data/imports.toml        the mesh imports: each entity it uses, under an alias
+data/variables.toml      its own state, per = "hmi" (one value) or "screen" (each screen's own)
+data/computed.toml       values worked out from others, written back through a setter
+data/records.toml        a value's history, sampled every_ms and kept keep_s
+data/theme.toml          tokens, read as $name
+pages/<name>.html        a page, named in small letters and dashes: Robot cell in robot-cell.html
+components/<name>.html   a component, the built in ones copied in when the project starts
+logic/handlers.html      handlers that run on the backend for no screen
+```
+
+```toml
+[[import]]
+alias  = "Speed"          # PascalCase. The HMI's own names are camelCase, so the two never look alike
+entity = "Line1/Speed"
+kind   = "variable"       # topic, variable, function or task
+intent = "read"           # write only what the HMI must change. A function or task is write
+```
+
+A page is the HTML it draws as. Lengths are units of 10 px, and a page is 128 by 72 by default.
+
+```html
+<page name="Overview" size="128x72">
+  <div id="e1" name="Line panel" x="2" y="2" w="32" h="hug" style='background: $panel; border-radius: $radiusLarge; gap: $space; layout: "down"; padding: $spaceLarge'>
+    <span id="e2" name="Title" x="0" y="0" w="hug" h="hug" style="color: $dim">"Line 1"</span>
+    <Readout id="e3" name="Speed" x="0" y="0" w="fill" h="8" label='"Speed"' value="Speed" unit='"m/s"' digits="2" fill="$panel2"/>
+    <Stepper id="e4" name="Target" x="0" y="0" w="fill" h="5" value="target" max="20"/>
+    <Button id="e5" name="Start" x="0" y="0" w="fill" h="6" text='"Start"' fill="$green" holdMs="600" style='opacity: Ready ? 1 : 0.4; pointer-events: Ready ? "auto" : "none"'>
+      <on event="confirm">
+        await Start(target);
+      </on>
+    </Button>
+  </div>
+</page>
+```
+
+- Every element has an `id` of its own in its file. Keep the ids of what exists and give
+  what you add the next free one.
+- Every attribute but `id` and `name` is an expression: `Speed * 10`, text in quotes,
+  `#2a6fd6` a colour, `$accent` a token. Put an attribute holding double quotes in single
+  quotes.
+- `x`, `y`, `w` and `h` take units, a percent of what holds the element, `hug` or `fill`.
+  In a frame with `layout`, its parts follow one another and their `x` and `y` wait.
+- A handler is `<on event="...">` first inside its element: `tap`, `press`, `release`,
+  `hold` (`after` ms), `repeat` (`every` ms), `drag`, `outside`, or an event its component
+  sends. `p` holds what the event brings: `x` and `y` from 0 to 1 across the element,
+  `angle`, `on` the part pressed, or the value sent.
+- Code sets a variable, or one imported to write, by assignment (`target = 5`,
+  `Cmd.speed = 0.5`), calls a function with `await Start(target)` and publishes with
+  `Jog.send({ x: 1, y: 0 })`. It also has `await sleep(ms)`, `notify(text)`, `log(...)` and
+  `await open(Pages.Confirm)`, which gives what that page passes to `close(answer)`.
+- A value that is unknown, as an import missing from the mesh, draws hatched and stops the
+  handler that reads it, never the rest.
+
+### Components
+
+```html
+<component name="Stepper" size="18x5" sizing="fill">
+  <prop name="value" default="0" bindable="true"/>
+  <prop name="step" default="1"/>
+  <prop name="min" default="0"/>
+  <prop name="max" default="10"/>
+  <prop name="fill" default="$panel3"/>
+  <prop name="textColour" default="$text"/>
+  <prop name="radius" default="$radius"/>
+  <event name="change"/>
+  <div id="e1" name="row" x="0" y="0" w="100%" h="100%" style='layout: "right"; gap: $spaceSmall'>
+    <div id="e2" name="less" x="0" y="0" w="hug" h="100%" style='align: "center"; aspect-ratio: 1; background: less.pressed ? fill.darken(0.15) : fill; border-radius: radius; layout: "right"'>
+      <on event="repeat" every="150">
+        value = clamp(value - step, min, max);
+        emit("change", value);
+      </on>
+      <span id="e3" name="lessSign" x="0" y="0" w="hug" h="hug" style="color: textColour; font-size: $textLarge">"-"</span>
+    </div>
+    <span id="e4" name="reading" x="0" y="0" w="fill" h="100%" style='align-content: "center"; color: textColour; font-size: $textLarge; font-weight: 600; text-align: "center"'>value</span>
+    <div id="e5" name="more" x="0" y="0" w="hug" h="100%" style='align: "center"; aspect-ratio: 1; background: more.pressed ? fill.darken(0.15) : fill; border-radius: radius; layout: "right"'>
+      <on event="repeat" every="150">
+        value = clamp(value + step, min, max);
+        emit("change", value);
+      </on>
+      <span id="e6" name="moreSign" x="0" y="0" w="hug" h="hug" style="color: textColour; font-size: $textLarge">"+"</span>
+    </div>
+  </div>
+</component>
+```
+
+- Use a built in before writing one. Button, Toggle, Slider, Knob, Gauge, Readout, Dropdown,
+  ModeSwitch, Plot, Joystick and Joystick1D sit in every new project's components folder.
+  Changing a project's copy changes every instance of it.
+- One job and the fewest inputs that do it: what an instance must say (`value`, `text`,
+  `min`, `max`, `unit`, `options`) and a few look inputs. Add more only when asked.
+- Every look input defaults to a token (`fill` `$panel3`, `colour` `$accent`, `textColour`
+  `$text`, `radius` `$radius`), so the component follows the theme, light and dark, until
+  an instance sets its own. Work states out from those rather than adding inputs:
+  `fill.darken(0.15)` pressed, `colour.alpha(0.15)` a tint.
+- Name inputs and events as the built ins do, so every instance reads alike: `value`,
+  `min`, `max`, `step`, `unit`, `digits`, `text`, `label`, `options`, `fill`, `colour`,
+  `textColour`, `textSize`, `radius`, and `change` with the new value, `confirm`, `move`.
+- A control that holds a value has one `value` input with `bindable="true"`. Its code sets
+  `value`, then sends `change` with it. An instance bound to a writable name
+  (`value="target"`) writes back to it. One bound to the machine's state
+  (`value="Robot.servo_power"`) shows it, and the instance's `change` handler asks the
+  machine (`await SetServo(p)`), so the screen shows what the machine reports, not what was
+  pressed.
+- A component never names a mesh import. Data comes in through inputs and actions go out
+  as events, so one component serves any machine and the page decides what a press does.
+- `sizing="fill"` lays it out in each instance's box. Use it for what stretches (buttons,
+  cards, bars, plots), with parts in percents, `hug`, `fill` and layouts. Leave it out for a
+  drawing that must keep its shape, as a dial, which then scales whole.
+- Name each part for its role in camelCase (`track`, `thumb`, `label`). Code reads a part's
+  `pressed`, `hovered` and `heldFor` by that name, `root` for the whole. Give every press a
+  visible response.
+- Its own state is a `<var>`, each instance's own on each screen, as a dropdown's `open`.
+- Made for touch: targets at least 4 units high, nothing shown only on hover, `outside`
+  closes what a press opened.
+- An input named like a math function hides it inside the component: with `min` and `max`
+  inputs, use `clamp(v, min, max)` or `Math.min`.
+- Draw with frames and SVG shapes, ease movement with `transition`, and move with
+  `time.now` only what must move on its own.
+
+### Pages
+
+- One top level frame per panel, holding its title and its controls. A phone stacks a
+  page's top level elements in reading order, so each panel stays whole.
+- Lay a panel out with `layout`, `gap`, `padding`, `hug` and `fill` rather than hand placed
+  coordinates, on whole units.
+- Depth comes from tokens: `$ground` the page, `$surface` and `$panel` cards, `$panel2` and
+  `$panel3` for what sits on a card. Text is `$text`, labels `$dim`, hints `$faint`, in
+  `$textSmall`, `$textSize` and `$textLarge`. Spacing is `$spaceSmall`, `$space` and
+  `$spaceLarge`, corners `$radiusSmall` up to `$radiusPill`. Change the look in theme.toml,
+  never element by element, and add a token for any colour that means something new.
+- Colour means state, the same on every page: `$green` running or good, `$amber` waiting or
+  a warning, `$red` a fault or stop, `$accent` selected, with their `Bg` tokens behind them.
+  Always with words beside it, never colour alone.
+- Show state first: the machine's mode and faults where the eye lands, values large with
+  their units, actions below them.
+- Safety:
+  - An action that moves a machine takes a hold to confirm, as `holdMs="600"`.
+  - Jogging runs only while pressed: `press` starts it and `release` stops it. A screen
+    that drops or goes silent lets go of all it held, so its `release` handlers run. Never
+    a toggle for motion.
+  - A control that cannot act now is dimmed and takes no presses (`opacity` and
+    `pointer-events` on the instance), with the reason in words nearby.
+- Keep logic in data where it fits: a computed value for a derived number, a record for a
+  plot's history, a handler in logic/handlers.html (`every`, `when` with `for`, `change`)
+  for what must happen with no screen open. Page handlers are for what an operator does.
+- A choice for the machine is `per = "hmi"`, an operator's own (a jog mode, a picked tab) is
+  `per = "screen"`.
+- `repeat="6"` or `repeat="Jobs"` draws an element per item, with `index` and `item`,
+  instead of copies.
+- `shows="over"` on a page opens it as a dialog over the one beneath.
 
 ## Writing nodes
 
