@@ -29,7 +29,7 @@ rant ls nodes                  # the running nodes, and those that could start
 rant sub Odom                  # print a topic
 rant log Nav -f                # follow what its nodes print
 rant stop Nav
-rant enable Nav                # run it now and every time you log in
+rant enable Nav                # run it now and every time this computer starts
 rant lib update                # move every package here to the newest Rant
 rant setup                     # tab completion for your shells
 rant install explorer          # a package, all of them at https://pack.rantlib.dev

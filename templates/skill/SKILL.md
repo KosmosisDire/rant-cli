@@ -64,7 +64,7 @@ database "someone/rant-packages" {}
 | build | `rant build [package...]`, `--dry-run` shows order and commands, `--clean` removes the build output first. A CMake build folder made in another place, after the package moved or was renamed, is removed and configured again after a question |
 | run | `rant run <Group> key=value...`, one node alone with `rant run node <node>`, `--dry-run` first. It builds what it starts (`--no-build` skips that), waits up to 10 s for the nodes to come up (`--wait S`), watches them 2 s more (`--watch S`) and fails with the log of one that exited or never came up |
 | stop, restart | `rant stop [name]` (nothing named: all this workspace started), `rant stop --all` (every node on this machine), `rant restart [name]`, which stops, builds, then starts, the last build when the build fails. An included group runs inside the group that includes it and `rant ls nodes` lists it there: stopping or restarting it by name acts on just its own nodes |
-| run at every login | `rant enable <Group> key=value...` or `rant enable node <node>` runs it now and every time you log in, no admin needed. `rant disable` stops it and drops it, `rant ls services` shows what is enabled and whether it runs. The login start never builds, and keeps `--domain` and the shell's `RANT_DOMAIN`, `RANT_PREFIX` and `RANT_NODE_NAME_PREFIX`. `rant stop` stops an enabled group until the next login |
+| run at every boot | `rant enable <Group> key=value...` or `rant enable node <node>` runs it now and every time the computer starts, as the user. The first enable on a machine asks for admin once (sudo on Linux and macOS). `--login` starts it at login instead, for what needs the desktop. `rant disable` stops it and drops it, `rant ls services` shows what is enabled and whether it runs. The choices live in `~/.rant/services.json`. The start never builds, and keeps `--domain` and the shell's `RANT_DOMAIN`, `RANT_PREFIX` and `RANT_NODE_NAME_PREFIX`. `rant stop` stops an enabled group until the next start |
 | node output | `rant log [name...]`, `-f` to follow, `-n N` lines, a group shows all its nodes |
 | see the mesh | `rant ls <nodes\|entities\|topics\|variables\|functions\|tasks\|types\|packages\|groups\|sources\|services> [pattern]`, `rant ls` alone lists the kinds, `rant ls nodes --no-mesh` for only what this workspace started, without joining the mesh |
 | explain one thing | `rant info [kind] <name>`, a type shows its fields and who uses it, a node its source file |
@@ -148,7 +148,7 @@ the package `bridge`, and its group `Bridge` runs it like any group, no admin ne
 |---|---|
 | install | `rant install bridge`, `--from PATH` for a bridge you built |
 | run it | `rant run Bridge`, `rant stop Bridge`, `rant restart Bridge` |
-| at every login | `rant enable Bridge`, `rant disable Bridge` |
+| at every boot | `rant enable Bridge`, `rant disable Bridge` |
 | output | `rant log Bridge`, `-f` to follow |
 
 - Its config is `~/.rant/bridge.yaml`, written at its first start with a random passphrase.
@@ -193,7 +193,7 @@ both.
 | install | `rant install explorer` |
 | run it | `rant run WebExplorer`, `port=N` and `bind=IP` set where it listens, 6732 on every address by default |
 | stop it | `rant stop WebExplorer` |
-| at every login | `rant enable WebExplorer`, with the same params, `rant disable WebExplorer` |
+| at every boot | `rant enable WebExplorer`, with the same params, `rant disable WebExplorer` |
 | output | `rant log WebExplorer`, `-f` to follow |
 
 ## Writing nodes

@@ -1,7 +1,7 @@
 include("${CMAKE_CURRENT_LIST_DIR}/lib.cmake")
 
 # Nodes with restart set run under the service process, which starts them again. Nothing
-# here writes a login entry.
+# here writes a boot or login entry.
 use_fixture(groups)
 install_test_node("demo/bin")
 file(WRITE "${SCRATCH}/Keep.run" [[
@@ -64,8 +64,8 @@ rant(stop Fail)
 # With nothing left to watch it ends on its own.
 wait_for_service_log("stopped, nothing to watch\n$")
 
-# rant enable refuses what it cannot run before it keeps anything or writes the login entry,
-# and a dry run keeps nothing.
+# rant enable refuses what it cannot run before it keeps anything or writes an entry, and a
+# dry run keeps nothing.
 rant(enable FAILS)
 expect_match("${ERR}" "say what to enable")
 rant(enable nowhere FAILS)
@@ -77,29 +77,52 @@ expect_match("${OUT}" "keeper")
 rant(ls services)
 expect_match("${OUT}" "SERVICES\n  [(]none[)]\n")
 
-# What rant enable keeps, written here by hand, since rant enable writes the real login
-# entry. The service process starts it as the login entry would.
+# What rant enable keeps, written here by hand, since rant enable writes the real boot and
+# login entries. An entry without a start starts at boot. The service process starts each
+# as the entries would.
 file(WRITE "${SCRATCH}/Plain.run" [[
 node "demo/sensor" {
   name = "steady"
 }
 ]])
-file(WRITE "$ENV{RANT_HOME}/services.json"
-     "{ \"enabled\": [ { \"folder\": \"${SCRATCH}\", \"kind\": \"group\", \"name\": \"Plain\", \"words\": [], \"domain\": ${DOMAIN} } ] }\n")
+file(WRITE "${SCRATCH}/Desk.run" [[
+node "demo/sensor" {
+  name = "desk"
+}
+]])
+file(WRITE "$ENV{RANT_HOME}/services.json" "{ \"enabled\": [
+  { \"folder\": \"${SCRATCH}\", \"kind\": \"group\", \"name\": \"Plain\", \"words\": [], \"domain\": ${DOMAIN} },
+  { \"folder\": \"${SCRATCH}\", \"start\": \"login\", \"kind\": \"group\", \"name\": \"Desk\", \"words\": [], \"domain\": ${DOMAIN} }
+] }\n")
 rant(ls services)
-expect_match("${OUT}" "SERVICES\n  Plain +stopped")
+expect_match("${OUT}" "SERVICES\n  Plain +at boot +stopped[^\n]*\n  Desk +at login +stopped")
+
 execute_process(COMMAND "${RANT}" __services --login "$ENV{RANT_HOME}" TIMEOUT 60)
-wait_for_service_log("started at login\n.*starting Plain in .*started Plain\n")
-rant(ls nodes --no-mesh)
+wait_for_service_log("starting Desk in .*started at login\n")
+expect_no_match("${LOG}" "starting Plain")
+execute_process(COMMAND "${RANT}" __services --boot "$ENV{RANT_HOME}" TIMEOUT 60)
+wait_for_service_log("starting Plain in .*started at boot\n")
+foreach(i RANGE 40)
+  rant(ls nodes --no-mesh)
+  if(OUT MATCHES "steady" AND OUT MATCHES "desk")
+    break()
+  endif()
+  execute_process(COMMAND "${CMAKE_COMMAND}" -E sleep 0.5)
+endforeach()
 expect_match("${OUT}" "Plain:\n +steady\n")
+expect_match("${OUT}" "Desk:\n +desk\n")
 rant(ls services --json)
 string(JSON state GET "${OUT}" 0 state)
 expect_match("${state}" "^running$")
+string(JSON start GET "${OUT}" 1 start)
+expect_match("${start}" "^login$")
 
-# disable stops it and drops it from the login start.
+# disable stops it and drops it from the boot or login start.
 rant(disable Plain)
 expect_match("${OUT}" "steady +stopped")
-expect_match("${ERR}" "disabled Plain, it no longer starts when you log in")
+expect_match("${ERR}" "disabled Plain, it no longer starts when this computer starts")
+rant(disable Desk)
+expect_match("${ERR}" "disabled Desk, it no longer starts when you log in")
 rant(ls services)
 expect_match("${OUT}" "SERVICES\n  [(]none[)]\n")
 rant(disable Plain FAILS)

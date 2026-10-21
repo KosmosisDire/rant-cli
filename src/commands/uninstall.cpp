@@ -170,8 +170,11 @@ static int run(app::Context& ctx) {
             steps.push_back({ {}, "the VS Code extension " + r->extension + ", through " + packages::vsix::shown(t),
                               [t, id = r->extension] { packages::vsix::remove(t, id); } });
     }
-    if (services::entry::present())
-        steps.push_back({ {}, "the login entry that starts what rant enable named", [] { services::entry::remove(); } });
+    if (services::entry::present(services::entry::When::Login))
+        steps.push_back({ {}, "the login entry that starts what rant enable named", [] { services::entry::remove(services::entry::When::Login); } });
+    if (services::entry::present(services::entry::When::Boot))
+        steps.push_back({ {}, services::entry::boot_place() + ", which asks for admin",
+                          [] { services::entry::remove(services::entry::When::Boot); } });
     std::error_code ec;
     bool config_only = fs::exists(bridge_config(), ec) && removable(home).empty();
     if (fs::exists(home, ec) && !config_only) steps.push_back({ home, "", [home] { remove_home(home); } });

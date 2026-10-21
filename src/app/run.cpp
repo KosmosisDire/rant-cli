@@ -63,18 +63,19 @@ static std::string main_help() {
     return s;
 }
 
-/* The service process, `rant __services`, and as the login entry starts it with the home
- * it serves, `rant __services --login HOME`. */
+/* The service process, `rant __services`, and as the boot and login entries start it with
+ * the home it serves, `rant __services --boot HOME` or `--login HOME`. */
 static int serve_services(const std::vector<std::string>& tokens) {
-    if (tokens.size() == 1) return services::serve(false);
-    if (tokens.size() != 3 || tokens[1] != "--login") throw UsageError("`rant __services` is rant's own, never typed");
+    if (tokens.size() == 1) return services::serve("");
+    if (tokens.size() != 3 || (tokens[1] != "--boot" && tokens[1] != "--login"))
+        throw UsageError("`rant __services` is rant's own, never typed");
 #ifdef _WIN32
     _wputenv_s(L"RANT_HOME", config::from_utf8(tokens[2]).wstring().c_str());
 #else
     setenv("RANT_HOME", tokens[2].c_str(), 1);
 #endif
     config::set_home(util::rant_home());
-    return services::serve(true);
+    return services::serve(tokens[1].substr(2));
 }
 
 static uint16_t parse_domain(const std::string& s) {

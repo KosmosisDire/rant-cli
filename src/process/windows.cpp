@@ -3,6 +3,7 @@
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
+#include <shellapi.h>
 
 #include <algorithm>
 #include <cstddef>
@@ -152,6 +153,31 @@ static Handle std_copy(DWORD which, DWORD null_access) {
         DuplicateHandle(GetCurrentProcess(), h, GetCurrentProcess(), &dup, 0, TRUE, DUPLICATE_SAME_ACCESS))
         return Handle(dup);
     return open_null(null_access);
+}
+
+int run_elevated(const Command& c) {
+    fs::path program = require_program(c);
+    std::wstring file = program.wstring(), dir = c.cwd.wstring();
+    std::wstring params = wide(windows_command_line({ c.argv.begin() + 1, c.argv.end() }));
+    SHELLEXECUTEINFOW sei{};
+    sei.cbSize = sizeof sei;
+    sei.fMask = SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NOASYNC;
+    sei.lpVerb = L"runas";
+    sei.lpFile = file.c_str();
+    sei.lpParameters = params.c_str();
+    sei.lpDirectory = dir.empty() ? nullptr : dir.c_str();
+    sei.nShow = SW_HIDE;
+    if (!ShellExecuteExW(&sei)) {
+        if (GetLastError() == ERROR_CANCELLED) throw app::Failure("the admin prompt was declined");
+        throw app::Failure("cannot run " + c.argv[0] + " as admin: " + last_error_text());
+    }
+    DWORD code = 1;
+    if (sei.hProcess) {
+        WaitForSingleObject(sei.hProcess, INFINITE);
+        GetExitCodeProcess(sei.hProcess, &code);
+        CloseHandle(sei.hProcess);
+    }
+    return (int)code;
 }
 
 int run(const Command& c, const fs::path& out_file) {

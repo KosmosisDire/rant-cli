@@ -111,6 +111,8 @@ std::vector<Enabled> enabled() {
         for (auto& j : doc.at("enabled")) {
             Enabled e;
             e.folder = config::from_utf8(j.at("folder").get<std::string>());
+            e.start = j.value("start", "boot");
+            if (e.start != "boot" && e.start != "login") throw std::runtime_error("start");
             e.kind = j.at("kind");
             e.name = j.at("name");
             e.words = j.value("words", std::vector<std::string>{});
@@ -127,7 +129,7 @@ std::vector<Enabled> enabled() {
 void save(const std::vector<Enabled>& list) {
     json all = json::array();
     for (auto& e : list) {
-        json j = { { "folder", config::to_utf8(e.folder) }, { "kind", e.kind }, { "name", e.name }, { "words", e.words } };
+        json j = { { "folder", config::to_utf8(e.folder) }, { "start", e.start }, { "kind", e.kind }, { "name", e.name }, { "words", e.words } };
         if (e.domain) j["domain"] = *e.domain;
         if (!e.env.empty()) j["env"] = e.env;
         all.push_back(j);
@@ -173,23 +175,45 @@ static seconds pause(int quick) { return seconds(std::min(60, 1 << std::min(std:
 /* A node is quick to fail when it ends this soon after starting. */
 constexpr seconds settled{ 10 };
 
+/* Runs each group or node enabled to start then with rant run in its folder, detached, its
+ * output in the log. They hand their nodes with restart set to the service process, so none
+ * waits for them. */
+static void start_enabled(const std::string& start) {
+    std::vector<Enabled> list;
+    try {
+        list = enabled();
+    } catch (const app::Failure& e) {
+        say(e.what());
+    }
+    for (auto& e : list) {
+        if (e.start != start) continue;
+        if (!fs::is_directory(e.folder)) {
+            say("cannot start " + e.shown() + ", " + config::to_utf8(e.folder) + " is gone");
+            continue;
+        }
+        std::vector<std::string> argv = { config::to_utf8(process::self_path()), "run" };
+        if (e.kind == "node") argv.insert(argv.end(), { "node", e.name });
+        else argv.push_back(e.name);
+        argv.insert(argv.end(), e.words.begin(), e.words.end());
+        argv.insert(argv.end(), { "--no-build", "-y" });
+        if (e.domain) argv.insert(argv.end(), { "--domain", std::to_string(*e.domain) });
+        std::string job = "Local\\rant-services-" + home_key() + "-start-" + std::to_string(clock::now().time_since_epoch().count());
+        say("starting " + e.shown() + " in " + config::to_utf8(e.folder));
+        try {
+            process::start_detached({ argv, e.folder, e.env }, log_file(), job);
+        } catch (const app::Failure& f) {
+            say("cannot start " + e.shown() + ": " + f.what());
+        }
+    }
+}
+
 class Host {
 public:
-    /* Runs each enabled group or node with rant run in its folder. They hand their nodes
-     * with restart set to this process, so it never waits for them. */
-    void start_enabled();
-
     /* One round: notes what ended, starts what is due, and looks at every workspace when
      * asked to or now and then. False once it has had nothing to do for a while. */
     bool round(bool woken);
 
 private:
-    /* A rant run start_enabled began. */
-    struct Starter {
-        std::string    what;
-        process::Child child;
-    };
-
     /* A node this process watches: one it started, or one a former service process
      * started, whose exit code it cannot learn. */
     struct Watched {
@@ -217,7 +241,6 @@ private:
     void look();
     bool watching(const fs::path& data, const state::Instance& rec) const;
 
-    std::list<Starter> starters_;
     std::list<Watched> watched_;
     std::list<Ended>   ended_;
     clock::time_point  looked_{};
@@ -225,44 +248,7 @@ private:
     clock::time_point  idle_since_ = clock::now();
 };
 
-void Host::start_enabled() {
-    std::vector<Enabled> list;
-    try {
-        list = enabled();
-    } catch (const app::Failure& e) {
-        say(e.what());
-    }
-    for (auto& e : list) {
-        if (!fs::is_directory(e.folder)) {
-            say("cannot start " + e.shown() + ", " + config::to_utf8(e.folder) + " is gone");
-            continue;
-        }
-        std::vector<std::string> argv = { config::to_utf8(process::self_path()), "run" };
-        if (e.kind == "node") argv.insert(argv.end(), { "node", e.name });
-        else argv.push_back(e.name);
-        argv.insert(argv.end(), e.words.begin(), e.words.end());
-        argv.insert(argv.end(), { "--no-build", "-y" });
-        if (e.domain) argv.insert(argv.end(), { "--domain", std::to_string(*e.domain) });
-        std::string job = "Local\\rant-services-" + home_key() + "-start-" + std::to_string(clock::now().time_since_epoch().count());
-        say("starting " + e.shown() + " in " + config::to_utf8(e.folder));
-        try {
-            starters_.push_back({ e.shown(), process::start_child({ argv, e.folder, e.env }, log_file(), job) });
-        } catch (const app::Failure& f) {
-            say("cannot start " + e.shown() + ": " + f.what());
-        }
-    }
-}
-
 void Host::note_ended() {
-    for (auto it = starters_.begin(); it != starters_.end();) {
-        std::optional<int> code = it->child.ended();
-        if (!code) {
-            ++it;
-            continue;
-        }
-        say(*code == 0 ? "started " + it->what : "starting " + it->what + " failed with code " + std::to_string(*code) + ", see above");
-        it = starters_.erase(it);
-    }
     for (auto it = watched_.begin(); it != watched_.end();) {
         std::optional<int> code;
         if (it->child) code = it->child->ended();
@@ -388,23 +374,27 @@ bool Host::round(bool woken) {
         look();
         looked_ = clock::now();
     }
-    if (!starters_.empty() || !watched_.empty() || !ended_.empty() || look_again_) idle_since_ = clock::now();
+    if (!watched_.empty() || !ended_.empty() || look_again_) idle_since_ = clock::now();
     return clock::now() - idle_since_ < seconds(10);
 }
 
-int serve(bool login) {
+int serve(const std::string& start) {
     std::error_code ec;
     fs::create_directories(log_file().parent_path(), ec);
 #ifdef _WIN32
     /* Windows before 11 24H2 ignores the manifest and gives a program the login starts a
      * console window, so a copy without one carries on. */
-    if (login && GetConsoleWindow()) {
+    if (start == "login" && GetConsoleWindow()) {
         std::string job = "Local\\rant-services-" + home_key() + "-" + std::to_string(clock::now().time_since_epoch().count());
         process::start_detached({ { config::to_utf8(process::self_path()), "__services", "--login", config::to_utf8(util::rant_home()) },
                                   util::rant_home(), {} },
                                 log_file(), job);
         return 0;
     }
+#endif
+    /* what is enabled starts even when another service process runs, which then takes the nodes */
+    if (!start.empty()) start_enabled(start);
+#ifdef _WIN32
 #endif
     /* a command probing whether one runs holds the lock for a moment, so a few tries */
     std::optional<util::FileLock> lock;
@@ -430,9 +420,8 @@ int serve(bool login) {
         return true;
     };
 #endif
-    say("service process " + own_pid() + (login ? " started at login" : " started"));
+    say("service process " + own_pid() + (start.empty() ? " started" : " started at " + start));
     Host host;
-    if (login) host.start_enabled();
     bool woken = true;
     while (host.round(woken)) woken = wait();
     say("service process " + own_pid() + " stopped, nothing to watch");

@@ -69,8 +69,22 @@ static Named named(app::Context& ctx, const std::vector<std::string>& w, const s
     return n;
 }
 
-/* Keeps the group or node for every login, writes the login entry, and runs it now unless
- * it runs, building what it starts. */
+/* The entry that starts what is enabled to start at when. */
+static services::entry::When entry_for(const std::string& when) {
+    return when == "login" ? services::entry::When::Login : services::entry::When::Boot;
+}
+
+/* Writes the entry that starts it, the boot one asking for admin the first time, saying so
+ * first. */
+static void write_entry(app::Context& ctx, const std::string& when) {
+    services::entry::When w = entry_for(when);
+    if (w == services::entry::When::Boot && !services::entry::present(w))
+        ctx.out.note("starting at boot takes admin once, to add " + services::entry::boot_place());
+    services::entry::write(w);
+}
+
+/* Keeps the group or node for every boot, or login with --login, writes the entry that
+ * starts it, and runs it now unless it runs, building what it starts. */
 static int enable_run(app::Context& ctx) {
     auto& w = ctx.args.words;
     services::Enabled e = named(ctx, w, "enable").e;
@@ -80,15 +94,18 @@ static int enable_run(app::Context& ctx) {
     }
     e.domain = ctx.domain_option;
     e.env = placement_env();
+    e.start = ctx.args.has("login") ? "login" : "boot";
     if (ctx.args.has("dry-run")) return w[0] == "node" ? run_node(ctx, w[1]) : run_group(ctx, w[0], e.words);
 
     std::vector<services::Enabled> list = services::enabled();
-    bool had = std::any_of(list.begin(), list.end(), [&](const services::Enabled& o) { return o.same(e); });
-    if (!had) {
-        list.push_back(e);
-        services::save(list);
-    }
-    services::entry::write();
+    auto had = std::find_if(list.begin(), list.end(), [&](const services::Enabled& o) { return o.same(e); });
+    std::string was = had == list.end() ? "" : had->start;
+    if (had == list.end()) list.push_back(e);
+    else had->start = e.start;
+    write_entry(ctx, e.start);
+    services::save(list);
+    bool login_left = std::any_of(list.begin(), list.end(), [](const services::Enabled& o) { return o.start == "login"; });
+    if (!login_left) services::entry::remove(services::entry::When::Login);
 
     int code = 0;
     if (e.kind == "group") {
@@ -98,11 +115,15 @@ static int enable_run(app::Context& ctx) {
         if (run::snapshot(ctx).instance(name)) ctx.out.note("`" + name + "` already runs");
         else code = run_node(ctx, w[1]);
     }
-    ctx.out.note(had ? e.shown() + " was enabled already, it starts when you log in" : "enabled " + e.shown() + ", it starts when you log in");
+    std::string when = e.start == "login" ? "when you log in" : "when this computer starts";
+    if (was.empty()) ctx.out.note("enabled " + e.shown() + ", it starts " + when);
+    else if (was == e.start) ctx.out.note(e.shown() + " was enabled already, it starts " + when);
+    else ctx.out.note(e.shown() + " now starts " + when);
     return code;
 }
 
-/* Drops the group or node from the login start, and stops it when it runs. */
+/* Drops the group or node from the boot or login start, and stops it when it runs. The boot
+ * entry stays, so enabling again never asks for admin. */
 static int disable_run(app::Context& ctx) {
     auto& w = ctx.args.words;
     Named n = named(ctx, w, "disable");
@@ -126,7 +147,8 @@ static int disable_run(app::Context& ctx) {
         if (!ui::confirm("Disable all of them?", ctx.yes)) return 1;
     }
     services::save(kept);
-    if (kept.empty()) services::entry::remove();
+    if (std::none_of(kept.begin(), kept.end(), [](const services::Enabled& o) { return o.start == "login"; }))
+        services::entry::remove(services::entry::When::Login);
 
     int code = 0;
     state::State st = run::snapshot(ctx);
@@ -136,7 +158,7 @@ static int disable_run(app::Context& ctx) {
     } else if (st.instance(n.full)) {
         code = stop_node(ctx, n.full);
     }
-    for (auto& o : gone) ctx.out.note("disabled " + o.shown() + ", it no longer starts when you log in");
+    for (auto& o : gone) ctx.out.note("disabled " + o.shown() + ", it no longer starts " + (o.start == "login" ? "when you log in" : "when this computer starts"));
     return code;
 }
 
@@ -182,12 +204,12 @@ int list_services(app::Context& ctx, const std::string& pattern) {
     for (auto& e : list) {
         if (!util::name_matches(pattern, e.name)) continue;
         Standing s = standing(e);
-        json j = { { "service", e.shown() }, { "kind", e.kind }, { "name", e.name }, { "params", e.words },
+        json j = { { "service", e.shown() }, { "start", e.start }, { "kind", e.kind }, { "name", e.name }, { "params", e.words },
                    { "folder", config::to_utf8(e.folder) }, { "state", s.state }, { "restarts", s.restarts }, { "nodes", s.nodes } };
         if (e.domain) j["domain"] = *e.domain;
         out.push_back(j);
         std::string restarts = s.restarts == 1 ? "1 restart" : s.restarts > 1 ? std::to_string(s.restarts) + " restarts" : "";
-        t.row({ e.shown(), s.state, dim(restarts), dim(ctx.shown(e.folder)) });
+        t.row({ e.shown(), dim("at " + e.start), s.state, dim(restarts), dim(ctx.shown(e.folder)) });
     }
     if (ctx.json) {
         ctx.out.line(out.dump(2));
@@ -196,8 +218,11 @@ int list_services(app::Context& ctx, const std::string& pattern) {
     ctx.out.line(ctx.out.paint(ui::Style::Bold, "SERVICES"));
     for (auto& l : t.lines()) ctx.out.line(l);
     if (t.lines().empty()) ctx.out.line(ctx.out.paint(ui::Style::Faint, "  (none)"));
-    if (!list.empty() && !services::entry::present())
-        ctx.out.note("no login entry starts them for this rant, `rant enable` writes it again");
+    for (const char* when : { "boot", "login" }) {
+        bool some = std::any_of(list.begin(), list.end(), [&](const services::Enabled& e) { return e.start == when; });
+        if (some && !services::entry::present(entry_for(when)))
+            ctx.out.note(std::string("nothing starts them at ") + when + " for this rant and home, `rant enable` sets that up again");
+    }
     return 0;
 }
 
@@ -229,16 +254,18 @@ static complete::Candidates complete_disable(complete::Request& r) {
 
 app::Command enable() {
     app::Command c{ "enable", "<group> [key=value...] | node <node>",
-                    "run a group, or one node, now and every time you log in, through rant's service process",
-                    app::Section::Workspace, { { "dry-run", 0, "", "show what would run without starting or keeping it" }, no_build_option(),
-                                               wait_option(), watch_option() },
+                    "run a group, or one node, now and every time this computer starts, which takes admin once",
+                    app::Section::Workspace,
+                    { { "login", 0, "", "start it when you log in instead, for what needs your desktop" },
+                      { "dry-run", 0, "", "show what would run without starting or keeping it" }, no_build_option(), wait_option(),
+                      watch_option() },
                     enable_run };
     c.complete = complete_enable;
     return c;
 }
 
 app::Command disable() {
-    app::Command c{ "disable", "<group> [key=value...] | node <node>", "stop what rant enable named and no longer start it at login",
+    app::Command c{ "disable", "<group> [key=value...] | node <node>", "stop what rant enable named and no longer start it",
                     app::Section::Workspace, {}, disable_run };
     c.complete = complete_disable;
     return c;

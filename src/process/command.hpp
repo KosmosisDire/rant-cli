@@ -31,6 +31,11 @@ fs::path require_program(const Command& c);
  * file out when given, and returns its exit code. Throws app::Failure when it cannot start. */
 int run(const Command& c, const fs::path& out = {});
 
+/* run as an administrator: through the admin prompt on Windows, which passes no env and
+ * shows no output, else through sudo, which asks in this terminal. Throws app::Failure when
+ * it cannot start or the prompt is declined. */
+int run_elevated(const Command& c);
+
 /* What a command printed on stdout, nullopt when it cannot start or exits nonzero. */
 std::optional<std::string> output(const Command& c);
 

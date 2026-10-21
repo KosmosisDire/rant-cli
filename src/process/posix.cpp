@@ -158,6 +158,13 @@ int run(const Command& c, const fs::path& out_file) {
     return exit_code(status);
 }
 
+int run_elevated(const Command& c) {
+    if (geteuid() == 0) return run(c);
+    Command sudo = c;
+    sudo.argv.insert(sudo.argv.begin(), "sudo");
+    return run(sudo);
+}
+
 /* When the process started, in a unit the OS keeps for its life: clock ticks since boot on
  * Linux, microseconds since the epoch on macOS. nullopt when it is gone. */
 static std::optional<uint64_t> start_time(pid_t pid) {
