@@ -19,6 +19,7 @@
 #include "ui/table.hpp"
 #include "ui/terminal.hpp"
 #include "util/match.hpp"
+#include "util/text.hpp"
 
 namespace commands {
 
@@ -267,17 +268,11 @@ static std::string rant_version(const config::Package& p) {
     return out;
 }
 
-static std::string joined(const std::vector<std::string>& v, const char* sep = " ") {
-    std::string s;
-    for (auto& x : v) s += (s.empty() ? "" : sep) + x;
-    return s;
-}
-
 /* A group's params in short: `speed=1`, or `target=?` for a required one. */
 static std::string params_short(const config::GroupInfo& g) {
     std::vector<std::string> v;
     for (auto& p : g.params) v.push_back(p.name + "=" + (p.default_value ? *p.default_value : "?"));
-    return joined(v);
+    return util::joined(v, " ");
 }
 
 /* Packages or groups: what the workspace and the installed packages offer, running or not. */
@@ -303,7 +298,7 @@ static int list_workspace(app::Context& ctx, Kind kind, const std::string& patte
             out.push_back(item);
             std::string state = linked ? "linked" : rec && !rec->version.empty() ? "installed " + rec->version : "installed";
             std::string uses = p.installed ? dim(state) : version.empty() ? dim("no Rant") : "Rant " + version;
-            t.row({ p.name, dim(joined(p.kinds, ", ")), uses, dim(ctx.shown(p.dir)) });
+            t.row({ p.name, dim(util::joined(p.kinds)), uses, dim(ctx.shown(p.dir)) });
         }
     } else {
         title = "GROUPS";

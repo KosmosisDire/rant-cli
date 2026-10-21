@@ -11,14 +11,9 @@
 #include "services/services.hpp"
 #include "ui/prompt.hpp"
 #include "util/home.hpp"
+#include "util/text.hpp"
 
 namespace commands {
-
-static std::string list(const std::vector<std::string>& v) {
-    std::string s;
-    for (auto& x : v) s += (s.empty() ? "" : ", ") + x;
-    return s;
-}
 
 /* Prints a stop's summary, closed by its counts. */
 static int done(Summary& summary) {
@@ -54,8 +49,8 @@ static int stop_workspace(app::Context& ctx, const config::Workspace& ws) {
         auto runs = std::count_if(st.roots.begin(), st.roots.end(), [&](const state::Root& o) { return o.kind == "group" && o.name == r.name; });
         groups.push_back(runs > 1 ? r.key().substr(6) : r.name);
     }
-    if (!groups.empty()) ctx.out.line("groups: " + list(groups));
-    ctx.out.line("nodes:  " + list(names));
+    if (!groups.empty()) ctx.out.line("groups: " + util::joined(groups));
+    ctx.out.line("nodes:  " + util::joined(names));
     std::string n = std::to_string(names.size());
     if (!ui::confirm("Stop all " + n + (names.size() == 1 ? " node?" : " nodes?"), ctx.yes)) return 1;
     Summary summary(ctx, "");
@@ -137,13 +132,13 @@ static int stop_everything(app::Context& ctx) {
     for (auto& h : held) {
         std::vector<std::string> names;
         for (auto& i : h.state().instances) names.push_back(i.name);
-        rows.push_back({ ctx.shown(h.root), list(names) });
+        rows.push_back({ ctx.shown(h.root), util::joined(names) });
         count += names.size();
     }
     if (!loose.empty()) {
         std::vector<std::string> names;
         for (auto& l : loose) names.push_back(l.name);
-        rows.push_back({ "not started by rant", list(names) });
+        rows.push_back({ "not started by rant", util::joined(names) });
     }
     if (count == 0) {
         ctx.out.line("no node is running on this machine");
@@ -181,13 +176,13 @@ int stop_node(app::Context& ctx, const std::string& name) {
     if (found.size() > 1) {
         std::vector<std::string> where;
         for (auto& f : found) where.push_back(ctx.shown(f.first->root));
-        ctx.out.note("`" + name + "` was started in " + std::to_string(found.size()) + " workspaces: " + list(where));
+        ctx.out.note("`" + name + "` was started in " + std::to_string(found.size()) + " workspaces: " + util::joined(where));
         if (!ui::confirm("Stop all of them?", ctx.yes)) return 1;
     }
     for (auto& [h, inst] : found) {
         auto groups = groups_of(*inst);
         std::string in = own(*h) ? "" : " in " + ctx.shown(h->root);
-        if (!groups.empty() && !ui::confirm("`" + name + "` belongs to the running group " + list(groups) + in + ". Stop it anyway?", ctx.yes))
+        if (!groups.empty() && !ui::confirm("`" + name + "` belongs to the running group " + util::joined(groups) + in + ". Stop it anyway?", ctx.yes))
             return 1;
     }
     Summary summary(ctx, "");
@@ -235,7 +230,7 @@ static std::vector<state::Root> targets(app::Context& ctx, run::Session& s, cons
     if (out.size() > 1) {
         std::vector<std::string> keys;
         for (auto& r : out) keys.push_back(r.key().substr(6));
-        ctx.out.note("group `" + name + "` is running " + std::to_string(out.size()) + " times: " + list(keys));
+        ctx.out.note("group `" + name + "` is running " + std::to_string(out.size()) + " times: " + util::joined(keys));
         if (!ui::confirm("Stop all of them?", ctx.yes)) return {};
     }
     return out;
