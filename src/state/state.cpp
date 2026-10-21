@@ -68,6 +68,8 @@ static State from_json(const json& j) {
         in.roots = i.at("roots").get<std::vector<std::string>>();
         in.group = i.value("group", "");
         in.expect_mesh = i.value("expect_mesh", true);
+        in.restart = i.value("restart", "never");
+        in.restarts = i.value("restarts", 0);
         s.instances.push_back(std::move(in));
     }
     return s;
@@ -88,7 +90,9 @@ static json to_json(const State& s) {
                               { "job", i.tracking.job },
                               { "roots", i.roots },
                               { "group", i.group },
-                              { "expect_mesh", i.expect_mesh } });
+                              { "expect_mesh", i.expect_mesh },
+                              { "restart", i.restart },
+                              { "restarts", i.restarts } });
     return { { "format", FORMAT }, { "roots", roots }, { "instances", instances } };
 }
 

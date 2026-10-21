@@ -20,6 +20,34 @@ pub struct Instance {
     pub cwd: PathBuf,
     /// The group whose own node block makes it, none for a node run alone.
     pub group: Option<String>,
+    pub restart: Restart,
+}
+
+/// Whether a node that exited starts again. The service process does it, so only a node it
+/// started is restarted.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Restart {
+    #[default]
+    Never,
+    /// Unless it exited with code 0.
+    OnFailure,
+    Always,
+}
+
+impl Restart {
+    pub const KEY: &'static str = "restart";
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Restart::Never => "never",
+            Restart::OnFailure => "on-failure",
+            Restart::Always => "always",
+        }
+    }
+
+    pub fn parse(text: &str) -> Option<Restart> {
+        [Restart::Never, Restart::OnFailure, Restart::Always].into_iter().find(|r| r.as_str() == text)
+    }
 }
 
 impl Instance {
@@ -83,6 +111,6 @@ pub fn single(model: &Model, reference: &str, from_dir: &Path) -> Result<Plan, D
     runnable(&node).map_err(Diag::plain)?;
     let mut env = BTreeMap::new();
     let name = model.placement_of(&node).apply(&node.name, &mut env).map_err(Diag::plain)?;
-    let instance = Instance { name, argv: node.run.clone(), env, cwd: node.cwd.clone(), node, group: None };
+    let instance = Instance { name, argv: node.run.clone(), env, cwd: node.cwd.clone(), node, group: None, restart: Restart::Never };
     Ok(Plan { instances: vec![instance] })
 }

@@ -140,6 +140,8 @@ pub struct RantConfigInstance {
     pub group: *const c_char,
     /// It joins the mesh once started. Only a declared program may not.
     pub expect_mesh: bool,
+    /// "never", "on-failure" or "always".
+    pub restart: *const c_char,
 }
 
 /// A resolved plan in start order, every path absolute. Empty when diagnostics are not.
@@ -302,6 +304,7 @@ impl Store {
             cwd: self.path(&i.cwd),
             group: i.group.as_deref().map(|g| self.str(g)).unwrap_or(std::ptr::null()),
             expect_mesh: i.node.expect_mesh,
+            restart: self.str(i.restart.as_str()),
         }
     }
 

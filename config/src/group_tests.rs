@@ -304,3 +304,22 @@ fn placement_follows_workspace_package_groups_and_node() {
     assert!(err.message.contains("longer than Rant's 32 bytes"), "{err}");
     assert_eq!(err.line, 1);
 }
+
+#[test]
+fn restart_comes_from_the_innermost_that_sets_it() {
+    let t = workspace_with(&[
+        ("inner.run", "  node \"lidar\" {}\n  node \"planner/odom\" {\n    restart = \"never\"\n  }\n"),
+        ("outer.run", "  restart = \"on-failure\"\n  include \"inner\" {\n    restart = \"always\"\n  }\n  node \"drivers/motors\" {}\n"),
+        ("plain.run", "  node \"lidar\" {}\n"),
+        ("wrong.run", "  restart = \"sometimes\"\n  node \"lidar\" {}\n"),
+        ("named.run", "  param \"restart\" {}\n"),
+    ]);
+    let m = model(&t);
+    let (p, _) = plan(&m, "outer", &[]).unwrap();
+    let got: Vec<(&str, &str)> = p.instances.iter().map(|i| (i.name.as_str(), i.restart.as_str())).collect();
+    assert_eq!(got, [("lidar", "always"), ("odom", "never"), ("motors", "on-failure")]);
+    let (p, _) = plan(&m, "plain", &[]).unwrap();
+    assert_eq!(p.instances[0].restart.as_str(), "never", "nothing set, never");
+    assert!(plan(&m, "wrong", &[]).unwrap_err().message.contains("`restart` is \"never\", \"on-failure\" or \"always\""));
+    assert!(plan(&m, "named", &[]).unwrap_err().message.contains("a param cannot be named `restart`"));
+}

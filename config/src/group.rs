@@ -15,7 +15,7 @@ use crate::diag::Diag;
 use crate::eval::{self, Scope};
 use crate::model::{Model, Package};
 use crate::paths;
-use crate::plan::{Instance, Plan};
+use crate::plan::{Instance, Plan, Restart};
 use crate::refs;
 use crate::param::{self, Param};
 use crate::placement::{self, Placement};
@@ -80,12 +80,25 @@ struct Include {
     bindings: Vec<Attribute>,
     /// domain, prefix and node_prefix for everything the included group runs
     placement: Vec<Attribute>,
+    restart: Option<Attribute>,
     at: Loc,
 }
 
 enum Item {
     Include(Include),
     Node(Block),
+}
+
+/// The keys a group file, an include and a node block share: where its nodes land and
+/// whether they start again.
+fn shared_keys() -> Vec<&'static str> {
+    [&placement::KEYS[..], &[Restart::KEY][..]].concat()
+}
+
+/// A `restart` value, checked.
+fn read_restart(src: &Source, a: &Attribute, scope: &Scope) -> Result<Restart, Diag> {
+    Restart::parse(&eval::string(src, a, scope)?)
+        .ok_or_else(|| src.diag_at(&a.value, "`restart` is \"never\", \"on-failure\" or \"always\""))
 }
 
 /// A parsed group file. Expressions stay unevaluated until the group is expanded.
@@ -106,7 +119,7 @@ impl GroupDef {
 fn parse(file: GroupFile, root: &Path) -> Result<GroupDef, Diag> {
     let src = Source::read(&file.path)?;
     // the whole file is the group, no block around it
-    let keys = [&["description"][..], &placement::KEYS[..]].concat();
+    let keys = [&["description"][..], &shared_keys()[..]].concat();
     let fields = Fields::of_body(&src, &src.body, "a group file", &keys, &["param", "include", "node"])?;
     let dir = src.dir().to_path_buf();
     let empty = BTreeMap::new();
@@ -114,7 +127,7 @@ fn parse(file: GroupFile, root: &Path) -> Result<GroupDef, Diag> {
     let description = fields.attr("description").map(|a| eval::string(&src, a, &scope)).transpose()?;
 
     let params = param::parse_all(&src, &fields, &scope)?;
-    if let Some(p) = params.iter().find(|p| placement::KEYS.contains(&p.name.as_str())) {
+    if let Some(p) = params.iter().find(|p| shared_keys().contains(&p.name.as_str())) {
         return Err(p.at.diag(format!("a param cannot be named `{}`", p.name)));
     }
 
@@ -125,7 +138,7 @@ fn parse(file: GroupFile, root: &Path) -> Result<GroupDef, Diag> {
             "include" => items.push(Item::Include(parse_include(&src, b, &scope)?)),
             "node" => {
                 one_label(&src, b)?;
-                Fields::of(&src, b, &[&["name", "args", "env"][..], &placement::KEYS[..]].concat(), &[])?;
+                Fields::of(&src, b, &[&["name", "args", "env"][..], &shared_keys()[..]].concat(), &[])?;
                 items.push(Item::Node(b.clone()));
             }
             _ => {}
@@ -136,11 +149,12 @@ fn parse(file: GroupFile, root: &Path) -> Result<GroupDef, Diag> {
 
 fn parse_include(src: &Source, b: &Block, scope: &Scope) -> Result<Include, Diag> {
     let group = one_label(src, b)?.to_string();
-    let mut inc = Include { group, expose: Expose::None, bindings: Vec::new(), placement: Vec::new(), at: Loc::of(src, b) };
+    let mut inc = Include { group, expose: Expose::None, bindings: Vec::new(), placement: Vec::new(), restart: None, at: Loc::of(src, b) };
     for s in b.body.iter() {
         match s {
-            Structure::Block(inner) => return Err(src.diag_at(inner, "an include holds only param values, `expose` and placement")),
+            Structure::Block(inner) => return Err(src.diag_at(inner, "an include holds only param values, `expose`, placement and `restart`")),
             Structure::Attribute(a) if placement::KEYS.contains(&a.key.as_str()) => inc.placement.push(a.clone()),
+            Structure::Attribute(a) if a.key.as_str() == Restart::KEY => inc.restart = Some(a.clone()),
             Structure::Attribute(a) if a.key.as_str() == "expose" => {
                 inc.expose = match eval::value(src, a, scope)? {
                     Value::Bool(true) => Expose::All,
@@ -293,7 +307,7 @@ impl<'m> Groups<'m> {
         let help = format!(", see `rant run {} --help`", def.file.name);
         let values = param::bind(&iface, given, &|m| Diag::plain(format!("{m}{help}")), "")?;
         let mut found = Vec::new();
-        self.expand(def, &iface, &values, &Placement::default(), &mut found)?;
+        self.expand(def, &iface, &values, &Placement::default(), Restart::Never, &mut found)?;
 
         let mut plan = Plan::default();
         let mut origins: Vec<Loc> = Vec::new();
@@ -317,20 +331,22 @@ impl<'m> Groups<'m> {
     }
 
     /// The instances of a group, depth first. chain is the placement of the groups around
-    /// it, and this group's own goes inside it.
+    /// it, and this group's own goes inside it. restart is what the groups around it set.
     fn expand(
         &self,
         def: &GroupDef,
         iface: &[Param],
         values: &BTreeMap<String, Value>,
         chain: &Placement,
+        restart: Restart,
         out: &mut Vec<(Instance, Loc)>,
     ) -> Result<(), Diag> {
         let dir = def.src.dir().to_path_buf();
         let package_dir = def.file.package.as_deref().and_then(|p| self.model.package(p)).map(|p| p.dir.clone());
         let scope = Scope { params: Some(values), file_dir: &dir, package_dir: package_dir.as_deref(), workspace: &self.model.config.root };
-        let top = Fields::of_body(&def.src, &def.src.body, "a group file", &[&["description"][..], &placement::KEYS[..]].concat(), &["param", "include", "node"])?;
+        let top = Fields::of_body(&def.src, &def.src.body, "a group file", &[&["description"][..], &shared_keys()[..]].concat(), &["param", "include", "node"])?;
         let chain = chain.inner(&Placement::read(&def.src, &top.attrs, &scope)?);
+        let restart = top.attr(Restart::KEY).map(|a| read_restart(&def.src, a, &scope)).transpose()?.unwrap_or(restart);
         let mut include_idx = 0;
         for item in &def.items {
             match item {
@@ -354,17 +370,18 @@ impl<'m> Groups<'m> {
                     )?;
                     let placed: Vec<&Attribute> = inc.placement.iter().collect();
                     let child_chain = chain.inner(&Placement::read(&def.src, &placed, &scope)?);
-                    self.expand(&child, &child_iface, &child_values, &child_chain, out)?;
+                    let child_restart = inc.restart.as_ref().map(|a| read_restart(&def.src, a, &scope)).transpose()?.unwrap_or(restart);
+                    self.expand(&child, &child_iface, &child_values, &child_chain, child_restart, out)?;
                 }
-                Item::Node(b) => out.push((self.node(def, b, &scope, &chain)?, Loc::of(&def.src, b))),
+                Item::Node(b) => out.push((self.node(def, b, &scope, &chain, restart)?, Loc::of(&def.src, b))),
             }
         }
         Ok(())
     }
 
-    fn node(&self, def: &GroupDef, b: &Block, scope: &Scope, chain: &Placement) -> Result<Instance, Diag> {
+    fn node(&self, def: &GroupDef, b: &Block, scope: &Scope, chain: &Placement, restart: Restart) -> Result<Instance, Diag> {
         let src = &def.src;
-        let fields = Fields::of(src, b, &[&["name", "args", "env"][..], &placement::KEYS[..]].concat(), &[])?;
+        let fields = Fields::of(src, b, &[&["name", "args", "env"][..], &shared_keys()[..]].concat(), &[])?;
         // the label says what runs, `name` what the running node is called, its own name by default
         let reference = one_label(src, b)?;
         let node = refs::resolve(self.model, reference, scope.file_dir).map_err(|e| src.diag_at(b, e))?;
@@ -401,11 +418,12 @@ impl<'m> Groups<'m> {
         // the shell, workspace and package, then the groups, then the node itself
         let placed = self.model.placement_of(&node).inner(chain).inner(&Placement::read(src, &fields.attrs, scope)?);
         let name = placed.apply(&name, &mut env).map_err(|e| src.diag_at(b, e))?;
-        Ok(Instance { name, cwd: node.cwd.clone(), argv, env, node, group: Some(def.file.name.clone()) })
+        let restart = fields.attr(Restart::KEY).map(|a| read_restart(src, a, scope)).transpose()?.unwrap_or(restart);
+        Ok(Instance { name, cwd: node.cwd.clone(), argv, env, node, group: Some(def.file.name.clone()), restart })
     }
 }
 
-/// The same node as far as running it goes: what it runs, how, and where.
+/// The same node as far as running it goes: what it runs, how, where and whether again.
 fn same(a: &Instance, b: &Instance) -> bool {
-    a.argv == b.argv && a.env == b.env && a.cwd == b.cwd && a.type_ref() == b.type_ref()
+    a.argv == b.argv && a.env == b.env && a.cwd == b.cwd && a.type_ref() == b.type_ref() && a.restart == b.restart
 }

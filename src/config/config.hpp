@@ -86,6 +86,7 @@ struct Instance {
     fs::path                           cwd;
     std::string                        group;    /* the group whose own node block makes it, empty for a node run alone */
     bool                               expect_mesh = true;    /* only a declared program may never join */
+    std::string                        restart = "never";     /* or "on-failure" or "always", which the service process does */
 };
 
 /* A resolved plan in start order. instances is empty whenever diagnostics is not. A group

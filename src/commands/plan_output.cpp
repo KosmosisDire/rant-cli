@@ -55,7 +55,8 @@ void print_plan(app::Context& ctx, const config::Plan& plan) {
                               { "node", i.type },
                               { "argv", i.argv },
                               { "env", i.env },
-                              { "cwd", config::to_utf8(i.cwd) } });
+                              { "cwd", config::to_utf8(i.cwd) },
+                              { "restart", i.restart } });
         ctx.out.line(json{ { "workspace", config::to_utf8(plan.workspace->root) }, { "nodes", nodes } }.dump(2));
         return;
     }
@@ -64,6 +65,7 @@ void print_plan(app::Context& ctx, const config::Plan& plan) {
         ctx.out.line("  run  " + process::shown(i.argv));
         ctx.out.line("  cwd  " + config::to_utf8(i.cwd));
         for (auto& [k, v] : i.env) ctx.out.line("  env  " + k + "=" + v);
+        if (i.restart != "never") ctx.out.line("  restart  " + i.restart);
     }
 }
 

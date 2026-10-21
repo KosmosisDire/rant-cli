@@ -131,6 +131,12 @@ innermost domain wins. `prefix` goes in front of every entity name a node makes,
 `node_prefix` in front of its node name. Place nodes this way, never with names or domains
 hard coded in the program.
 
+`restart` says whether a node that exits starts again: `"never"` (the default),
+`"on-failure"` (unless it exited with 0) or `"always"`. It goes on a group's top level, an
+`include` or a group `node`, and the innermost wins. rant's service process starts such a
+node and starts it again after a pause that grows while it keeps failing. `rant stop` stops
+it for good.
+
 ## Bridge
 
 The bridge is a background server that lends this host's UDP sockets to Rant nodes elsewhere:
