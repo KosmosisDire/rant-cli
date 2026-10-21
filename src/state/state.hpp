@@ -92,4 +92,7 @@ std::vector<std::string> prune(State& s, const std::function<bool(uint32_t sessi
 void remember(const fs::path& data_dir);
 std::vector<fs::path> remembered();
 
+/* The folder a data folder serves: its workspace, or rant's home, which is its own. */
+fs::path folder_of(const fs::path& data_dir);
+
 }

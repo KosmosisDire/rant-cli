@@ -85,7 +85,7 @@ static std::vector<Held> started_anywhere(app::Context& ctx) {
         std::string key = util::path_key(d);
         if (std::find(seen.begin(), seen.end(), key) != seen.end()) continue;
         seen.push_back(key);
-        Held h{ d.parent_path(), std::make_unique<state::Store>(d) };
+        Held h{ state::folder_of(d), std::make_unique<state::Store>(d) };
         state::prune(h.state(), services::running_in);
         h.store->save();
         if (!h.state().instances.empty()) out.push_back(std::move(h));

@@ -166,4 +166,8 @@ std::vector<fs::path> remembered() {
     return out;
 }
 
+fs::path folder_of(const fs::path& data_dir) {
+    return util::path_key(data_dir) == util::path_key(util::rant_home()) ? data_dir : data_dir.parent_path();
+}
+
 }
