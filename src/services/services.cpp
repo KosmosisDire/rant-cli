@@ -160,6 +160,9 @@ static std::string own_pid() {
 #endif
 }
 
+/* The folder a data folder serves: its workspace, or rant's home, which is its own. */
+static fs::path workspace_of(const fs::path& data) { return data == util::rant_home() ? data : data.parent_path(); }
+
 static bool same(const process::Tracking& a, const process::Tracking& b) {
     return a.pid == b.pid && a.start_time == b.start_time;
 }
@@ -359,7 +362,7 @@ void Host::look() {
                     process::Child child = run::start(data, rec);
                     rec.tracking = child.tracking();
                     watched_.push_back({ data, rec.name, child.tracking(), std::move(child), clock::now(), 0 });
-                    say("started " + rec.name + " in " + config::to_utf8(data.parent_path()) + ", restart " + rec.restart);
+                    say("started " + rec.name + " in " + config::to_utf8(workspace_of(data)) + ", restart " + rec.restart);
                 } catch (const app::Failure& e) {
                     std::string name = rec.name;
                     say("cannot start " + name + ": " + e.what());
