@@ -51,12 +51,15 @@ static std::string exec_line(const std::vector<std::string>& argv) {
     return exec;
 }
 
-/* Only the service process is stopped with the unit, so the nodes it started keep running. */
+/* The command only starts what is enabled and a service process, then ends. What it started
+ * keeps running when the unit stops. */
 std::string systemd_user_unit(const std::vector<std::string>& argv) {
     return "[Unit]\n"
            "Description=Rant service process\n"
            "\n"
            "[Service]\n"
+           "Type=oneshot\n"
+           "RemainAfterExit=yes\n"
            "ExecStart=" + exec_line(argv) + "\n"
            "KillMode=process\n"
            "\n"
@@ -71,6 +74,8 @@ std::string systemd_system_unit(const std::vector<std::string>& argv, const std:
            "After=network-online.target\n"
            "\n"
            "[Service]\n"
+           "Type=oneshot\n"
+           "RemainAfterExit=yes\n"
            "User=" + user + "\n"
            "ExecStart=" + exec_line(argv) + "\n"
            "KillMode=process\n"

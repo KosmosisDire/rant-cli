@@ -1,6 +1,8 @@
 #pragma once
 
+#include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <map>
 #include <string>
 #include <vector>
@@ -40,6 +42,7 @@ struct Instance {
     std::string                        restart = "never";     /* or "on-failure" or "always", which the service process does */
     int                                restarts = 0;          /* how often the service process started it again */
     std::vector<std::string>           launch_env;            /* the environment of the command that left it to the service process */
+    uint32_t                           session = 0;           /* the Windows session it runs in, 0 elsewhere */
 
     /* Same type, argv, env and working directory. */
     bool same_spec(const Instance& o) const;
@@ -79,9 +82,10 @@ private:
 
 /* Drops the instances whose processes are all gone, their names leave every root, and a
  * node root left with nothing goes too. Group roots stay, so starting the group again
- * brings back what crashed. restarting: the service process runs, so a node with restart
- * set stays for it, gone or not started yet. Returns the names dropped. */
-std::vector<std::string> prune(State& s, bool restarting);
+ * brings back what crashed. A node left to a service process to start, or with restart set,
+ * stays while restarting says the service process of its session runs. Returns the names
+ * dropped. */
+std::vector<std::string> prune(State& s, const std::function<bool(uint32_t session)>& restarting);
 
 /* Every workspace's data folder rant started a node from, kept in ~/.rant/workspaces so a
  * stop anywhere on the machine finds them. A folder with no state left drops out. */

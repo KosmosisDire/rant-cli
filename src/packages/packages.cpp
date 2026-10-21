@@ -288,7 +288,7 @@ static std::vector<std::string> running_from(const fs::path& folder) {
     std::vector<std::string> out;
     for (auto& d : state::remembered()) {
         state::Store store(d);
-        state::prune(store.state(), services::running());
+        state::prune(store.state(), services::running_in);
         store.save();
         for (auto& i : store.state().instances)
             if (i.runs_from(folder)) out.push_back(i.name);

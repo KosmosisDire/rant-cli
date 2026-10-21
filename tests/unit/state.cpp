@@ -51,7 +51,7 @@ TEST(prune_drops_dead_instances_and_their_node_roots_only) {
     st.roots.push_back({ "group", "nav", {} });
     st.instances.push_back(instance("a", "node a"));       /* pid 0: never alive */
     st.instances.push_back(instance("b", "group nav"));
-    auto dropped = state::prune(st, false);
+    auto dropped = state::prune(st, [](uint32_t) { return false; });
     CHECK_EQ(dropped.size(), 2u);
     CHECK(st.instances.empty());
     CHECK_EQ(st.roots.size(), 1u);
@@ -63,10 +63,13 @@ TEST(prune_leaves_a_restarting_node_to_the_service_process) {
     st.instances.push_back(instance("a", "group nav"));
     st.instances.back().restart = "always";
     st.instances.push_back(instance("b", "group nav"));
-    CHECK_EQ(state::prune(st, true).size(), 1u);
+    st.instances.back().tracking.pid = 1;    /* gone, and with restart never */
+    st.instances.push_back(instance("c", "group nav"));
+    st.instances.back().session = 2;          /* left to the service process of session 2 */
+    CHECK_EQ(state::prune(st, [](uint32_t s) { return s == 2; }).size(), 2u);
     CHECK_EQ(st.instances.size(), 1u);
-    CHECK_EQ(st.instances[0].name, std::string("a"));
-    CHECK_EQ(state::prune(st, false).size(), 1u);
+    CHECK_EQ(st.instances[0].name, std::string("c"));
+    CHECK_EQ(state::prune(st, [](uint32_t) { return false; }).size(), 1u);
 }
 
 TEST(a_held_state_is_not_taken_without_waiting) {

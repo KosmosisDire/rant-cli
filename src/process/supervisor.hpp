@@ -74,6 +74,12 @@ Stopped stop(const Tracking& t, std::chrono::milliseconds grace);
  * Windows offers no way to ask such a process, so there it is killed at once. */
 Stopped stop_pid(uint64_t pid, std::chrono::milliseconds grace);
 
+#ifdef _WIN32
+/* A security descriptor that lets this user and the system open an object from any session,
+ * since a process the boot task starts runs in another session with other defaults. */
+void* user_only_security();
+#endif
+
 /* Every main() that stops processes calls this first. On Windows, stop() runs this same
  * executable as a helper that joins the node's console to send Ctrl-Break, so the caller
  * never leaves its own console. Returns the helper's exit code when argv asks for the

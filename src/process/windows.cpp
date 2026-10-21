@@ -3,6 +3,7 @@
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
+#include <sddl.h>
 #include <shellapi.h>
 
 #include <algorithm>
@@ -207,6 +208,27 @@ static uint64_t creation_time(HANDLE process) {
     return ((uint64_t)created.dwHighDateTime << 32) | created.dwLowDateTime;
 }
 
+void* user_only_security() {
+    static PSECURITY_DESCRIPTOR sd = [] {
+        PSECURITY_DESCRIPTOR out = nullptr;
+        HANDLE token = nullptr;
+        if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token)) return out;
+        DWORD size = 0;
+        GetTokenInformation(token, TokenUser, nullptr, 0, &size);
+        std::vector<char> buf(size);
+        wchar_t* sid = nullptr;
+        if (GetTokenInformation(token, TokenUser, buf.data(), size, &size) &&
+            ConvertSidToStringSidW(reinterpret_cast<TOKEN_USER*>(buf.data())->User.Sid, &sid)) {
+            std::wstring text = L"D:(A;;GA;;;" + std::wstring(sid) + L")(A;;GA;;;SY)";
+            ConvertStringSecurityDescriptorToSecurityDescriptorW(text.c_str(), SDDL_REVISION_1, &out, nullptr);
+            LocalFree(sid);
+        }
+        CloseHandle(token);
+        return out;
+    }();
+    return sd;
+}
+
 Child start_child(const Command& c, const fs::path& log, const std::string& job_name) {
     SECURITY_ATTRIBUTES sa = inheritable();
     Handle out(CreateFileW(log.wstring().c_str(), FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
@@ -216,7 +238,9 @@ Child start_child(const Command& c, const fs::path& log, const std::string& job_
 
     /* The node inherits a handle to its own job. A named object loses its name when its
      * last handle closes, and this handle keeps the name findable after the CLI exits. */
-    Handle job(CreateJobObjectW(&sa, wide(job_name).c_str()));
+    SECURITY_ATTRIBUTES job_sa = inheritable();
+    job_sa.lpSecurityDescriptor = user_only_security();
+    Handle job(CreateJobObjectW(&job_sa, wide(job_name).c_str()));
     if (!job) throw app::Failure("cannot create job " + job_name + ": " + last_error_text());
     if (GetLastError() == ERROR_ALREADY_EXISTS)
         throw app::Failure("job " + job_name + " already exists: an earlier start of this node is still running");

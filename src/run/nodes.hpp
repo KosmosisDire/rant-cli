@@ -37,9 +37,10 @@ state::State snapshot(app::Context& ctx);
 
 /* Starts a plan instance under `name`, detached, its output in <logs>/<name>.log with the
  * last run's log kept as <name>.log.1. Returns the record for the state, with no roots. A
- * node with restart set is left to the service process, so its record has no process until
- * hand_over. */
-state::Instance spawn(const config::Workspace& ws, const config::Instance& inst, const std::string& name);
+ * node with restart set is left to the service process, and so is one meant for another
+ * session whose service process runs, so its record has no process until hand_over. */
+state::Instance spawn(const config::Workspace& ws, const config::Instance& inst, const std::string& name,
+                      std::optional<uint32_t> session = std::nullopt);
 
 /* Starts a record of the workspace whose data folder is data, as a child of this process,
  * its last log moved aside first. Throws app::Failure. */
@@ -74,7 +75,8 @@ struct Exit {
 /* The instances of started that exited within span, sooner once all of them have. */
 std::vector<Exit> exited_within(const std::vector<state::Instance>& started, std::chrono::milliseconds span);
 
-/* Stops an instance and everything it started: gracefully, then by force after grace. */
+/* Stops an instance and everything it started: gracefully, then by force after grace. One in
+ * another session is stopped by the service process there. */
 process::Stopped halt(const state::Instance& inst);
 
 /* A running instance is the plan's node: same type, argv, env and working directory. */

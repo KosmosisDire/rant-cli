@@ -106,7 +106,8 @@ static void start_root(app::Context& ctx, run::Session& s, const Halted& h, std:
             continue;
         }
         std::vector<std::string> roots = inst ? inst->roots : std::vector<std::string>{ key };
-        state::Instance rec = run::spawn(s.workspace(), p, p.name);
+        /* a node comes back in the session it ran in */
+        state::Instance rec = run::spawn(s.workspace(), p, p.name, inst ? std::optional<uint32_t>(inst->session) : std::nullopt);
         rec.roots = roots;
         if (inst) *inst = rec;
         else st.instances.push_back(rec);

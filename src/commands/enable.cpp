@@ -179,7 +179,7 @@ static Standing standing(const services::Enabled& e) {
     }
     std::string key = e.kind == "group" ? state::Root{ "group", plan.group, plan.params }.key() : "node " + plan.instances.front().name;
     state::Store store(plan.workspace->data);
-    state::prune(store.state(), services::running());
+    state::prune(store.state(), services::running_in);
     store.save();
     size_t up = 0, all = 0, waiting = 0;
     for (auto& i : store.state().instances) {

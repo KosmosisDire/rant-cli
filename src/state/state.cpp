@@ -65,6 +65,7 @@ static State from_json(const json& j) {
         in.restart = i.value("restart", "never");
         in.restarts = i.value("restarts", 0);
         in.launch_env = i.value("launch_env", std::vector<std::string>{});
+        in.session = i.value("session", 0u);
         s.instances.push_back(std::move(in));
     }
     return s;
@@ -89,6 +90,7 @@ static json to_json(const State& s) {
                               { "restart", i.restart },
                               { "restarts", i.restarts } };
         if (!i.launch_env.empty()) rec["launch_env"] = i.launch_env;
+        if (i.session) rec["session"] = i.session;
         instances.push_back(rec);
     }
     return { { "format", FORMAT }, { "roots", roots }, { "instances", instances } };
@@ -121,10 +123,11 @@ void Store::save() {
     fs::rename(tmp, path_);
 }
 
-std::vector<std::string> prune(State& s, bool restarting) {
+std::vector<std::string> prune(State& s, const std::function<bool(uint32_t session)>& restarting) {
     std::vector<std::string> dropped;
     for (auto it = s.instances.begin(); it != s.instances.end();) {
-        if (process::alive(it->tracking) || (restarting && it->restart != "never")) {
+        bool left = it->restart != "never" || it->tracking.pid == 0;
+        if (process::alive(it->tracking) || (left && restarting(it->session))) {
             ++it;
             continue;
         }

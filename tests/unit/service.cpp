@@ -28,6 +28,8 @@ TEST(the_systemd_boot_unit_runs_as_the_user_after_the_network) {
                          "After=network-online.target\n"
                          "\n"
                          "[Service]\n"
+                         "Type=oneshot\n"
+                         "RemainAfterExit=yes\n"
                          "User=a\n"
                          "ExecStart=\"/home/a/.rant/bin/rant\" \"__services\" \"--boot\" \"/home/a/.rant\"\n"
                          "KillMode=process\n"
@@ -42,12 +44,14 @@ TEST(the_launchd_boot_daemon_runs_as_the_user) {
     CHECK(plist.find("<string>--boot</string>") != std::string::npos);
 }
 
-TEST(the_systemd_login_unit_stops_only_the_service_process) {
+TEST(the_systemd_login_unit_leaves_what_it_started) {
     CHECK_EQ(entry::systemd_user_unit(entry::argv(When::Login, "/home/a/.rant/bin/rant", "/home/a/.rant")),
              std::string("[Unit]\n"
                          "Description=Rant service process\n"
                          "\n"
                          "[Service]\n"
+                         "Type=oneshot\n"
+                         "RemainAfterExit=yes\n"
                          "ExecStart=\"/home/a/.rant/bin/rant\" \"__services\" \"--login\" \"/home/a/.rant\"\n"
                          "KillMode=process\n"
                          "\n"

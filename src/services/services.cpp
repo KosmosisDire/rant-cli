@@ -35,25 +35,28 @@ namespace services {
 using clock = std::chrono::steady_clock;
 using std::chrono::seconds;
 
-static fs::path lock_file() { return util::rant_home() / "services.lock"; }
-
 fs::path log_file() { return util::rant_home() / "logs" / "services.log"; }
 
 /* Tells this home's service process from another home's, as a test's. */
 static std::string home_key() { return util::path_key(util::rant_home()).substr(0, 12); }
 
-bool running() {
-    std::error_code ec;
-    fs::create_directories(util::rant_home(), ec);
-    return !util::FileLock(lock_file(), false).held();
-}
-
 #ifdef _WIN32
 
-static std::wstring wake_event() { return config::from_utf8("Local\\rant-services-" + home_key()).wstring(); }
+uint32_t session() {
+    DWORD id = 0;
+    ProcessIdToSessionId(GetCurrentProcessId(), &id);
+    return id;
+}
 
-void wake() {
-    if (HANDLE e = OpenEventW(EVENT_MODIFY_STATE, FALSE, wake_event().c_str())) {
+static fs::path lock_file(uint32_t s) { return util::rant_home() / ("services-" + std::to_string(s) + ".lock"); }
+
+/* Global, so a command in another session reaches it. */
+static std::wstring wake_event(uint32_t s) {
+    return config::from_utf8("Global\\rant-services-" + home_key() + "-" + std::to_string(s)).wstring();
+}
+
+void wake(uint32_t s) {
+    if (HANDLE e = OpenEventW(EVENT_MODIFY_STATE, FALSE, wake_event(s).c_str())) {
         SetEvent(e);
         CloseHandle(e);
     }
@@ -61,10 +64,14 @@ void wake() {
 
 #else
 
+uint32_t session() { return 0; }
+
+static fs::path lock_file(uint32_t) { return util::rant_home() / "services.lock"; }
+
 static fs::path wake_pipe() { return util::rant_home() / "services.wake"; }
 
 /* Opening fails with no reader, so only a running service process hears it. */
-void wake() {
+void wake(uint32_t) {
     int fd = open(wake_pipe().c_str(), O_WRONLY | O_NONBLOCK | O_CLOEXEC);
     if (fd < 0) return;
     char c = 1;
@@ -74,6 +81,40 @@ void wake() {
 }
 
 #endif
+
+bool running_in(uint32_t s) {
+    std::error_code ec;
+    fs::create_directories(util::rant_home(), ec);
+    return !util::FileLock(lock_file(s), false).held();
+}
+
+bool running() { return running_in(session()); }
+
+/* A stop request is a file named after the session and the node, answered by a file saying how
+ * it stopped. */
+static fs::path stops() { return util::rant_home() / "stops"; }
+
+std::optional<process::Stopped> stop_through(uint32_t s, const process::Tracking& t) {
+    if (!running_in(s)) return std::nullopt;
+    std::error_code ec;
+    fs::create_directories(stops(), ec);
+    std::string base = std::to_string(s) + "-" + std::to_string(t.pid) + "-" + std::to_string(t.start_time);
+    fs::path ask = stops() / (base + ".ask"), done = stops() / (base + ".done");
+    std::ofstream(ask, std::ios::binary) << t.pid << " " << t.start_time << " " << t.job << "\n";
+    wake(s);
+    for (int i = 0; i < 150; i++) {
+        std::string how;
+        if (std::ifstream(done, std::ios::binary) >> how) {
+            fs::remove(done, ec);
+            return how == "gracefully" ? process::Stopped::Gracefully
+                 : how == "killed"     ? process::Stopped::Killed
+                                       : process::Stopped::AlreadyGone;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    fs::remove(ask, ec);
+    return std::nullopt;
+}
 
 void ensure_running() {
     if (running()) return;
@@ -198,7 +239,7 @@ static void start_enabled(const std::string& start) {
         argv.insert(argv.end(), { "--no-build", "-y" });
         if (e.domain) argv.insert(argv.end(), { "--domain", std::to_string(*e.domain) });
         std::string job = "Local\\rant-services-" + home_key() + "-start-" + std::to_string(clock::now().time_since_epoch().count());
-        say("starting " + e.shown() + " in " + config::to_utf8(e.folder));
+        say("at " + start + ", starting " + e.shown() + " in " + config::to_utf8(e.folder));
         try {
             process::start_detached({ argv, e.folder, e.env }, log_file(), job);
         } catch (const app::Failure& f) {
@@ -239,12 +280,14 @@ private:
     void note_ended();
     void decide();
     void look();
+    void answer_stops();
     bool watching(const fs::path& data, const state::Instance& rec) const;
 
     std::list<Watched> watched_;
     std::list<Ended>   ended_;
     clock::time_point  looked_{};
     bool               look_again_ = true;
+    size_t             live_here_ = 0;    /* nodes of this session alive at the last look */
     clock::time_point  idle_since_ = clock::now();
 };
 
@@ -328,10 +371,11 @@ bool Host::watching(const fs::path& data, const state::Instance& rec) const {
     return false;
 }
 
-/* Starts the nodes commands left to it, and takes on those a former service process
- * started. A workspace whose state is busy is looked at again next round. */
+/* Starts the nodes of this session commands left to it, and takes on those with restart set a
+ * former service process started. A workspace whose state is busy is looked at again next round. */
 void Host::look() {
     look_again_ = false;
+    live_here_ = 0;
     for (auto& data : state::remembered()) {
         state::Store store(data, false);
         if (!store.locked()) {
@@ -342,7 +386,10 @@ void Host::look() {
         auto& instances = store.state().instances;
         for (size_t i = 0; i < instances.size(); i++) {
             state::Instance& rec = instances[i];
-            if (rec.restart == "never" || watching(data, rec)) continue;
+            if (rec.session != session()) continue;
+            bool alive = rec.tracking.pid && process::alive(rec.tracking);
+            live_here_ += alive;
+            if (watching(data, rec)) continue;
             if (rec.tracking.pid == 0) {
                 try {
                     process::Child child = run::start(data, rec);
@@ -356,7 +403,9 @@ void Host::look() {
                     i--;    /* the next record took its place */
                 }
                 changed = true;
-            } else if (process::alive(rec.tracking)) {
+            } else if (rec.restart == "never") {
+                continue;
+            } else if (alive) {
                 watched_.push_back({ data, rec.name, rec.tracking, std::nullopt, clock::now(), 0 });
                 say("watching " + rec.name + ", which an earlier service process started");
             } else {
@@ -367,46 +416,72 @@ void Host::look() {
     }
 }
 
+/* Stops the nodes of this session commands of another session asked it to stop. */
+void Host::answer_stops() {
+    std::error_code ec;
+    std::string mine = std::to_string(session()) + "-";
+    for (auto& f : fs::directory_iterator(stops(), ec)) {
+        std::string name = f.path().filename().u8string();
+        if (name.rfind(mine, 0) != 0 || f.path().extension() != ".ask") continue;
+        process::Tracking t;
+        std::ifstream in(f.path(), std::ios::binary);
+        in >> t.pid >> t.start_time;
+        std::getline(in >> std::ws, t.job);
+        in.close();
+        fs::remove(f.path(), ec);
+        process::Stopped how = process::stop(t, run::grace);
+        const char* word = how == process::Stopped::Gracefully ? "gracefully" : how == process::Stopped::AlreadyGone ? "gone" : "killed";
+        fs::path done = f.path();
+        std::ofstream(done.replace_extension(".done"), std::ios::binary) << word << "\n";
+    }
+}
+
 bool Host::round(bool woken) {
+    answer_stops();
     note_ended();
     decide();
     if (woken || look_again_ || clock::now() - looked_ > seconds(5)) {
         look();
         looked_ = clock::now();
     }
-    if (!watched_.empty() || !ended_.empty() || look_again_) idle_since_ = clock::now();
+#ifdef _WIN32
+    /* session 0, where the boot task runs, has no desktop or terminal, so only this process can
+     * stop its nodes gently */
+    bool keep = session() == 0 && live_here_ > 0;
+#else
+    bool keep = false;
+#endif
+    if (keep || !watched_.empty() || !ended_.empty() || look_again_) idle_since_ = clock::now();
     return clock::now() - idle_since_ < seconds(10);
 }
 
 int serve(const std::string& start) {
     std::error_code ec;
     fs::create_directories(log_file().parent_path(), ec);
-#ifdef _WIN32
-    /* Windows before 11 24H2 ignores the manifest and gives a program the login starts a
-     * console window, so a copy without one carries on. */
-    if (start == "login" && GetConsoleWindow()) {
-        std::string job = "Local\\rant-services-" + home_key() + "-" + std::to_string(clock::now().time_since_epoch().count());
-        process::start_detached({ { config::to_utf8(process::self_path()), "__services", "--login", config::to_utf8(util::rant_home()) },
-                                  util::rant_home(), {} },
-                                log_file(), job);
+    /* An entry only starts what is enabled and a service process to watch it, then ends, so
+     * the console window older Windows gives it closes and no service manager holds the nodes. */
+    if (!start.empty()) {
+        start_enabled(start);
+        try {
+            ensure_running();
+        } catch (const app::Failure& e) {
+            say(e.what());
+            return 1;
+        }
         return 0;
     }
-#endif
-    /* what is enabled starts even when another service process runs, which then takes the nodes */
-    if (!start.empty()) start_enabled(start);
-#ifdef _WIN32
-#endif
     /* a command probing whether one runs holds the lock for a moment, so a few tries */
     std::optional<util::FileLock> lock;
     for (int i = 0; i < 20; i++) {
-        lock.emplace(lock_file(), false);
+        lock.emplace(lock_file(session()), false);
         if (lock->held()) break;
         std::this_thread::sleep_for(std::chrono::milliseconds(25));
     }
     if (!lock->held()) return 0;    /* another one runs */
 
 #ifdef _WIN32
-    HANDLE event = CreateEventW(nullptr, FALSE, FALSE, wake_event().c_str());
+    SECURITY_ATTRIBUTES sa{ sizeof sa, process::user_only_security(), FALSE };
+    HANDLE event = CreateEventW(&sa, FALSE, FALSE, wake_event(session()).c_str());
     auto wait = [&] { return WaitForSingleObject(event, 200) == WAIT_OBJECT_0; };
 #else
     /* opened for writing too, so the pipe never reads as closed while no command writes */
@@ -420,7 +495,7 @@ int serve(const std::string& start) {
         return true;
     };
 #endif
-    say("service process " + own_pid() + (start.empty() ? " started" : " started at " + start));
+    say("service process " + own_pid() + " started");
     Host host;
     bool woken = true;
     while (host.round(woken)) woken = wait();

@@ -10,7 +10,7 @@
 namespace run {
 
 Session::Session(const config::Workspace& ws) : ws_(ws), store_(ws.data) {
-    state::prune(store_.state(), services::running());
+    state::prune(store_.state(), services::running_in);
 }
 
 state::State snapshot(app::Context& ctx) {
@@ -22,12 +22,12 @@ state::State snapshot(app::Context& ctx) {
 }
 
 /* A job name unique per workspace and node: the same name in another workspace is another
- * job. The data folder never changes for a workspace. */
+ * job. The data folder never changes for a workspace. Global, so every session finds it. */
 static std::string job_name(const config::fs::path& data, const std::string& name) {
     std::string safe = name;
     for (auto& c : safe)
         if (c == '\\') c = '_';
-    return "Local\\rant-" + util::path_key(data).substr(0, 12) + "-" + safe;
+    return "Global\\rant-" + util::path_key(data).substr(0, 12) + "-" + safe;
 }
 
 std::vector<Exit> exited_within(const std::vector<state::Instance>& started, std::chrono::milliseconds span) {
@@ -63,7 +63,8 @@ process::Child start(const config::fs::path& data, const state::Instance& rec) {
     return process::start_child(c, log, job_name(data, rec.name));
 }
 
-state::Instance spawn(const config::Workspace& ws, const config::Instance& inst, const std::string& name) {
+state::Instance spawn(const config::Workspace& ws, const config::Instance& inst, const std::string& name,
+                      std::optional<uint32_t> session) {
     state::Instance rec;
     rec.name = name;
     rec.type = inst.type;
@@ -76,6 +77,12 @@ state::Instance spawn(const config::Workspace& ws, const config::Instance& inst,
     rec.expect_mesh = inst.expect_mesh;
     rec.restart = inst.restart;
     state::remember(ws.data);
+    uint32_t here = services::session();
+    rec.session = session && *session != here && services::running_in(*session) ? *session : here;
+    if (rec.session != here) {
+        rec.launch_env = process::environment({});
+        return rec;
+    }
     /* running first, so no command drops the record as dead before it starts the node */
     if (rec.restart != "never") {
         services::ensure_running();
@@ -90,13 +97,14 @@ std::vector<state::Instance> hand_over(const config::fs::path& data, std::vector
     auto waiting = [&] { return std::any_of(started.begin(), started.end(), [](const state::Instance& i) { return i.tracking.pid == 0; }); };
     if (!waiting()) return started;
     state::remember(data);    /* again, since the state file it needs now exists */
-    services::wake();
+    for (auto& rec : started)
+        if (rec.tracking.pid == 0) services::wake(rec.session);
     for (int i = 0; waiting(); i++) {
         if (i == 300) throw app::Failure("rant's service process did not start the nodes in 15 s, see " + config::to_utf8(services::log_file()));
         if (i > 0) std::this_thread::sleep_for(std::chrono::milliseconds(50));
         if (i % 20 == 19 && !services::running()) {
             services::ensure_running();    /* it ended just before the records came */
-            services::wake();
+            services::wake(services::session());
         }
         state::Store store(data);
         for (auto& rec : started) {
@@ -114,7 +122,7 @@ std::vector<Paused> pause_from(const config::fs::path& folder) {
     for (auto& data : state::remembered()) {
         state::Store store(data);
         state::State& st = store.state();
-        state::prune(st, services::running());
+        state::prune(st, services::running_in);
         std::vector<std::string> names;
         for (auto it = st.instances.rbegin(); it != st.instances.rend(); ++it) {
             if (!it->runs_from(folder)) continue;
@@ -143,8 +151,13 @@ std::vector<std::string> resume(const std::vector<Paused>& paused) {
                 state::Instance rec = it->rec;
                 rec.tracking = {};
                 try {
-                    if (rec.restart != "never") services::ensure_running();
-                    else rec.tracking = start(data, rec).tracking();
+                    /* it goes back to its session when the service process there runs */
+                    bool there = rec.session != services::session() && services::running_in(rec.session);
+                    if (!there) {
+                        rec.session = services::session();
+                        if (rec.restart != "never") services::ensure_running();
+                        else rec.tracking = start(data, rec).tracking();
+                    }
                 } catch (const app::Failure& e) {
                     failed.push_back(rec.name + ": " + e.what());
                     continue;
@@ -166,6 +179,9 @@ std::vector<std::string> resume(const std::vector<Paused>& paused) {
 }
 
 process::Stopped halt(const state::Instance& inst) {
+    /* Ctrl-Break and window messages reach no other session */
+    if (inst.session != services::session())
+        if (auto how = services::stop_through(inst.session, inst.tracking)) return *how;
     return process::stop(inst.tracking, grace);
 }
 
