@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "process/supervisor.hpp"
+#include "util/lock.hpp"
 
 /* The workspace's record of what rant started: the roots asked for and the node instances
  * that satisfy them. No daemon keeps it: every command reads it, reconciles it against the
@@ -52,33 +53,31 @@ struct State {
 };
 
 /* The state file, locked from construction to destruction so two commands never act on it
- * at once. A command blocked on the lock waits for the other to finish. */
+ * at once. A command blocked on the lock waits for the other to finish. Without wait it
+ * gives up at once, and then locked() is false and the state empty. */
 class Store {
 public:
-    explicit Store(const fs::path& data_dir);
-    ~Store();
+    explicit Store(const fs::path& data_dir, bool wait = true);
     Store(const Store&) = delete;
     Store& operator=(const Store&) = delete;
 
+    bool   locked() const { return lock_.held(); }
     State& state() { return state_; }
 
     /* Writes a temp file and renames it into place, so a crash never leaves half a file. */
     void save();
 
 private:
-    fs::path path_;
-    State    state_;
-#ifdef _WIN32
-    void*    lock_ = nullptr;
-#else
-    int      lock_ = -1;
-#endif
+    fs::path       path_;
+    util::FileLock lock_;
+    State          state_;
 };
 
 /* Drops the instances whose processes are all gone, their names leave every root, and a
  * node root left with nothing goes too. Group roots stay, so starting the group again
- * brings back what crashed. Returns the names dropped. */
-std::vector<std::string> prune(State& s);
+ * brings back what crashed. restarting: the service process runs, so a node with restart
+ * set stays for it, gone or not started yet. Returns the names dropped. */
+std::vector<std::string> prune(State& s, bool restarting);
 
 /* Every workspace's data folder rant started a node from, kept in ~/.rant/workspaces so a
  * stop anywhere on the machine finds them. A folder with no state left drops out. */

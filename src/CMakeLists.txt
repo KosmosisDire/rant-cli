@@ -59,6 +59,7 @@ add_library(rant_cli_core STATIC
   run/logs.cpp
   run/nodes.cpp
   scaffold/scaffold.cpp
+  services/services.cpp
   state/state.cpp
   ui/csv.cpp
   ui/live.cpp
@@ -69,6 +70,7 @@ add_library(rant_cli_core STATIC
   ui/yaml.cpp
   util/home.cpp
   util/interrupt.cpp
+  util/lock.cpp
   util/match.cpp
   util/naming.cpp)
 

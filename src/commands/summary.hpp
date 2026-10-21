@@ -66,13 +66,14 @@ Summary::Row started_row(const state::Instance& rec);
 app::OptionSpec wait_option();
 app::OptionSpec watch_option();
 
-/* Waits up to --wait seconds, 10 by default, for each node just started to show on the
- * mesh, then watches them --watch seconds more, 2 by default, since a node that crashes at
- * once, on an import error say, otherwise looks started. A node that comes up takes the
- * status verb, one that exits or never comes up is marked with the end of its log. Closes
- * the summary and prints it, and returns 1 when a node failed. group names what `rant log`
- * should show when several failed. */
-int bring_up(app::Context& ctx, Summary& summary, const std::vector<state::Instance>& started, const std::string& group,
-             const std::string& verb);
+/* Hands the nodes with restart set to the service process, once the workspace's state is
+ * unlocked. Then waits up to --wait seconds, 10 by default, for each node just started to
+ * show on the mesh, and watches them --watch seconds more, 2 by default, since a node that
+ * crashes at once, on an import error say, otherwise looks started. A node that comes up
+ * takes the status verb, one that exits or never comes up is marked with the end of its log.
+ * Closes the summary and prints it, and returns 1 when a node failed. group names what
+ * `rant log` should show when several failed. */
+int bring_up(app::Context& ctx, Summary& summary, const config::Workspace& ws, std::vector<state::Instance> started,
+             const std::string& group, const std::string& verb);
 
 }

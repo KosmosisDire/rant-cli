@@ -12,6 +12,7 @@
 #include "net/github.hpp"
 #include "packages/vsix.hpp"
 #include "process/command.hpp"
+#include "services/services.hpp"
 #include "state/state.hpp"
 #include "util/home.hpp"
 
@@ -287,7 +288,7 @@ static std::vector<std::string> running_from(const fs::path& folder) {
     std::vector<std::string> out;
     for (auto& d : state::remembered()) {
         state::Store store(d);
-        state::prune(store.state());
+        state::prune(store.state(), services::running());
         store.save();
         for (auto& i : store.state().instances) {
             bool from = util::holds(folder, config::from_utf8(i.cwd));

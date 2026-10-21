@@ -49,7 +49,7 @@ int run_node(app::Context& ctx, const std::string& ref) {
     }
     Summary summary(ctx, "");
     summary.add(started_row(rec));
-    int code = bring_up(ctx, summary, { rec }, "", "started");
+    int code = bring_up(ctx, summary, *plan.workspace, { rec }, "", "started");
     return built ? code : 1;
 }
 
@@ -150,7 +150,7 @@ int run_group(app::Context& ctx, const std::string& group, const std::vector<std
     }
     s.save();
     held.reset();    /* unlocks the state before the watch */
-    int code = bring_up(ctx, summary, started, plan.group, "started");
+    int code = bring_up(ctx, summary, *plan.workspace, started, plan.group, "started");
     return built ? code : 1;
 }
 

@@ -9,18 +9,6 @@
 #include "app/failure.hpp"
 #include "util/home.hpp"
 
-#ifdef _WIN32
-#define WIN32_LEAN_AND_MEAN
-#define NOMINMAX
-#include <windows.h>
-#else
-#include <cerrno>
-#include <cstring>
-#include <fcntl.h>
-#include <sys/file.h>
-#include <unistd.h>
-#endif
-
 namespace state {
 
 using json = nlohmann::json;
@@ -96,31 +84,13 @@ static json to_json(const State& s) {
     return { { "format", FORMAT }, { "roots", roots }, { "instances", instances } };
 }
 
-Store::Store(const fs::path& data_dir) : path_(data_dir / "state") {
-    fs::create_directories(data_dir);
-    fs::path lock = data_dir / "state.lock";
-#ifdef _WIN32
-    /* Opened without inheritance, so no node ever holds the lock. */
-    HANDLE h = CreateFileW(lock.wstring().c_str(), GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
-                           nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-    if (h == INVALID_HANDLE_VALUE) throw app::Failure("cannot open " + lock.u8string());
-    OVERLAPPED ov{};
-    if (!LockFileEx(h, LOCKFILE_EXCLUSIVE_LOCK, 0, 1, 0, &ov)) {
-        CloseHandle(h);
-        throw app::Failure("cannot lock " + lock.u8string());
-    }
-    lock_ = h;
-#else
-    /* Close on exec, so no node ever holds the lock. */
-    int fd = open(lock.c_str(), O_RDWR | O_CREAT | O_CLOEXEC, 0644);
-    if (fd < 0) throw app::Failure("cannot open " + lock.string() + ": " + std::strerror(errno));
-    while (flock(fd, LOCK_EX) != 0) {
-        if (errno == EINTR) continue;
-        close(fd);
-        throw app::Failure("cannot lock " + lock.string() + ": " + std::strerror(errno));
-    }
-    lock_ = fd;
-#endif
+static const fs::path& made(const fs::path& dir) {
+    fs::create_directories(dir);
+    return dir;
+}
+
+Store::Store(const fs::path& data_dir, bool wait) : path_(data_dir / "state"), lock_(made(data_dir) / "state.lock", wait) {
+    if (!lock_.held()) return;
     std::ifstream f(path_, std::ios::binary);
     if (!f) return;
     try {
@@ -128,18 +98,6 @@ Store::Store(const fs::path& data_dir) : path_(data_dir / "state") {
     } catch (const std::exception&) {
         throw app::Failure(path_.u8string() + " is damaged, delete it to start over (running nodes are then forgotten)");
     }
-}
-
-Store::~Store() {
-#ifdef _WIN32
-    if (lock_) {
-        OVERLAPPED ov{};
-        UnlockFileEx(lock_, 0, 1, 0, &ov);
-        CloseHandle(lock_);
-    }
-#else
-    if (lock_ >= 0) close(lock_);    /* closing drops the flock */
-#endif
 }
 
 void Store::save() {
@@ -153,10 +111,10 @@ void Store::save() {
     fs::rename(tmp, path_);
 }
 
-std::vector<std::string> prune(State& s) {
+std::vector<std::string> prune(State& s, bool restarting) {
     std::vector<std::string> dropped;
     for (auto it = s.instances.begin(); it != s.instances.end();) {
-        if (process::alive(it->tracking)) {
+        if (process::alive(it->tracking) || (restarting && it->restart != "never")) {
             ++it;
             continue;
         }

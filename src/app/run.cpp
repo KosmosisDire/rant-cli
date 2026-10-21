@@ -5,6 +5,7 @@
 #include "commands/commands.hpp"
 #include "complete/complete.hpp"
 #include "rant.hpp"
+#include "services/services.hpp"
 
 namespace app {
 
@@ -69,6 +70,7 @@ static uint16_t parse_domain(const std::string& s) {
 
 int run(Context& ctx, const std::vector<std::string>& tokens) {
     if (!tokens.empty() && tokens[0] == "__complete") return complete::run(ctx, { tokens.begin() + 1, tokens.end() });
+    if (tokens.size() == 1 && tokens[0] == "__services") return services::serve();
     size_t consumed = 0;
     Args global;
     try {

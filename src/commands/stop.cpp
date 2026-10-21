@@ -8,6 +8,7 @@
 #include "commands/summary.hpp"
 #include "complete/complete.hpp"
 #include "run/nodes.hpp"
+#include "services/services.hpp"
 #include "ui/prompt.hpp"
 #include "util/home.hpp"
 
@@ -85,7 +86,7 @@ static std::vector<Held> started_anywhere(app::Context& ctx) {
         if (std::find(seen.begin(), seen.end(), key) != seen.end()) continue;
         seen.push_back(key);
         Held h{ d.parent_path(), std::make_unique<state::Store>(d) };
-        state::prune(h.state());
+        state::prune(h.state(), services::running());
         h.store->save();
         if (!h.state().instances.empty()) out.push_back(std::move(h));
     }

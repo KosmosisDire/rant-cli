@@ -183,7 +183,7 @@ static int restart_all(app::Context& ctx) {
         }
         built = restart(ctx, s, targets, started, summary);
     }    /* the state unlocks before the wait, so other commands need not wait */
-    int code = bring_up(ctx, summary, started, "", "restarted");
+    int code = bring_up(ctx, summary, ctx.require_scope(), started, "", "restarted");
     return built ? code : 1;
 }
 
@@ -215,7 +215,7 @@ static int restart_nodes(app::Context& ctx, const std::vector<std::string>& name
         }
         built = restart(ctx, s, targets, started, summary);
     }    /* the state unlocks before the wait, so other commands need not wait */
-    int code = bring_up(ctx, summary, started, header, "restarted");
+    int code = bring_up(ctx, summary, ctx.require_scope(), started, header, "restarted");
     return built ? code : 1;
 }
 
@@ -251,7 +251,7 @@ static int run(app::Context& ctx) {
         summary.emplace(ctx, group);
         built = restart(ctx, s, targets, started, *summary);
     }    /* the state unlocks before the wait, so other commands need not wait */
-    int code = bring_up(ctx, *summary, started, group, "restarted");
+    int code = bring_up(ctx, *summary, ctx.require_scope(), started, group, "restarted");
     return built ? code : 1;
 }
 

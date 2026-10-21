@@ -1,11 +1,12 @@
 /* A Rant node for the end to end tests. Every flag adds one entity:
  *
  *   test_node [--name N] [--domain D] [--pub TOPIC] [--var NAME] [--fn NAME] [--task NAME]
- *             [--life SECONDS] [--ignore-stop]
+ *             [--life SECONDS] [--exit CODE] [--ignore-stop]
  *
  * --pub sends Reading { seq, value } at 20 Hz. --var owns an f64 starting at 1.5. --fn
  * doubles an f64. --task counts to its u32 request, one step each 100 ms, cancellable.
- * Ctrl-C, Ctrl-Break and SIGTERM print "stopped" and exit 0, unless --ignore-stop.
+ * Ctrl-C, Ctrl-Break and SIGTERM print "stopped" and exit 0, unless --ignore-stop. When
+ * --life ends it exits with --exit, 0 by default.
  * Without --domain the domain comes from TEST_NODE_DOMAIN, which a node started by rant
  * inherits from the test that ran rant. */
 
@@ -51,6 +52,7 @@ int main(int argc, char** argv) {
     const char* env_domain = std::getenv("TEST_NODE_DOMAIN");
     uint16_t domain = env_domain ? (uint16_t)std::atoi(env_domain) : 0;
     double life = 0;
+    int exit_code = 0;
     for (int i = 1; i < argc; i++) {
         std::string a = argv[i];
         auto next = [&]() -> std::string {
@@ -64,6 +66,7 @@ int main(int argc, char** argv) {
         else if (a == "--fn") fn = next();
         else if (a == "--task") task = next();
         else if (a == "--life") life = std::atof(next().c_str());
+        else if (a == "--exit") exit_code = std::atoi(next().c_str());
         else if (a == "--ignore-stop") ignore_stop = true;
         else { std::fprintf(stderr, "unknown argument %s\n", a.c_str()); return 2; }
     }
@@ -112,8 +115,12 @@ int main(int argc, char** argv) {
     std::fflush(stdout);
     auto start = std::chrono::steady_clock::now();
     uint32_t seq = 0;
+    bool lived = false;
     while (!stop) {
-        if (life > 0 && std::chrono::steady_clock::now() - start > std::chrono::duration<double>(life)) break;
+        if (life > 0 && std::chrono::steady_clock::now() - start > std::chrono::duration<double>(life)) {
+            lived = true;
+            break;
+        }
         if (publisher.valid()) publisher.send({ seq, seq * 0.5 }), seq++;
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
@@ -121,5 +128,5 @@ int main(int argc, char** argv) {
     for (auto& w : workers) w.join();
     std::printf("stopped\n");
     std::fflush(stdout);
-    return 0;
+    return lived ? exit_code : 0;
 }

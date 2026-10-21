@@ -28,6 +28,19 @@ foreach(state_file IN LISTS leftover_states)
   endforeach()
 endforeach()
 
+# A service process left behind ends once it has nothing to watch, the last line of its log.
+set(services_log "$ENV{RANT_HOME}/logs/services.log")
+foreach(i RANGE 40)
+  if(NOT EXISTS "${services_log}")
+    break()
+  endif()
+  file(READ "${services_log}" services_text)
+  if(services_text MATCHES "nothing to watch\n$")
+    break()
+  endif()
+  execute_process(COMMAND "${CMAKE_COMMAND}" -E sleep 0.5)
+endforeach()
+
 # Every run starts from an empty scratch directory, the working directory of the commands.
 # Mesh snapshots and shell hooks go there too, never to the real home.
 file(REMOVE_RECURSE "${SCRATCH}" "${OTHER}")
@@ -122,4 +135,22 @@ function(install_test_node dir)
   endif()
   file(MAKE_DIRECTORY "${SCRATCH}/${dir}")
   file(COPY_FILE "${TEST_NODE}" "${SCRATCH}/${dir}/${name}${ext}")
+endfunction()
+
+# wait_for_service_log(<regex>) waits up to 30 s for the service process's log to match and
+# sets LOG to it.
+function(wait_for_service_log regex)
+  set(log "$ENV{RANT_HOME}/logs/services.log")
+  set(text "")
+  foreach(i RANGE 60)
+    if(EXISTS "${log}")
+      file(READ "${log}" text)
+      if(text MATCHES "${regex}")
+        set(LOG "${text}" PARENT_SCOPE)
+        return()
+      endif()
+    endif()
+    execute_process(COMMAND "${CMAKE_COMMAND}" -E sleep 0.5)
+  endforeach()
+  message(FATAL_ERROR "the service process's log never matched ${regex}:\n${text}")
 endfunction()

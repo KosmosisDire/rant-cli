@@ -168,14 +168,24 @@ static uint16_t domain_of(app::Context& ctx, const state::Instance& rec) {
     return d != rec.env.end() ? (uint16_t)std::atoi(d->second.c_str()) : ctx.domain();
 }
 
-int bring_up(app::Context& ctx, Summary& summary, const std::vector<state::Instance>& started, const std::string& group,
-             const std::string& verb) {
+int bring_up(app::Context& ctx, Summary& summary, const config::Workspace& ws, std::vector<state::Instance> started,
+             const std::string& group, const std::string& verb) {
     using clock = std::chrono::steady_clock;
     using ms = std::chrono::milliseconds;
     double wait = seconds_option(ctx, "wait", 10), span = seconds_option(ctx, "watch", 2);
     auto row = [&](const std::string& name) -> Summary::Row& {
         return *std::find_if(summary.rows.begin(), summary.rows.end(), [&](auto& r) { return r.name == name; });
     };
+    try {
+        started = run::hand_over(ws, std::move(started));
+    } catch (...) {
+        summary.finish();
+        throw;
+    }
+    for (auto& rec : started) {
+        row(rec.name).pid = rec.tracking.pid;
+        row(rec.name).fields["pid"] = rec.tracking.pid;
+    }
     auto begin = clock::now();
     auto since = [&] { return std::chrono::duration_cast<ms>(clock::now() - begin); };
     std::map<std::string, ms> exited;    /* by name, how long after the start */

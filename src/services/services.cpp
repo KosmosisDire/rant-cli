@@ -1,0 +1,318 @@
+#include "services/services.hpp"
+
+#include <algorithm>
+#include <chrono>
+#include <ctime>
+#include <fstream>
+#include <list>
+#include <optional>
+#include <string>
+#include <thread>
+
+#include "app/failure.hpp"
+#include "config/config.hpp"
+#include "process/supervisor.hpp"
+#include "run/nodes.hpp"
+#include "state/state.hpp"
+#include "util/home.hpp"
+#include "util/lock.hpp"
+
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+#else
+#include <fcntl.h>
+#include <poll.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#endif
+
+namespace services {
+
+using clock = std::chrono::steady_clock;
+using std::chrono::seconds;
+
+static fs::path lock_file() { return util::rant_home() / "services.lock"; }
+
+fs::path log_file() { return util::rant_home() / "logs" / "services.log"; }
+
+/* Tells this home's service process from another home's, as a test's. */
+static std::string home_key() { return util::path_key(util::rant_home()).substr(0, 12); }
+
+bool running() {
+    std::error_code ec;
+    fs::create_directories(util::rant_home(), ec);
+    return !util::FileLock(lock_file(), false).held();
+}
+
+#ifdef _WIN32
+
+static std::wstring wake_event() { return config::from_utf8("Local\\rant-services-" + home_key()).wstring(); }
+
+void wake() {
+    if (HANDLE e = OpenEventW(EVENT_MODIFY_STATE, FALSE, wake_event().c_str())) {
+        SetEvent(e);
+        CloseHandle(e);
+    }
+}
+
+#else
+
+static fs::path wake_pipe() { return util::rant_home() / "services.wake"; }
+
+/* Opening fails with no reader, so only a running service process hears it. */
+void wake() {
+    int fd = open(wake_pipe().c_str(), O_WRONLY | O_NONBLOCK | O_CLOEXEC);
+    if (fd < 0) return;
+    char c = 1;
+    ssize_t n = write(fd, &c, 1);
+    (void)n;
+    close(fd);
+}
+
+#endif
+
+void ensure_running() {
+    if (running()) return;
+    std::error_code ec;
+    fs::create_directories(log_file().parent_path(), ec);
+    std::string job = "Local\\rant-services-" + home_key() + "-" + std::to_string(clock::now().time_since_epoch().count());
+    process::start_detached({ { config::to_utf8(process::self_path()), "__services" }, util::rant_home(), {} }, log_file(), job);
+    for (int i = 0; i < 200; i++) {
+        if (running()) return;
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+    throw app::Failure("rant's service process did not start, see " + config::to_utf8(log_file()));
+}
+
+/* One line of the log, after the local time. */
+static void say(const std::string& line) {
+    std::time_t now = std::time(nullptr);
+    char stamp[32] = "";
+    if (std::tm* t = std::localtime(&now)) std::strftime(stamp, sizeof stamp, "%Y-%m-%d %H:%M:%S", t);
+    std::ofstream(log_file(), std::ios::app | std::ios::binary) << stamp << " " << line << "\n";
+}
+
+static std::string own_pid() {
+#ifdef _WIN32
+    return std::to_string(GetCurrentProcessId());
+#else
+    return std::to_string(getpid());
+#endif
+}
+
+static bool same(const process::Tracking& a, const process::Tracking& b) {
+    return a.pid == b.pid && a.start_time == b.start_time;
+}
+
+/* How long a node that keeps failing soon after it starts waits before the next start. */
+static seconds pause(int quick) { return seconds(std::min(60, 1 << std::min(std::max(quick - 1, 0), 6))); }
+
+/* A node is quick to fail when it ends this soon after starting. */
+constexpr seconds settled{ 10 };
+
+class Host {
+public:
+    /* One round: notes what ended, starts what is due, and looks at every workspace when
+     * asked to or now and then. False once it has had nothing to do for a while. */
+    bool round(bool woken);
+
+private:
+    /* A node this process watches: one it started, or one a former service process
+     * started, whose exit code it cannot learn. */
+    struct Watched {
+        fs::path                      data;
+        std::string                   name;
+        process::Tracking             tracking;
+        std::optional<process::Child> child;
+        clock::time_point             since;
+        int                           quick = 0;    /* quick failures in a row before this start */
+    };
+
+    /* A node that ended and waits for its workspace's lock, or for its time to start again. */
+    struct Ended {
+        fs::path                         data;
+        std::string                      name;
+        process::Tracking                tracking;
+        int                              code = -1;    /* -1 when not known */
+        int                              quick = 0;
+        std::optional<clock::time_point> again;
+    };
+
+    void note_ended();
+    void decide();
+    void look();
+    bool watching(const fs::path& data, const state::Instance& rec) const;
+
+    std::list<Watched> watched_;
+    std::list<Ended>   ended_;
+    clock::time_point  looked_{};
+    bool               look_again_ = true;
+    clock::time_point  idle_since_ = clock::now();
+};
+
+void Host::note_ended() {
+    for (auto it = watched_.begin(); it != watched_.end();) {
+        std::optional<int> code;
+        if (it->child) code = it->child->ended();
+        else if (!process::alive(it->tracking)) code = -1;
+        if (!code) {
+            ++it;
+            continue;
+        }
+        int quick = clock::now() - it->since < settled ? it->quick + 1 : 0;
+        ended_.push_back({ it->data, it->name, it->tracking, *code, quick, std::nullopt });
+        it = watched_.erase(it);
+    }
+}
+
+/* A node a command stopped or started again has another record or none, so it is left be. */
+void Host::decide() {
+    for (auto it = ended_.begin(); it != ended_.end();) {
+        if (it->again && clock::now() < *it->again) {
+            ++it;
+            continue;
+        }
+        state::Store store(it->data, false);
+        if (!store.locked()) {
+            ++it;
+            continue;
+        }
+        state::Instance* rec = store.state().instance(it->name);
+        if (!rec || !same(rec->tracking, it->tracking)) {
+            it = ended_.erase(it);
+            continue;
+        }
+        std::string code = it->code < 0 ? "an unknown code" : "code " + std::to_string(it->code);
+        if (!it->again) {
+            if (rec->restart != "always" && !(rec->restart == "on-failure" && it->code != 0)) {
+                say(it->name + " exited with " + code + ", and its restart is " + rec->restart);
+                run::forget(store.state(), it->name);
+                store.save();
+                it = ended_.erase(it);
+                continue;
+            }
+            seconds wait = pause(it->quick);
+            say(it->name + " exited with " + code + ", starting it again in " + std::to_string(wait.count()) + " s");
+            it->again = clock::now() + wait;
+            ++it;
+            continue;
+        }
+        try {
+            process::Child child = run::start(it->data, *rec);
+            rec->tracking = child.tracking();
+            rec->restarts++;
+            store.save();
+            say("started " + it->name + " again, restart " + std::to_string(rec->restarts));
+            watched_.push_back({ it->data, it->name, child.tracking(), std::move(child), clock::now(), it->quick });
+            it = ended_.erase(it);
+        } catch (const app::Failure& e) {
+            say("cannot start " + it->name + " again: " + e.what());
+            it->again = clock::now() + pause(it->quick + 1);
+            it->quick++;
+            ++it;
+        }
+    }
+}
+
+bool Host::watching(const fs::path& data, const state::Instance& rec) const {
+    auto mine = [&](const fs::path& d, const std::string& n) { return d == data && n == rec.name; };
+    for (auto& w : watched_)
+        if (mine(w.data, w.name) && same(w.tracking, rec.tracking)) return true;
+    for (auto& e : ended_)
+        if (mine(e.data, e.name)) return true;
+    return false;
+}
+
+/* Starts the nodes commands left to it, and takes on those a former service process
+ * started. A workspace whose state is busy is looked at again next round. */
+void Host::look() {
+    look_again_ = false;
+    for (auto& data : state::remembered()) {
+        state::Store store(data, false);
+        if (!store.locked()) {
+            look_again_ = true;
+            continue;
+        }
+        bool changed = false;
+        auto& instances = store.state().instances;
+        for (size_t i = 0; i < instances.size(); i++) {
+            state::Instance& rec = instances[i];
+            if (rec.restart == "never" || watching(data, rec)) continue;
+            if (rec.tracking.pid == 0) {
+                try {
+                    process::Child child = run::start(data, rec);
+                    rec.tracking = child.tracking();
+                    watched_.push_back({ data, rec.name, child.tracking(), std::move(child), clock::now(), 0 });
+                    say("started " + rec.name + " in " + config::to_utf8(data.parent_path()) + ", restart " + rec.restart);
+                } catch (const app::Failure& e) {
+                    std::string name = rec.name;
+                    say("cannot start " + name + ": " + e.what());
+                    run::forget(store.state(), name);
+                    i--;    /* the next record took its place */
+                }
+                changed = true;
+            } else if (process::alive(rec.tracking)) {
+                watched_.push_back({ data, rec.name, rec.tracking, std::nullopt, clock::now(), 0 });
+                say("watching " + rec.name + ", which an earlier service process started");
+            } else {
+                ended_.push_back({ data, rec.name, rec.tracking, -1, 0, std::nullopt });
+            }
+        }
+        if (changed) store.save();
+    }
+}
+
+bool Host::round(bool woken) {
+    note_ended();
+    decide();
+    if (woken || look_again_ || clock::now() - looked_ > seconds(5)) {
+        look();
+        looked_ = clock::now();
+    }
+    if (!watched_.empty() || !ended_.empty() || look_again_) idle_since_ = clock::now();
+    return clock::now() - idle_since_ < seconds(10);
+}
+
+int serve() {
+    std::error_code ec;
+    fs::create_directories(log_file().parent_path(), ec);
+    /* a command probing whether one runs holds the lock for a moment, so a few tries */
+    std::optional<util::FileLock> lock;
+    for (int i = 0; i < 20; i++) {
+        lock.emplace(lock_file(), false);
+        if (lock->held()) break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(25));
+    }
+    if (!lock->held()) return 0;    /* another one runs */
+
+#ifdef _WIN32
+    HANDLE event = CreateEventW(nullptr, FALSE, FALSE, wake_event().c_str());
+    auto wait = [&] { return WaitForSingleObject(event, 200) == WAIT_OBJECT_0; };
+#else
+    /* opened for writing too, so the pipe never reads as closed while no command writes */
+    mkfifo(wake_pipe().c_str(), 0600);
+    int pipe = open(wake_pipe().c_str(), O_RDWR | O_NONBLOCK | O_CLOEXEC);
+    auto wait = [&] {
+        pollfd p{ pipe, POLLIN, 0 };
+        if (pipe < 0 || poll(&p, 1, 200) <= 0) return false;
+        char buf[64];
+        while (read(pipe, buf, sizeof buf) > 0) {}
+        return true;
+    };
+#endif
+    say("service process " + own_pid() + " started");
+    Host host;
+    bool woken = true;
+    while (host.round(woken)) woken = wait();
+    say("service process " + own_pid() + " stopped, nothing to watch");
+#ifdef _WIN32
+    CloseHandle(event);
+#else
+    if (pipe >= 0) close(pipe);
+#endif
+    return 0;
+}
+
+}

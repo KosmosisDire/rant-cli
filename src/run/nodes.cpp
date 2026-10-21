@@ -3,12 +3,14 @@
 #include <algorithm>
 #include <thread>
 
+#include "app/failure.hpp"
+#include "services/services.hpp"
 #include "util/home.hpp"
 
 namespace run {
 
 Session::Session(const config::Workspace& ws) : ws_(ws), store_(ws.data) {
-    state::prune(store_.state());
+    state::prune(store_.state(), services::running());
 }
 
 state::State snapshot(app::Context& ctx) {
@@ -20,12 +22,12 @@ state::State snapshot(app::Context& ctx) {
 }
 
 /* A job name unique per workspace and node: the same name in another workspace is another
- * job. The root path never changes for a workspace. */
-static std::string job_name(const config::fs::path& root, const std::string& name) {
+ * job. The data folder never changes for a workspace. */
+static std::string job_name(const config::fs::path& data, const std::string& name) {
     std::string safe = name;
     for (auto& c : safe)
         if (c == '\\') c = '_';
-    return "Local\\rant-" + util::path_key(root).substr(0, 12) + "-" + safe;
+    return "Local\\rant-" + util::path_key(data).substr(0, 12) + "-" + safe;
 }
 
 std::vector<Exit> exited_within(const std::vector<state::Instance>& started, std::chrono::milliseconds span) {
@@ -41,9 +43,8 @@ std::vector<Exit> exited_within(const std::vector<state::Instance>& started, std
     }
 }
 
-state::Instance spawn(const config::Workspace& ws, const config::Instance& inst, const std::string& name) {
-    /* a prefixed name like left/lidar logs to a folder of its prefix */
-    auto log = ws.logs / config::from_utf8(name + ".log");
+process::Child start(const config::fs::path& data, const state::Instance& rec) {
+    auto log = config::from_utf8(rec.log);
     config::fs::create_directories(log.parent_path());
     std::error_code ec;
     if (config::fs::exists(log, ec)) {
@@ -52,26 +53,55 @@ state::Instance spawn(const config::Workspace& ws, const config::Instance& inst,
         config::fs::rename(log, previous, ec);
     }
 
-    process::Command c{ inst.argv, inst.cwd, inst.env };
+    process::Command c{ rec.argv, config::from_utf8(rec.cwd), rec.env };
     /* Launcher variables: the node's mesh name, read by the Rant library, and unbuffered
      * Python so its log keeps up. The name holds its node prefix already. */
-    c.env["RANT_NODE_NAME"] = name;
+    c.env["RANT_NODE_NAME"] = rec.name;
     c.env["RANT_NODE_NAME_PREFIX"] = "";
     c.env["PYTHONUNBUFFERED"] = "1";
+    return process::start_child(c, log, job_name(data, rec.name));
+}
 
+state::Instance spawn(const config::Workspace& ws, const config::Instance& inst, const std::string& name) {
     state::Instance rec;
     rec.name = name;
     rec.type = inst.type;
     rec.argv = inst.argv;
     rec.env = inst.env;
     rec.cwd = config::to_utf8(inst.cwd);
-    rec.log = config::to_utf8(log);
+    /* a prefixed name like left/lidar logs to a folder of its prefix */
+    rec.log = config::to_utf8(ws.logs / config::from_utf8(name + ".log"));
     rec.group = inst.group;
     rec.expect_mesh = inst.expect_mesh;
     rec.restart = inst.restart;
-    rec.tracking = process::start_detached(c, log, job_name(ws.root, name));
     state::remember(ws.data);
+    /* running first, so no command drops the record as dead before it starts the node */
+    if (rec.restart != "never") services::ensure_running();
+    else rec.tracking = start(ws.data, rec).tracking();
     return rec;
+}
+
+std::vector<state::Instance> hand_over(const config::Workspace& ws, std::vector<state::Instance> started) {
+    auto waiting = [&] { return std::any_of(started.begin(), started.end(), [](const state::Instance& i) { return i.tracking.pid == 0; }); };
+    if (!waiting()) return started;
+    state::remember(ws.data);    /* again, since the state file it needs now exists */
+    services::wake();
+    for (int i = 0; waiting(); i++) {
+        if (i == 300) throw app::Failure("rant's service process did not start the nodes in 15 s, see " + config::to_utf8(services::log_file()));
+        if (i > 0) std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        if (i % 20 == 19 && !services::running()) {
+            services::ensure_running();    /* it ended just before the records came */
+            services::wake();
+        }
+        state::Store store(ws.data);
+        for (auto& rec : started) {
+            if (rec.tracking.pid) continue;
+            const state::Instance* now = store.state().instance(rec.name);
+            if (!now) throw app::Failure("rant's service process could not start `" + rec.name + "`, see " + config::to_utf8(services::log_file()));
+            if (now->tracking.pid) rec = *now;
+        }
+    }
+    return started;
 }
 
 process::Stopped halt(const state::Instance& inst) {

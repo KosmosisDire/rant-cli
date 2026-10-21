@@ -36,8 +36,18 @@ private:
 state::State snapshot(app::Context& ctx);
 
 /* Starts a plan instance under `name`, detached, its output in <logs>/<name>.log with the
- * last run's log kept as <name>.log.1. Returns the record for the state, with no roots. */
+ * last run's log kept as <name>.log.1. Returns the record for the state, with no roots. A
+ * node with restart set is left to the service process, so its record has no process until
+ * hand_over. */
 state::Instance spawn(const config::Workspace& ws, const config::Instance& inst, const std::string& name);
+
+/* Starts a record of the workspace whose data folder is data, as a child of this process,
+ * its last log moved aside first. Throws app::Failure. */
+process::Child start(const config::fs::path& data, const state::Instance& rec);
+
+/* Once the state holding started is saved and unlocked: waits until the service process
+ * started those spawn left to it, and returns them with their processes. Throws app::Failure. */
+std::vector<state::Instance> hand_over(const config::Workspace& ws, std::vector<state::Instance> started);
 
 /* An instance that exited, and how long after the watch began it was seen gone. */
 struct Exit {
