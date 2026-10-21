@@ -170,15 +170,46 @@ struct Standing {
     json                  nodes = json::array();
 };
 
+/* An enabled group or node planned in its folder as rant run would, with the key of the root it
+ * runs under, empty when it no longer plans. */
+struct Planned {
+    config::Plan plan;
+    std::string  key;
+};
+
+static Planned planned(const services::Enabled& e) {
+    Planned p{ e.kind == "group" ? config::plan_group(e.folder, e.name, e.words) : config::plan_node(e.folder, e.name), "" };
+    if (p.plan.diagnostics.empty())
+        p.key = e.kind == "group" ? state::Root{ "group", p.plan.group, p.plan.params }.key() : "node " + p.plan.instances.front().name;
+    return p;
+}
+
+Kept kept_services(const state::State& st, const config::fs::path& data) {
+    Kept k;
+    for (auto& e : services::enabled()) {
+        Planned p = planned(e);
+        if (p.key.empty() || util::path_key(p.plan.workspace->data) != util::path_key(data)) continue;
+        k.roots.insert(p.key);
+        bool runs = false;
+        for (auto& i : st.instances)
+            if (std::count(i.roots.begin(), i.roots.end(), p.key)) {
+                k.nodes.insert(i.name);
+                runs = true;
+            }
+        if (runs) k.running.push_back(e.shown());
+    }
+    return k;
+}
+
 static Standing standing(const services::Enabled& e) {
     Standing out;
-    config::Plan plan = e.kind == "group" ? config::plan_group(e.folder, e.name, e.words) : config::plan_node(e.folder, e.name);
-    if (!plan.diagnostics.empty()) {
-        out.state = plan.diagnostics.front().message;
+    Planned p = planned(e);
+    if (p.key.empty()) {
+        out.state = p.plan.diagnostics.front().message;
         return out;
     }
-    std::string key = e.kind == "group" ? state::Root{ "group", plan.group, plan.params }.key() : "node " + plan.instances.front().name;
-    state::Store store(plan.workspace->data);
+    const std::string& key = p.key;
+    state::Store store(p.plan.workspace->data);
     state::prune(store.state(), services::running_in);
     store.save();
     size_t up = 0, all = 0, waiting = 0;

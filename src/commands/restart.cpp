@@ -6,12 +6,14 @@
 #include "app/failure.hpp"
 #include "commands/build.hpp"
 #include "commands/commands.hpp"
+#include "commands/enable.hpp"
 #include "commands/plan_output.hpp"
 #include "commands/run.hpp"
 #include "commands/summary.hpp"
 #include "complete/complete.hpp"
 #include "run/nodes.hpp"
 #include "ui/prompt.hpp"
+#include "util/text.hpp"
 
 namespace commands {
 
@@ -38,11 +40,13 @@ static Summary::Row restarted_row(const state::Instance& rec, process::Stopped h
     return r;
 }
 
-/* A root to restart: its plan as configured now, and the one node of it when only that. */
+/* A root to restart: its plan as configured now, the one node of it when only that, and the
+ * nodes a service holds, which a restart of everything leaves be. */
 struct Target {
-    state::Root  root;
-    config::Plan plan;
-    std::string  only;
+    state::Root           root;
+    config::Plan          plan;
+    std::string           only;
+    std::set<std::string> keep;
 };
 
 /* What a restart stopped of one root, to start again once the build is done. */
@@ -60,7 +64,8 @@ static Halted halt_root(run::Session& s, const Target& t) {
     std::string key = t.root.key();
     std::vector<std::string> mine;
     for (auto& i : st.instances)
-        if (std::count(i.roots.begin(), i.roots.end(), key) && (t.only.empty() || i.name == t.only)) mine.push_back(i.name);
+        if (std::count(i.roots.begin(), i.roots.end(), key) && (t.only.empty() || i.name == t.only) && !t.keep.count(i.name))
+            mine.push_back(i.name);
     for (auto it = mine.rbegin(); it != mine.rend(); ++it) {
         state::Instance* inst = st.instance(*it);
         bool planned = std::any_of(t.plan.instances.begin(), t.plan.instances.end(), [&](const config::Instance& p) { return p.name == *it; });
@@ -95,6 +100,10 @@ static void start_root(app::Context& ctx, run::Session& s, const Halted& h, std:
     }
     for (auto& p : planned) {
         state::Instance* inst = st.instance(p.name);
+        if (inst && h.target.keep.count(p.name)) {
+            summary.add({ p.name, Summary::Mark::Running, "kept running", "a service holds it" });
+            continue;
+        }
         if (inst && !std::count(inst->roots.begin(), inst->roots.end(), key)) {
             std::string with = held_by(inst->roots, "shared with");
             inst->roots.push_back(key);    /* another root's node, now shared, left running as it is */
@@ -152,33 +161,40 @@ static std::vector<state::Root> group_roots(app::Context& ctx, const state::Stat
     return out;
 }
 
-/* Every root this workspace started, each planned before anything stops, so a broken
- * config stops nothing. */
+/* Every root this workspace started but its services, each planned before anything stops, so a
+ * broken config stops nothing. */
 static int restart_all(app::Context& ctx) {
     state::State now = run::snapshot(ctx);
-    if (now.roots.empty()) {
-        ctx.out.line("nothing rant started is running");
+    Kept k = kept_services(now, ctx.require_scope().data);
+    std::vector<std::string> keys;
+    for (auto& r : now.roots)
+        if (!k.roots.count(r.key())) keys.push_back(r.key());
+    if (keys.empty()) {
+        if (k.running.empty()) ctx.out.line("nothing rant started is running");
+        else ctx.out.line("only services run here, name one to restart it: " + util::joined(k.running));
         return 0;
     }
-    std::string list;
-    for (auto& r : now.roots) list += (list.empty() ? "" : ", ") + r.key();
-    ctx.out.line("roots: " + list);
-    if (!ui::confirm("Restart all " + std::to_string(now.instances.size()) + " nodes?", ctx.yes)) return 1;
+    ctx.out.line("roots: " + util::joined(keys));
+    if (!k.running.empty()) ctx.out.note("services keep running, name one to restart it: " + util::joined(k.running));
+    auto count = std::count_if(now.instances.begin(), now.instances.end(), [&](const state::Instance& i) { return !k.nodes.count(i.name); });
+    if (!ui::confirm("Restart all " + std::to_string(count) + " nodes?", ctx.yes)) return 1;
 
     std::vector<state::Instance> started;
     Summary summary(ctx, "");
     bool built;
     {
         run::Session s(ctx.require_scope());
+        Kept held = kept_services(s.state(), s.workspace().data);
         std::vector<Target> targets;
         for (auto& r : s.state().roots) {
+            if (held.roots.count(r.key())) continue;
             if (r.kind == "group") {
-                targets.push_back({ r, replan(ctx, r, nullptr), "" });
+                targets.push_back({ r, replan(ctx, r, nullptr), "", held.nodes });
                 continue;
             }
             for (auto& i : s.state().instances)
                 if (i.roots.front() == r.key()) {
-                    targets.push_back({ r, replan(ctx, r, &i), i.name });
+                    if (!held.nodes.count(i.name)) targets.push_back({ r, replan(ctx, r, &i), i.name, {} });
                     break;
                 }
         }

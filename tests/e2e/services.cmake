@@ -61,6 +61,7 @@ unset(ENV{RANT_TEST_MARK})
 wait_for_service_log("dump exited with code 0")
 file(READ "${SCRATCH}/logs/dump.log" dumped)
 expect_match("${dumped}" "RANT_TEST_MARK=from-the-shell")
+rant(stop Dump)
 
 # A stopped node stays stopped, whatever its restart says.
 rant(stop Keep)
@@ -134,6 +135,30 @@ string(JSON state GET "${OUT}" 0 state)
 expect_match("${state}" "^running$")
 string(JSON start GET "${OUT}" 1 start)
 expect_match("${start}" "^login$")
+
+# A stop or restart that names nothing leaves the services running.
+file(WRITE "${SCRATCH}/Other.run" [[
+node "demo/sensor" {
+  name = "other"
+}
+]])
+rant(run Other --watch 0)
+rant(restart -y --no-build --watch 0)
+expect_match("${OUT}" "roots: group Other\n")
+expect_match("${ERR}" "services keep running, name one to restart it: Plain, Desk")
+expect_match("${OUT}" "other +restarted")
+expect_no_match("${OUT}" "steady|desk")
+rant(stop -y)
+expect_match("${OUT}" "nodes: +other\n")
+expect_match("${ERR}" "services keep running, name one to stop it: Plain, Desk")
+expect_match("${OUT}" "other +stopped")
+rant(stop -y)
+expect_match("${OUT}" "only services run here, name one to stop it: Plain, Desk")
+rant(stop --all -y)
+expect_match("${OUT}" "only services run on this machine, name one to stop it: Plain, Desk")
+rant(ls nodes --no-mesh)
+expect_match("${OUT}" "Plain:\n +steady\n")
+expect_match("${OUT}" "Desk:\n +desk\n")
 
 # disable stops it and drops it from the boot or login start.
 rant(disable Plain)

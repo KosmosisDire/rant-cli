@@ -3,6 +3,7 @@
 
 #include "app/failure.hpp"
 #include "commands/commands.hpp"
+#include "commands/enable.hpp"
 #include "commands/plan_output.hpp"
 #include "commands/run.hpp"
 #include "commands/summary.hpp"
@@ -30,41 +31,67 @@ static std::vector<std::string> groups_of(const state::Instance& inst) {
     return out;
 }
 
-/* Stops everything rant started in this workspace, last started first, once the list has
- * been shown and the question answered. */
+/* Drops every node and root of a state but those its services hold, the roots from the nodes
+ * left running too. The nodes dropped are stopped first. */
+static void keep_only(state::State& st, const Kept& k) {
+    st.instances.erase(std::remove_if(st.instances.begin(), st.instances.end(), [&](const state::Instance& i) { return !k.nodes.count(i.name); }),
+                       st.instances.end());
+    for (auto& i : st.instances)
+        i.roots.erase(std::remove_if(i.roots.begin(), i.roots.end(), [&](const std::string& r) { return !k.roots.count(r); }), i.roots.end());
+    st.roots.erase(std::remove_if(st.roots.begin(), st.roots.end(), [&](const state::Root& r) { return !k.roots.count(r.key()); }),
+                   st.roots.end());
+}
+
+/* Stops every node of a state but those its services hold, last started first. */
+static void stop_all_but(Summary& summary, state::State& st, const Kept& k) {
+    for (auto it = st.instances.rbegin(); it != st.instances.rend(); ++it)
+        if (!k.nodes.count(it->name)) summary.add(stopped_row(it->name, run::halt(*it)));
+    keep_only(st, k);
+}
+
+/* Says which services keep running, when any do. */
+static void note_kept(app::Context& ctx, const std::vector<std::string>& running) {
+    if (!running.empty()) ctx.out.note("services keep running, name one to stop it: " + util::joined(running));
+}
+
+/* Stops everything rant started in this workspace but its services, last started first, once
+ * the list has been shown and the question answered. */
 static int stop_workspace(app::Context& ctx, const config::Workspace& ws) {
     run::Session s(ws);
     state::State& st = s.state();
-    if (st.instances.empty()) {
-        st.roots.clear();
-        s.save();
-        ctx.out.line("nothing started here is running");
-        return 0;
-    }
+    Kept k = kept_services(st, ws.data);
     std::vector<std::string> names, groups;
-    for (auto& i : st.instances) names.push_back(i.name);
+    for (auto& i : st.instances)
+        if (!k.nodes.count(i.name)) names.push_back(i.name);
     for (auto& r : st.roots) {
-        if (r.kind != "group") continue;
+        if (r.kind != "group" || k.roots.count(r.key())) continue;
         /* params tell runs of one group apart, as ls shows them */
         auto runs = std::count_if(st.roots.begin(), st.roots.end(), [&](const state::Root& o) { return o.kind == "group" && o.name == r.name; });
         groups.push_back(runs > 1 ? r.key().substr(6) : r.name);
     }
+    if (names.empty()) {
+        keep_only(st, k);
+        s.save();
+        if (k.running.empty()) ctx.out.line("nothing started here is running");
+        else ctx.out.line("only services run here, name one to stop it: " + util::joined(k.running));
+        return 0;
+    }
     if (!groups.empty()) ctx.out.line("groups: " + util::joined(groups));
     ctx.out.line("nodes:  " + util::joined(names));
+    note_kept(ctx, k.running);
     std::string n = std::to_string(names.size());
     if (!ui::confirm("Stop all " + n + (names.size() == 1 ? " node?" : " nodes?"), ctx.yes)) return 1;
     Summary summary(ctx, "");
-    for (auto it = st.instances.rbegin(); it != st.instances.rend(); ++it) summary.add(stopped_row(it->name, run::halt(*it)));
-    st.instances.clear();
-    st.roots.clear();
+    stop_all_but(summary, st, k);
     s.save();
     return done(summary);
 }
 
-/* One workspace's state, locked until this command ends. */
+/* One workspace's state, locked until this command ends, and what its services hold. */
 struct Held {
     config::fs::path              root;
     std::unique_ptr<state::Store> store;
+    Kept                          kept;
     state::State& state() { return store->state(); }
 };
 
@@ -80,9 +107,10 @@ static std::vector<Held> started_anywhere(app::Context& ctx) {
         std::string key = util::path_key(d);
         if (std::find(seen.begin(), seen.end(), key) != seen.end()) continue;
         seen.push_back(key);
-        Held h{ state::folder_of(d), std::make_unique<state::Store>(d) };
+        Held h{ state::folder_of(d), std::make_unique<state::Store>(d), {} };
         state::prune(h.state(), services::running_in);
         h.store->save();
+        h.kept = kept_services(h.state(), d);
         if (!h.state().instances.empty()) out.push_back(std::move(h));
     }
     return out;
@@ -119,8 +147,8 @@ static std::vector<Loose> loose_here(app::Context& ctx, mesh::Client& mesh, std:
     return out;
 }
 
-/* Stops every node on this machine: what any workspace started, on any domain, and what
- * runs here without rant on the domain in use. */
+/* Stops every node on this machine but the services: what any workspace started, on any
+ * domain, and what runs here without rant on the domain in use. */
 static int stop_everything(app::Context& ctx) {
     auto held = started_anywhere(ctx);
     mesh::Client mesh(ctx.domain());
@@ -128,10 +156,14 @@ static int stop_everything(app::Context& ctx) {
     auto loose = loose_here(ctx, mesh, held);
 
     std::vector<std::pair<std::string, std::string>> rows;
+    std::vector<std::string> kept;
     size_t count = loose.size();
     for (auto& h : held) {
+        kept.insert(kept.end(), h.kept.running.begin(), h.kept.running.end());
         std::vector<std::string> names;
-        for (auto& i : h.state().instances) names.push_back(i.name);
+        for (auto& i : h.state().instances)
+            if (!h.kept.nodes.count(i.name)) names.push_back(i.name);
+        if (names.empty()) continue;
         rows.push_back({ ctx.shown(h.root), util::joined(names) });
         count += names.size();
     }
@@ -141,20 +173,19 @@ static int stop_everything(app::Context& ctx) {
         rows.push_back({ "not started by rant", util::joined(names) });
     }
     if (count == 0) {
-        ctx.out.line("no node is running on this machine");
+        if (kept.empty()) ctx.out.line("no node is running on this machine");
+        else ctx.out.line("only services run on this machine, name one to stop it: " + util::joined(kept));
         return 0;
     }
     size_t width = 0;
     for (auto& r : rows) width = std::max(width, r.first.size());
     for (auto& r : rows) ctx.out.line(r.first + ":" + std::string(width - r.first.size() + 2, ' ') + r.second);
+    note_kept(ctx, kept);
     if (!ui::confirm("Stop all " + std::to_string(count) + (count == 1 ? " node?" : " nodes?"), ctx.yes)) return 1;
 
     Summary summary(ctx, "");
     for (auto& h : held) {
-        auto& st = h.state();
-        for (auto it = st.instances.rbegin(); it != st.instances.rend(); ++it) summary.add(stopped_row(it->name, run::halt(*it)));
-        st.instances.clear();
-        st.roots.clear();
+        stop_all_but(summary, h.state(), h.kept);
         h.store->save();
     }
     for (auto& l : loose) summary.add(stopped_row(l.name, process::stop_pid(l.pid, run::grace)));
@@ -307,9 +338,9 @@ static complete::Candidates complete_words(complete::Request& r) {
 
 app::Command stop() {
     app::Command c{ "stop", "[<group> [key=value...] | <node>]",
-                    "stop any node on this machine, all this workspace started when nothing is named",
+                    "stop any node on this machine, all this workspace started when nothing is named, a service only by name",
                     app::Section::Workspace,
-                    { { "all", 'a', "", "stop every node on this machine, whoever started it" } }, run };
+                    { { "all", 'a', "", "stop every node on this machine but the services, whoever started it" } }, run };
     c.complete = complete_words;
     return c;
 }
