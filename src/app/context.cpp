@@ -26,8 +26,11 @@ void Context::open(bool packages) {
 std::string Context::shown(const std::filesystem::path& p) const {
     std::error_code ec;
     std::filesystem::path rel = std::filesystem::relative(p, cwd_, ec);
-    if (ec || rel.empty()) return config::to_utf8(p);
-    return config::to_utf8(rel);
+    std::string whole = config::to_utf8(p);
+    if (ec || rel.empty()) return whole;
+    /* a path far from here reads better whole than as a long climb */
+    std::string near = config::to_utf8(rel);
+    return near.size() <= whole.size() ? near : whole;
 }
 
 uint16_t Context::domain() {

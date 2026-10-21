@@ -23,7 +23,8 @@ public:
     /* The working directory, or a failure when it was deleted under this shell. */
     const std::filesystem::path& cwd() const;
 
-    /* A path for messages: relative to the working directory, "." for it. */
+    /* A path for messages: relative to the working directory, "." for it, or whole when that
+     * is shorter. */
     std::string shown(const std::filesystem::path& p) const;
 
     /* The domain mesh commands use: --domain, else the workspace's, else RANT_DOMAIN, else 0.
