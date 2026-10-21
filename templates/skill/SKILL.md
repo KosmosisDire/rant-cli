@@ -109,7 +109,7 @@ A group is `<Name>.run`:
 ```hcl
 description = "Both arms"
 param "speed" {
-  type    = float              # string, int, float or bool
+  type    = float              # string, int, float, bool or path
   default = 1
 }
 include "Arm" {                # another group, package/Arm when unclear, with its param values
@@ -125,6 +125,10 @@ node "planner" {               # the label names the node to run, package/name w
 
 Expressions may use `param.<name>` in groups and `path.file`, `path.package` and
 `path.workspace` anywhere but `archive` and `vsix`.
+
+A `path` param's value reaches the node as a full path. One given on the command line counts
+from the folder `rant` runs in, one a group file writes from that file's folder, so
+`rant run Viewer project=my/project` means the same as typing the full path.
 
 Placement: `domain`, `prefix` and `node_prefix` may go in workspace.rant, package.rant, a
 group's top level, an `include` and a group `node`. Prefixes join from the outside in, the
@@ -207,7 +211,7 @@ one.
 | goal | command |
 |---|---|
 | install | `rant install hmi` |
-| run a project | `rant run Hmi project=C:/work/line-hmi`, a full path. An empty folder becomes a new project. `port=N` and `bind=IP` set where it listens, 6739 on every address by default |
+| run a project | `rant run Hmi project=line-hmi`, a folder counted from where you run it. An empty folder becomes a new project. `port=N` and `bind=IP` set where it listens, 6739 on every address by default |
 | open it | `http://localhost:6739` designs it, `http://localhost:6739/run` is an operator's screen |
 | check an edit | `rant log Hmi -n 20` names a refused file and the reason |
 | stop it | `rant stop Hmi` |

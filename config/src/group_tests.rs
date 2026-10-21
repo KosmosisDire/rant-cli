@@ -6,9 +6,11 @@ use std::collections::BTreeMap;
 use hcl::Value;
 
 use crate::diag::Diag;
+use crate::eval;
 use crate::group::Groups;
 use crate::param::parse_value;
 use crate::model::Model;
+use crate::paths;
 use crate::plan::{self, Named, Plan};
 use crate::testdir::TestDir;
 use crate::workspace;
@@ -90,7 +92,7 @@ fn plan(m: &Model, group: &str, params: &[(&str, &str)]) -> Result<(Plan, BTreeM
     let mut given = BTreeMap::new();
     for (k, v) in params {
         let p = iface.iter().find(|p| p.name == *k).expect("a known param");
-        given.insert(k.to_string(), parse_value(p, v).map_err(Diag::plain)?);
+        given.insert(k.to_string(), parse_value(p, v, &m.config.root).map_err(Diag::plain)?);
     }
     groups.plan(&def, given)
 }
@@ -161,9 +163,30 @@ fn values_are_checked_before_anything_runs() {
     let def = groups.load(groups.find("drivers/cameras", None).unwrap()).unwrap();
     let iface = groups.interface(&def).unwrap();
     let side = iface.iter().find(|p| p.name == "side").unwrap();
-    assert!(parse_value(side, "up").unwrap_err().contains("must be one of left, right"));
+    assert!(parse_value(side, "up", t.root()).unwrap_err().contains("must be one of left, right"));
     let fps = iface.iter().find(|p| p.name == "fps").unwrap();
-    assert!(parse_value(fps, "fast").unwrap_err().contains("takes an int"));
+    assert!(parse_value(fps, "fast", t.root()).unwrap_err().contains("takes an int"));
+}
+
+#[test]
+fn a_path_counts_from_where_it_is_given() {
+    let t = workspace_with(&[
+        (
+            "drivers/launch/viewer.run",
+            "  param \"project\" {\n    type = path\n  }\n  param \"logs\" {\n    type    = path\n    default = \"logs\"\n  }\n  node \"drivers/camera\" {\n    args = [param.project, param.logs]\n  }\n",
+        ),
+        ("drivers/launch/both.run", "  include \"viewer\" {\n    project = \"line\"\n  }\n"),
+    ]);
+    let m = model(&t);
+    let at = |rel: &str| eval::slash(&paths::normalize(&t.path(rel)));
+    // the command line counts from where rant runs, the workspace root in plan, a file from its folder
+    let (p, _) = plan(&m, "drivers/viewer", &[("project", "my/hmi")]).unwrap();
+    assert_eq!(p.instances[0].argv[1..], [at("my/hmi"), at("drivers/launch/logs")]);
+    let (p, _) = plan(&m, "drivers/both", &[]).unwrap();
+    assert_eq!(p.instances[0].argv[1], at("drivers/launch/line"));
+    let full = at("elsewhere/hmi");
+    let (p, _) = plan(&m, "drivers/viewer", &[("project", &full)]).unwrap();
+    assert_eq!(p.instances[0].argv[1], full);
 }
 
 #[test]
@@ -246,6 +269,7 @@ fn semantic_errors_point_at_their_place() {
         ("cycle_a.run", "  include \"cycle_b\" {}\n", "include cycle", 0),
         ("nodetype.run", "  node \"x\" {}\n", "no node named `x`", 1),
         ("default.run", "  param \"n\" {\n    type    = int\n    default = \"ten\"\n  }\n", "default: param `n` is int", 3),
+        ("pathoptions.run", "  param \"p\" {\n    type    = path\n    options = [\"a\"]\n  }\n", "a path param takes no options", 3),
     ];
     let t = workspace_with(&[("cycle_b.run", "  include \"cycle_a\" {}\n")]);
     for (file, text, _, _) in cases {

@@ -356,8 +356,14 @@ impl<'m> Groups<'m> {
                     let child = self.included(def, inc)?;
                     let child_iface = self.interface(&child)?;
                     let mut given = BTreeMap::new();
+                    // a path this file gives counts from its folder
                     for b in &inc.bindings {
-                        given.insert(b.key.as_str().to_string(), eval::value(&def.src, b, &scope)?);
+                        let v = eval::value(&def.src, b, &scope)?;
+                        let v = match child_iface.iter().find(|p| p.name == b.key.as_str()) {
+                            Some(p) => param::placed(p, v, &dir),
+                            None => v,
+                        };
+                        given.insert(b.key.as_str().to_string(), v);
                     }
                     for p in iface.iter().filter(|p| p.from.as_ref().is_some_and(|(g, i)| *g == child.file.name && *i == idx)) {
                         given.insert(p.name.clone(), values[&p.name].clone());

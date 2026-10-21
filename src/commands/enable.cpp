@@ -66,6 +66,14 @@ static Named named(app::Context& ctx, const std::vector<std::string>& w, const s
     e.kind = "group";
     e.name = g.diagnostics.empty() && g.name == n.full ? stem : n.full;
     e.words.assign(w.begin() + 1, w.end());
+    // a path counts from here, while the start plans from the folder, so it is kept resolved
+    config::Plan plan = config::plan_group(ctx.cwd(), w[0], e.words);
+    if (plan.diagnostics.empty())
+        for (auto& word : e.words) {
+            std::string key = word.substr(0, word.find('='));
+            for (auto& p : g.params)
+                if (p.name == key && p.type == "path") word = key + "=" + plan.params[key];
+        }
     return n;
 }
 

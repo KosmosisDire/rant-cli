@@ -2,12 +2,14 @@
 //! and a description. Values from a file or the command line are checked against them.
 
 use std::collections::BTreeMap;
+use std::path::Path;
 
 use hcl::Value;
 use hcl_edit::structure::Attribute;
 
 use crate::diag::Diag;
 use crate::eval::{self, Scope};
+use crate::paths;
 use crate::source::{one_label, Fields, Loc, Source};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -16,6 +18,8 @@ pub enum ParamType {
     Int,
     Float,
     Bool,
+    /// A file or folder, a relative one counted from where it is given.
+    Path,
 }
 
 impl ParamType {
@@ -25,6 +29,7 @@ impl ParamType {
             ParamType::Int => "int",
             ParamType::Float => "float",
             ParamType::Bool => "bool",
+            ParamType::Path => "path",
         }
     }
 }
@@ -47,7 +52,8 @@ fn param_type(src: &Source, attr: &Attribute) -> Result<ParamType, Diag> {
         "int" => Ok(ParamType::Int),
         "float" => Ok(ParamType::Float),
         "bool" => Ok(ParamType::Bool),
-        other => Err(src.diag_at(&attr.value, format!("unknown type `{other}`, expected string, int, float or bool"))),
+        "path" => Ok(ParamType::Path),
+        other => Err(src.diag_at(&attr.value, format!("unknown type `{other}`, expected string, int, float, bool or path"))),
     }
 }
 
@@ -55,7 +61,7 @@ fn param_type(src: &Source, attr: &Attribute) -> Result<ParamType, Diag> {
 /// options. The error says what was wrong without a place, the caller adds one.
 pub fn checked(p: &Param, v: Value) -> Result<Value, String> {
     let v = match (p.ty, v) {
-        (ParamType::String, v @ Value::String(_)) => v,
+        (ParamType::String | ParamType::Path, v @ Value::String(_)) => v,
         (ParamType::Bool, v @ Value::Bool(_)) => v,
         (ParamType::Int, Value::Number(n)) if n.as_i64().is_some() => Value::Number(n),
         (ParamType::Float, Value::Number(n)) => Value::from(n.as_f64().unwrap_or(0.0)),
@@ -68,6 +74,15 @@ pub fn checked(p: &Param, v: Value) -> Result<Value, String> {
     Ok(v)
 }
 
+/// A path param's value made absolute, a relative one counted from `base`: the folder rant
+/// runs in for a command line value, the file's folder for one a file writes. Others pass.
+pub fn placed(p: &Param, v: Value, base: &Path) -> Value {
+    match (p.ty, v) {
+        (ParamType::Path, Value::String(s)) => Value::String(eval::slash(&paths::normalize(&base.join(s)))),
+        (_, v) => v,
+    }
+}
+
 /// A scalar as plain text, the form argv, env and root keys take.
 pub fn text(v: &Value) -> String {
     match v {
@@ -77,10 +92,11 @@ pub fn text(v: &Value) -> String {
     }
 }
 
-/// A command line `key=value` value read as the param's type.
-pub fn parse_value(p: &Param, raw: &str) -> Result<Value, String> {
+/// A command line `key=value` value read as the param's type, a path counted from `base`.
+pub fn parse_value(p: &Param, raw: &str, base: &Path) -> Result<Value, String> {
     let v = match p.ty {
         ParamType::String => Value::from(raw),
+        ParamType::Path => placed(p, Value::from(raw), base),
         ParamType::Int => Value::from(raw.parse::<i64>().map_err(|_| format!("param `{}` takes an int, not `{raw}`", p.name))?),
         ParamType::Float => Value::from(raw.parse::<f64>().map_err(|_| format!("param `{}` takes a float, not `{raw}`", p.name))?),
         ParamType::Bool => match raw {
@@ -104,6 +120,9 @@ pub fn parse_all(src: &Source, fields: &Fields, scope: &Scope) -> Result<Vec<Par
         let ty = pf.attr("type").map(|a| param_type(src, a)).transpose()?.unwrap_or(ParamType::String);
         let mut p = Param { name, ty, options: Vec::new(), default: None, description: None, from: None, at: Loc::of(src, b) };
         if let Some(a) = pf.attr("options") {
+            if p.ty == ParamType::Path {
+                return Err(src.diag_at(&a.value, "a path param takes no options"));
+            }
             match eval::value(src, a, scope)? {
                 Value::Array(opts) => {
                     for o in opts {
@@ -115,7 +134,8 @@ pub fn parse_all(src: &Source, fields: &Fields, scope: &Scope) -> Result<Vec<Par
             }
         }
         if let Some(a) = pf.attr("default") {
-            p.default = Some(checked(&p, eval::value(src, a, scope)?).map_err(|e| src.diag_at(&a.value, format!("default: {e}")))?);
+            let v = checked(&p, eval::value(src, a, scope)?).map_err(|e| src.diag_at(&a.value, format!("default: {e}")))?;
+            p.default = Some(placed(&p, v, src.dir()));
         }
         if let Some(a) = pf.attr("description") {
             p.description = Some(eval::string(src, a, scope)?);

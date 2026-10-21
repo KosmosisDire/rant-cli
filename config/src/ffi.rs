@@ -608,7 +608,7 @@ fn plan_group(model: &Model, start: &Path, reference: &str, raw: &[String]) -> R
                 def.file.name, def.file.name
             )));
         };
-        if given.insert(k.to_string(), param::parse_value(p, v).map_err(Diag::plain)?).is_some() {
+        if given.insert(k.to_string(), param::parse_value(p, v, start).map_err(Diag::plain)?).is_some() {
             return Err(Diag::plain(format!("param `{k}` is given twice")));
         }
     }
