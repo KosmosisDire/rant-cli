@@ -168,7 +168,7 @@ static int stop_everything(app::Context& ctx) {
 
 /* Stops one node wherever on this machine it was started: by this workspace first, then by
  * another workspace, then without rant. */
-static int stop_node(app::Context& ctx, const std::string& name) {
+int stop_node(app::Context& ctx, const std::string& name) {
     auto held = started_anywhere(ctx);
     const config::Workspace* ws = ctx.scope();
     auto own = [&](const Held& h) { return ws && util::path_key(h.root) == util::path_key(ws->root); };
@@ -259,7 +259,7 @@ static int stop_inside(app::Context& ctx, run::Session& s, const std::string& gr
 
 /* Stops what the group started. A node of the same name it did not start keeps running. A
  * group that runs only inside others stops its own nodes there. */
-static int stop_group(app::Context& ctx, const std::string& group, const std::vector<std::string>& params) {
+int stop_group(app::Context& ctx, const std::string& group, const std::vector<std::string>& params) {
     run::Session s(ctx.require_scope());
     if (params.empty()) {
         std::string name = group_name(ctx, group);

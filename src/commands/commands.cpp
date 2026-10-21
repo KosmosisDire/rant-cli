@@ -12,6 +12,8 @@ const std::vector<app::Command>& all() {
         run_(),
         stop(),
         restart(),
+        enable(),
+        disable(),
         log(),
         ls(),
         info(),

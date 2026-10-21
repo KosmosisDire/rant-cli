@@ -9,8 +9,9 @@ namespace commands {
 
 /* The kinds of thing ls lists and info explains. Topic, Variable, Function and Task narrow
  * Entity. A node is a running one or one that could start. A type is a message type, standard
- * or one the mesh uses. A source is where rant install finds packages, which only ls lists. */
-enum class Kind { Node, Entity, Topic, Variable, Function, Task, Type, Package, Group, Source };
+ * or one the mesh uses. A source is where rant install finds packages and a service what rant
+ * enable named, which only ls lists. */
+enum class Kind { Node, Entity, Topic, Variable, Function, Task, Type, Package, Group, Source, Service };
 
 /* The kind a word names, singular or plural, short or long: node, nodes, pkg, packages. */
 std::optional<Kind> kind_named(std::string_view word);

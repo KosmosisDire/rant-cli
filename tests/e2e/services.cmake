@@ -63,3 +63,45 @@ rant(stop Fail)
 
 # With nothing left to watch it ends on its own.
 wait_for_service_log("stopped, nothing to watch\n$")
+
+# rant enable refuses what it cannot run before it keeps anything or writes the login entry,
+# and a dry run keeps nothing.
+rant(enable FAILS)
+expect_match("${ERR}" "say what to enable")
+rant(enable nowhere FAILS)
+expect_match("${ERR}" "no group named `nowhere`")
+rant(enable sensor FAILS)
+expect_match("${ERR}" "`sensor` is a node, enable it with `rant enable node sensor`")
+rant(enable Keep --dry-run)
+expect_match("${OUT}" "keeper")
+rant(ls services)
+expect_match("${OUT}" "SERVICES\n  [(]none[)]\n")
+
+# What rant enable keeps, written here by hand, since rant enable writes the real login
+# entry. The service process starts it as the login entry would.
+file(WRITE "${SCRATCH}/Plain.run" [[
+node "demo/sensor" {
+  name = "steady"
+}
+]])
+file(WRITE "$ENV{RANT_HOME}/services.json"
+     "{ \"enabled\": [ { \"folder\": \"${SCRATCH}\", \"kind\": \"group\", \"name\": \"Plain\", \"words\": [], \"domain\": ${DOMAIN} } ] }\n")
+rant(ls services)
+expect_match("${OUT}" "SERVICES\n  Plain +stopped")
+execute_process(COMMAND "${RANT}" __services --login "$ENV{RANT_HOME}" TIMEOUT 60)
+wait_for_service_log("started at login\n.*starting Plain in .*started Plain\n")
+rant(ls nodes --no-mesh)
+expect_match("${OUT}" "Plain:\n +steady\n")
+rant(ls services --json)
+string(JSON state GET "${OUT}" 0 state)
+expect_match("${state}" "^running$")
+
+# disable stops it and drops it from the login start.
+rant(disable Plain)
+expect_match("${OUT}" "steady +stopped")
+expect_match("${ERR}" "disabled Plain, it no longer starts when you log in")
+rant(ls services)
+expect_match("${OUT}" "SERVICES\n  [(]none[)]\n")
+rant(disable Plain FAILS)
+expect_match("${ERR}" "Plain is not enabled here")
+wait_for_service_log("stopped, nothing to watch\n$")

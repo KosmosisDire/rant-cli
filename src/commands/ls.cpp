@@ -6,6 +6,7 @@
 
 #include "app/failure.hpp"
 #include "commands/commands.hpp"
+#include "commands/enable.hpp"
 #include "commands/kinds.hpp"
 #include "complete/complete.hpp"
 #include "library/uses.hpp"
@@ -402,6 +403,7 @@ static int run(app::Context& ctx) {
         return list_sources(ctx);
     }
     if (*kind == Kind::Package && ctx.args.has("available")) return list_available(ctx, pattern);
+    if (*kind == Kind::Service) return list_services(ctx, pattern);
     if (!on_mesh(*kind)) return list_workspace(ctx, *kind, pattern);
     return list_mesh(ctx, *kind, pattern);
 }
@@ -413,7 +415,7 @@ static complete::Candidates complete_words(complete::Request& r) {
 
 app::Command ls() {
     app::Command c{ "ls", "<kind> [pattern]",
-                    "list nodes, entities, types, packages or groups",
+                    "list nodes, entities, types, packages, groups, sources or services",
                     app::Section::Mesh,
                     { { "no-mesh", 0, "", "with nodes: only what this workspace declares and started, without joining the mesh" },
                       { "available", 0, "", "with packages: what `rant install` can install, from sources.rant and the package databases" } },

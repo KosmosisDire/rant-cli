@@ -18,6 +18,8 @@ app::Command build();
 app::Command run_();
 app::Command stop();
 app::Command restart();
+app::Command enable();
+app::Command disable();
 app::Command log();
 app::Command ls();
 app::Command info();

@@ -3,9 +3,11 @@
 #include "app/command.hpp"
 #include "app/failure.hpp"
 #include "commands/commands.hpp"
+#include "config/config.hpp"
 #include "complete/complete.hpp"
 #include "rant.hpp"
 #include "services/services.hpp"
+#include "util/home.hpp"
 
 namespace app {
 
@@ -61,6 +63,20 @@ static std::string main_help() {
     return s;
 }
 
+/* The service process, `rant __services`, and as the login entry starts it with the home
+ * it serves, `rant __services --login HOME`. */
+static int serve_services(const std::vector<std::string>& tokens) {
+    if (tokens.size() == 1) return services::serve(false);
+    if (tokens.size() != 3 || tokens[1] != "--login") throw UsageError("`rant __services` is rant's own, never typed");
+#ifdef _WIN32
+    _wputenv_s(L"RANT_HOME", config::from_utf8(tokens[2]).wstring().c_str());
+#else
+    setenv("RANT_HOME", tokens[2].c_str(), 1);
+#endif
+    config::set_home(util::rant_home());
+    return services::serve(true);
+}
+
 static uint16_t parse_domain(const std::string& s) {
     char* end = nullptr;
     unsigned long v = std::strtoul(s.c_str(), &end, 10);
@@ -70,7 +86,7 @@ static uint16_t parse_domain(const std::string& s) {
 
 int run(Context& ctx, const std::vector<std::string>& tokens) {
     if (!tokens.empty() && tokens[0] == "__complete") return complete::run(ctx, { tokens.begin() + 1, tokens.end() });
-    if (tokens.size() == 1 && tokens[0] == "__services") return services::serve();
+    if (!tokens.empty() && tokens[0] == "__services") return serve_services(tokens);
     size_t consumed = 0;
     Args global;
     try {

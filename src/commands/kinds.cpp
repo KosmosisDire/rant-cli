@@ -22,6 +22,7 @@ static const std::vector<Words>& table() {
         { Kind::Package, "package", "packages", { "pkg", "pkgs" }, "the packages of this workspace" },
         { Kind::Group, "group", "groups", {}, "the groups of this workspace" },
         { Kind::Source, "source", "sources", {}, "where rant install finds packages, in the order it looks" },
+        { Kind::Service, "service", "services", {}, "what rant enable starts at login, and whether it runs" },
     };
     return t;
 }
@@ -48,7 +49,7 @@ std::vector<std::string> kind_words(bool plural) {
     return out;
 }
 
-bool explained(Kind k) { return k != Kind::Source; }
+bool explained(Kind k) { return k != Kind::Source && k != Kind::Service; }
 
 std::vector<std::pair<std::string, std::string>> kinds_listed() {
     std::vector<std::pair<std::string, std::string>> out;
@@ -56,7 +57,7 @@ std::vector<std::pair<std::string, std::string>> kinds_listed() {
     return out;
 }
 
-bool on_mesh(Kind k) { return k != Kind::Package && k != Kind::Group && k != Kind::Source; }
+bool on_mesh(Kind k) { return k != Kind::Package && k != Kind::Group && k != Kind::Source && k != Kind::Service; }
 
 bool entity_matches(Kind k, std::string_view entity_kind) {
     return k == Kind::Entity || (on_mesh(k) && k != Kind::Node && entity_kind == kind_word(k));

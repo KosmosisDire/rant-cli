@@ -19,4 +19,9 @@ std::string group_name(app::Context& ctx, const std::string& group);
  * A name that is both a group and a node is a failure. */
 bool names_group(app::Context& ctx, const std::string& name);
 
+/* What `rant stop` does to a group, with params to pick one of its runs, and to one node by
+ * name, shared with disable. */
+int stop_group(app::Context& ctx, const std::string& group, const std::vector<std::string>& params);
+int stop_node(app::Context& ctx, const std::string& name);
+
 }

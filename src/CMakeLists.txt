@@ -11,6 +11,7 @@ add_library(rant_cli_core STATIC
   app/run.cpp
   commands/build.cpp
   commands/call.cpp
+  commands/enable.cpp
   commands/commands.cpp
   commands/explore.cpp
   commands/format.cpp

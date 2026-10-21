@@ -9,6 +9,8 @@
 #include <string>
 #include <thread>
 
+#include <nlohmann/json.hpp>
+
 #include "app/failure.hpp"
 #include "config/config.hpp"
 #include "process/supervisor.hpp"
@@ -86,6 +88,62 @@ void ensure_running() {
     throw app::Failure("rant's service process did not start, see " + config::to_utf8(log_file()));
 }
 
+using json = nlohmann::ordered_json;
+
+static fs::path list_file() { return util::rant_home() / "services.json"; }
+
+std::string Enabled::shown() const {
+    std::string s = kind == "node" ? "node " + name : name;
+    for (auto& w : words) s += " " + w;
+    return s;
+}
+
+bool Enabled::same(const Enabled& o) const {
+    return util::path_key(folder) == util::path_key(o.folder) && kind == o.kind && name == o.name && words == o.words;
+}
+
+std::vector<Enabled> enabled() {
+    std::ifstream in(list_file(), std::ios::binary);
+    if (!in) return {};
+    std::vector<Enabled> out;
+    try {
+        json doc = json::parse(in);
+        for (auto& j : doc.at("enabled")) {
+            Enabled e;
+            e.folder = config::from_utf8(j.at("folder").get<std::string>());
+            e.kind = j.at("kind");
+            e.name = j.at("name");
+            e.words = j.value("words", std::vector<std::string>{});
+            if (j.contains("domain")) e.domain = j.at("domain").get<uint16_t>();
+            e.env = j.value("env", std::map<std::string, std::string>{});
+            out.push_back(std::move(e));
+        }
+    } catch (const std::exception&) {
+        throw app::Failure(config::to_utf8(list_file()) + " is damaged, delete it and enable again");
+    }
+    return out;
+}
+
+void save(const std::vector<Enabled>& list) {
+    json all = json::array();
+    for (auto& e : list) {
+        json j = { { "folder", config::to_utf8(e.folder) }, { "kind", e.kind }, { "name", e.name }, { "words", e.words } };
+        if (e.domain) j["domain"] = *e.domain;
+        if (!e.env.empty()) j["env"] = e.env;
+        all.push_back(j);
+    }
+    fs::path tmp = list_file();
+    tmp += ".tmp";
+    {
+        std::ofstream f(tmp, std::ios::binary | std::ios::trunc);
+        f << json{ { "enabled", all } }.dump(2) << '\n';
+        if (!f) throw app::Failure("cannot write " + config::to_utf8(tmp));
+    }
+    std::error_code ec;
+    fs::rename(tmp, list_file(), ec);
+    if (ec) throw app::Failure("cannot write " + config::to_utf8(list_file()) + ": " + ec.message());
+}
+
 /* One line of the log, after the local time. */
 static void say(const std::string& line) {
     std::time_t now = std::time(nullptr);
@@ -114,11 +172,21 @@ constexpr seconds settled{ 10 };
 
 class Host {
 public:
+    /* Runs each enabled group or node with rant run in its folder. They hand their nodes
+     * with restart set to this process, so it never waits for them. */
+    void start_enabled();
+
     /* One round: notes what ended, starts what is due, and looks at every workspace when
      * asked to or now and then. False once it has had nothing to do for a while. */
     bool round(bool woken);
 
 private:
+    /* A rant run start_enabled began. */
+    struct Starter {
+        std::string    what;
+        process::Child child;
+    };
+
     /* A node this process watches: one it started, or one a former service process
      * started, whose exit code it cannot learn. */
     struct Watched {
@@ -138,6 +206,7 @@ private:
         int                              code = -1;    /* -1 when not known */
         int                              quick = 0;
         std::optional<clock::time_point> again;
+        clock::time_point                checked{};    /* when its record was last read while it waits */
     };
 
     void note_ended();
@@ -145,6 +214,7 @@ private:
     void look();
     bool watching(const fs::path& data, const state::Instance& rec) const;
 
+    std::list<Starter> starters_;
     std::list<Watched> watched_;
     std::list<Ended>   ended_;
     clock::time_point  looked_{};
@@ -152,7 +222,44 @@ private:
     clock::time_point  idle_since_ = clock::now();
 };
 
+void Host::start_enabled() {
+    std::vector<Enabled> list;
+    try {
+        list = enabled();
+    } catch (const app::Failure& e) {
+        say(e.what());
+    }
+    for (auto& e : list) {
+        if (!fs::is_directory(e.folder)) {
+            say("cannot start " + e.shown() + ", " + config::to_utf8(e.folder) + " is gone");
+            continue;
+        }
+        std::vector<std::string> argv = { config::to_utf8(process::self_path()), "run" };
+        if (e.kind == "node") argv.insert(argv.end(), { "node", e.name });
+        else argv.push_back(e.name);
+        argv.insert(argv.end(), e.words.begin(), e.words.end());
+        argv.insert(argv.end(), { "--no-build", "-y" });
+        if (e.domain) argv.insert(argv.end(), { "--domain", std::to_string(*e.domain) });
+        std::string job = "Local\\rant-services-" + home_key() + "-start-" + std::to_string(clock::now().time_since_epoch().count());
+        say("starting " + e.shown() + " in " + config::to_utf8(e.folder));
+        try {
+            starters_.push_back({ e.shown(), process::start_child({ argv, e.folder, e.env }, log_file(), job) });
+        } catch (const app::Failure& f) {
+            say("cannot start " + e.shown() + ": " + f.what());
+        }
+    }
+}
+
 void Host::note_ended() {
+    for (auto it = starters_.begin(); it != starters_.end();) {
+        std::optional<int> code = it->child.ended();
+        if (!code) {
+            ++it;
+            continue;
+        }
+        say(*code == 0 ? "started " + it->what : "starting " + it->what + " failed with code " + std::to_string(*code) + ", see above");
+        it = starters_.erase(it);
+    }
     for (auto it = watched_.begin(); it != watched_.end();) {
         std::optional<int> code;
         if (it->child) code = it->child->ended();
@@ -170,7 +277,9 @@ void Host::note_ended() {
 /* A node a command stopped or started again has another record or none, so it is left be. */
 void Host::decide() {
     for (auto it = ended_.begin(); it != ended_.end();) {
-        if (it->again && clock::now() < *it->again) {
+        /* while it waits its record is read now and then, so a stop takes effect soon */
+        bool due = !it->again || clock::now() >= *it->again;
+        if (!due && clock::now() - it->checked < seconds(1)) {
             ++it;
             continue;
         }
@@ -182,6 +291,11 @@ void Host::decide() {
         state::Instance* rec = store.state().instance(it->name);
         if (!rec || !same(rec->tracking, it->tracking)) {
             it = ended_.erase(it);
+            continue;
+        }
+        if (!due) {
+            it->checked = clock::now();
+            ++it;
             continue;
         }
         std::string code = it->code < 0 ? "an unknown code" : "code " + std::to_string(it->code);
@@ -271,13 +385,24 @@ bool Host::round(bool woken) {
         look();
         looked_ = clock::now();
     }
-    if (!watched_.empty() || !ended_.empty() || look_again_) idle_since_ = clock::now();
+    if (!starters_.empty() || !watched_.empty() || !ended_.empty() || look_again_) idle_since_ = clock::now();
     return clock::now() - idle_since_ < seconds(10);
 }
 
-int serve() {
+int serve(bool login) {
     std::error_code ec;
     fs::create_directories(log_file().parent_path(), ec);
+#ifdef _WIN32
+    /* Windows before 11 24H2 ignores the manifest and gives a program the login starts a
+     * console window, so a copy without one carries on. */
+    if (login && GetConsoleWindow()) {
+        std::string job = "Local\\rant-services-" + home_key() + "-" + std::to_string(clock::now().time_since_epoch().count());
+        process::start_detached({ { config::to_utf8(process::self_path()), "__services", "--login", config::to_utf8(util::rant_home()) },
+                                  util::rant_home(), {} },
+                                log_file(), job);
+        return 0;
+    }
+#endif
     /* a command probing whether one runs holds the lock for a moment, so a few tries */
     std::optional<util::FileLock> lock;
     for (int i = 0; i < 20; i++) {
@@ -302,8 +427,9 @@ int serve() {
         return true;
     };
 #endif
-    say("service process " + own_pid() + " started");
+    say("service process " + own_pid() + (login ? " started at login" : " started"));
     Host host;
+    if (login) host.start_enabled();
     bool woken = true;
     while (host.round(woken)) woken = wait();
     say("service process " + own_pid() + " stopped, nothing to watch");
