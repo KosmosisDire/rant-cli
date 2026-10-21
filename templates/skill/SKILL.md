@@ -204,9 +204,7 @@ both.
 
 The package `hmi` makes HMIs and apps: pages operators use in a browser, designed in a
 browser editor, while their logic runs in a native backend that is the Rant node. A project
-is a folder of plain text files, and you may write them directly. Each saved file reaches
-every open screen at once. A file with a mistake is refused and the HMI keeps the last good
-one.
+is a folder of plain text files, and you may write them directly.
 
 | goal | command |
 |---|---|
@@ -224,6 +222,37 @@ one.
   to import.
 - There are no logins yet: whoever reaches the port can change the project and press its
   buttons. Use `bind=127.0.0.1` on a shared network, or put access control in front.
+
+### What the HMI does, what you write
+
+The HMI does these by itself. Never build them:
+
+- Live values: every binding redraws as its values change, on every screen. Write no
+  polling, timers or refresh code.
+- Missing data: an element showing a value it cannot know yet, as an import missing from the
+  mesh, draws hatched, and a handler that reads one stops, never the rest. The HMI's own
+  variable `Hmi/Status`, imported like any entity, lists such imports in `missing`. Add no
+  fallback such as `Speed ?? 0`, which would show a made-up value as real.
+- Where code runs: drawing in each screen, handlers and logic on the backend. Write no client
+  and server split.
+- Connections: a screen reconnects by itself, its data over WebRTC with the WebSocket as the
+  fallback. Video plays as H264 when rant-transcoder runs on the camera's host, else as the
+  pictures come. Write no player or reconnect code.
+- A screen that drops or goes silent: the HMI lets go of all it held, so its `release`
+  handlers run. Write no watchdog.
+- Writing back: a bindable input bound to a writable name writes it, and a refused write says
+  why.
+- Theme: each screen follows its own light or dark setting through the tokens. Write no theme
+  switch.
+- Phones: a narrow screen stacks a page's top level elements in reading order. Build no phone
+  layout.
+- Files: a saved change reaches every screen. A file with a mistake is refused and the last
+  good one stays.
+- Records sample on the backend and logic handlers run there, whether a screen is open or not.
+
+You write the rest: the imports and their intents, variables, computed values, records and
+tokens, the pages and components, handlers for what operators do, logic for what must happen
+on its own, and the safety choices under Pages.
 
 ### Project
 
@@ -279,8 +308,6 @@ A page is the HTML it draws as. Lengths are units of 10 px, and a page is 128 by
   `Cmd.speed = 0.5`), calls a function with `await Start(target)` and publishes with
   `Jog.send({ x: 1, y: 0 })`. It also has `await sleep(ms)`, `notify(text)`, `log(...)` and
   `await open(Pages.Confirm)`, which gives what that page passes to `close(answer)`.
-- A value that is unknown, as an import missing from the mesh, draws hatched and stops the
-  handler that reads it, never the rest.
 
 ### Components
 
@@ -350,8 +377,8 @@ A page is the HTML it draws as. Lengths are units of 10 px, and a page is 128 by
 
 ### Pages
 
-- One top level frame per panel, holding its title and its controls. A phone stacks a
-  page's top level elements in reading order, so each panel stays whole.
+- One top level frame per panel, holding its title and its controls, so each panel stays
+  whole when a phone stacks them.
 - Lay a panel out with `layout`, `gap`, `padding`, `hug` and `fill` rather than hand placed
   coordinates, on whole units.
 - Depth comes from tokens: `$ground` the page, `$surface` and `$panel` cards, `$panel2` and
@@ -366,9 +393,8 @@ A page is the HTML it draws as. Lengths are units of 10 px, and a page is 128 by
   their units, actions below them.
 - Safety:
   - An action that moves a machine takes a hold to confirm, as `holdMs="600"`.
-  - Jogging runs only while pressed: `press` starts it and `release` stops it. A screen
-    that drops or goes silent lets go of all it held, so its `release` handlers run. Never
-    a toggle for motion.
+  - Jogging runs only while pressed: `press` starts it and `release` stops it, which a
+    screen that drops runs too. Never a toggle for motion.
   - A control that cannot act now is dimmed and takes no presses (`opacity` and
     `pointer-events` on the instance), with the reason in words nearby.
 - Keep logic in data where it fits: a computed value for a derived number, a record for a
