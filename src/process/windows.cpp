@@ -244,6 +244,12 @@ Child start_child(const Command& c, const fs::path& log, const std::string& job_
     if (!job) throw app::Failure("cannot create job " + job_name + ": " + last_error_text());
     if (GetLastError() == ERROR_ALREADY_EXISTS)
         throw app::Failure("job " + job_name + " already exists: an earlier start of this node is still running");
+    /* A process inside may leave when it asks, as a rant it runs does for each node it starts,
+     * so those outlive it. Its other children stay. */
+    JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};
+    limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_BREAKAWAY_OK;
+    if (!SetInformationJobObject(job.get(), JobObjectExtendedLimitInformation, &limits, sizeof limits))
+        throw app::Failure("cannot set up job " + job_name + ": " + last_error_text());
 
     DWORD flags = CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW | CREATE_SUSPENDED | CREATE_BREAKAWAY_FROM_JOB;
     PROCESS_INFORMATION pi = create(c, flags, in.get(), out.get(), out.get(), { job.get() });
