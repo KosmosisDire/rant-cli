@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cstdlib>
 
 #include "app/command.hpp"
@@ -50,12 +51,15 @@ static std::string main_help() {
         s += section == Section::Workspace ? "\nIn a workspace:\n"
              : section == Section::Mesh    ? "\nOn the mesh, anywhere:\n"
                                            : "\nSetting up:\n";
+        auto left = [](const Command& c) { return std::string(c.name) + " " + std::string(c.usage); };
+        size_t width = 0;
+        for (auto& c : commands::all())
+            if (c.section == section) width = std::max(width, left(c).size());
         for (auto& c : commands::all()) {
             if (c.section != section) continue;
-            std::string left = std::string(c.name) + " " + std::string(c.usage);
-            if (left.size() > 30) left += "\n" + std::string(33, ' ');    /* a long usage takes its own line */
-            else left.resize(31, ' ');
-            s += "  " + left + std::string(c.summary) + "\n";
+            std::string l = left(c);
+            l.resize(width + 2, ' ');
+            s += "  " + l + std::string(c.summary) + "\n";
         }
     }
     s += "\nOptions:\n" + option_lines(global_options());
