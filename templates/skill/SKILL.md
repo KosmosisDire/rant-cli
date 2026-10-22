@@ -231,14 +231,19 @@ is a folder of plain text files, and you may write them directly.
 | goal | command |
 |---|---|
 | install | `rant install hmi` |
-| run a project | `rant run Hmi project=line-hmi`, a folder counted from where you run it. An empty folder becomes a new project. `port=N` and `bind=IP` set where it listens, 6739 on every address by default |
+| run a project | `rant run Hmi project=line-hmi`, a folder counted from where you run it. An empty folder becomes a new project. `port=N` and `bind=IP` set where it listens, 6739 on every address by default. `rtc_ports=6740-6759` pins its WebRTC ports for a firewall |
 | open it | `http://localhost:6739` designs it, `http://localhost:6739/run` is an operator's screen |
 | check an edit | `rant log Hmi -n 20` names a refused file and the reason |
 | stop it | `rant stop Hmi` |
 | at every boot | `rant enable Hmi project=...`, `rant disable Hmi` |
 
-- The full file format is https://raw.githubusercontent.com/KosmosisDire/rant-hmi/main/docs/files.md,
-  the expression math `docs/math.md` beside it. Fetch them for anything this section leaves out.
+- The full docs are plain text at https://docs.rantlib.dev/hmi-reference.md (every element,
+  property, event and name), https://docs.rantlib.dev/hmi-files.md (the files and how each
+  part behaves) and https://docs.rantlib.dev/hmi-math.md. Fetch them for anything this section
+  leaves out.
+- It serves https beside http on the same port, with its own certificate kept in
+  `~/.rant/hmi`, which a browser warns about until trusted. A screen away from the HMI's host
+  needs https for gamepads and for video it decodes itself.
 - Work against a simulator on its own domain (`--domain N`), never on the domain of a
   machine in use. `rant ls entities` and `rant info <name>` give the names, types and fields
   to import.
@@ -266,8 +271,8 @@ The HMI does these by itself. Never build them:
   why.
 - Theme: each screen follows its own light or dark setting through the tokens. Write no theme
   switch.
-- Phones: a narrow screen stacks a page's top level elements in reading order. Build no phone
-  layout.
+- Phones: a screen held upright lays a page wider than tall out again for its width, band by
+  band from the top, never zoomed. Build no phone layout.
 - Files: a saved change reaches every screen. A file with a mistake is refused and the last
   good one stays.
 - Records sample on the backend and logic handlers run there, whether a screen is open or not.
@@ -279,7 +284,8 @@ on its own, and the safety choices under Pages.
 ### Project
 
 ```
-hmi.toml                 name, and start = "overview", the page screens open on
+hmi.toml                 name, start = "overview" the page screens open on, and [[ice]] WebRTC's
+                         STUN and TURN servers (urls, username, credential), ice = [] for none
 data/imports.toml        the mesh imports: each entity it uses, under an alias
 data/variables.toml      its own state, per = "hmi" (one value) or "screen" (each screen's own)
 data/computed.toml       values worked out from others, written back through a setter
@@ -322,10 +328,23 @@ A page is the HTML it draws as. Lengths are units of 10 px, and a page is 128 by
   quotes.
 - `x`, `y`, `w` and `h` take units, a percent of what holds the element, `hug` or `fill`.
   In a frame with `layout`, its parts follow one another and their `x` and `y` wait.
-- A handler is `<on event="...">` first inside its element: `tap`, `press`, `release`,
-  `hold` (`after` ms), `repeat` (`every` ms), `drag`, `outside`, or an event its component
-  sends. `p` holds what the event brings: `x` and `y` from 0 to 1 across the element,
-  `angle`, `on` the part pressed, or the value sent.
+- A handler is `<on event="...">` first inside its element. `p` holds what the event brings:
+  `x` and `y` from 0 to 1 across the element, `angle`, `on` the part pressed, or the value a
+  component sends. The events:
+  - pointer: `tap`, `press`, `release`, `hold` (`after` ms), `repeat` (`every` ms),
+    `outside`, and `drag`, whose `p.dx` and `p.dy` count as the element's own `x` does, so
+    `x = x + p.dx` follows the pointer
+  - `scroll` (`p.dx`, `p.dy` as a finger would move what it shows) and `zoom` (`p.factor`), from
+    a wheel, a trackpad, a pinch or two fingers
+  - keys: `keydown`, `keyup` and `keyrepeat` (`every` ms), with `key="a"` for what it types or
+    `code="KeyA"` for where it sits
+  - gamepads: `buttondown` and `buttonup` with `button="south"` and `pad="1"`, and `axes`
+    (`p.lx`, `ly`, `rx`, `ry`, `lt`, `rt`) past a `deadband`, all 0 once at rest
+  - an event its component sends with `emit`
+- `while="condition"` on any handler but an end takes the event only while it holds. An
+  element holds one handler per event and filter. An end (`release`, `keyup`, `buttonup`)
+  always comes, with `p.lost` true when the HMI let go for the operator, as a screen that
+  dropped.
 - Code sets a variable, or one imported to write, by assignment (`target = 5`,
   `Cmd.speed = 0.5`), calls a function with `await Start(target)` and publishes with
   `Jog.send({ x: 1, y: 0 })`. It also has `await sleep(ms)`, `notify(text)`, `log(...)` and
@@ -363,9 +382,12 @@ A page is the HTML it draws as. Lengths are units of 10 px, and a page is 128 by
 </component>
 ```
 
-- Use a built in before writing one. Button, Toggle, Slider, Knob, Gauge, Readout, Dropdown,
-  ModeSwitch, Plot, Joystick and Joystick1D sit in every new project's components folder.
-  Changing a project's copy changes every instance of it.
+- Use a built in before writing one. Button, Toggle, Slider, Knob, Dropdown, ModeSwitch,
+  Joystick and Joystick1D take input, and Readout, Gauge, Plot, Lamp, Bar, Bars, Joints, Pose,
+  Position, Swatch and Table show what the machine reports. They sit in every new project's
+  components folder. Changing a project's copy changes every instance of it.
+- Give a view's main input a `type`, as `type="number"`, `type="Pose"` or `type="number[]"`.
+  The editor's Show an import then offers the component for each import of that type.
 - One job and the fewest inputs that do it: what an instance must say (`value`, `text`,
   `min`, `max`, `unit`, `options`) and a few look inputs. Add more only when asked.
 - Every look input defaults to a token (`fill` `$panel3`, `colour` `$accent`, `textColour`
@@ -392,17 +414,19 @@ A page is the HTML it draws as. Lengths are units of 10 px, and a page is 128 by
 - Its own state is a `<var>`, each instance's own on each screen, as a dropdown's `open`.
 - Made for touch: targets at least 4 units high, nothing shown only on hover, `outside`
   closes what a press opened.
-- An input named like a math function hides it inside the component: with `min` and `max`
-  inputs, use `clamp(v, min, max)` or `Math.min`.
+- An input may share a math function's name, as a knob's `min` and `max`: the plain name is
+  the input, and a call such as `max(a, b)` is always the function.
 - Draw with frames and SVG shapes, ease movement with `transition`, and move with
-  `time.now` only what must move on its own.
+  `time.now` only what must move on its own. A screen also reads `link` (`link.open`,
+  `link.pingMs`), `keys` (what is held, as `keys.a`) and `gamepads`.
 
 ### Pages
 
 - One top level frame per panel, holding its title and its controls, so each panel stays
-  whole when a phone stacks them.
-- Lay a panel out with `layout`, `gap`, `padding`, `hug` and `fill` rather than hand placed
-  coordinates, on whole units.
+  whole when a phone lays the page out again.
+- Lay out with frames: `layout`, `gap`, `padding`, `w="fill"`, `h="hug"`, and a repeated part
+  for a list. Keep `x` and `y` for what sits on its own, as a marker over a picture, on whole
+  units.
 - Depth comes from tokens: `$ground` the page, `$surface` and `$panel` cards, `$panel2` and
   `$panel3` for what sits on a card. Text is `$text`, labels `$dim`, hints `$faint`, in
   `$textSmall`, `$textSize` and `$textLarge`. Spacing is `$spaceSmall`, `$space` and
@@ -427,6 +451,9 @@ A page is the HTML it draws as. Lengths are units of 10 px, and a page is 128 by
 - `repeat="6"` or `repeat="Jobs"` draws an element per item, with `index` and `item`,
   instead of copies.
 - `shows="over"` on a page opens it as a dialog over the one beneath.
+- `<canvas>` draws with code in 2D or WebGL, and `<scene>` shows 3D parts (`box`, `points`,
+  `model` and more) in metres with z up, each placed by its `pose`, as an import's. Fetch the
+  reference before writing either.
 
 ## Writing nodes
 
