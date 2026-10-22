@@ -200,6 +200,28 @@ both.
 | at every boot | `rant enable WebExplorer`, with the same params, `rant disable WebExplorer` |
 | output | `rant log WebExplorer`, `-f` to follow |
 
+## Manager
+
+The package `manager` offers a workspace's groups and nodes on the mesh, so a program or an
+HMI can see which run and run, stop or restart them.
+
+| goal | command |
+|---|---|
+| install | `rant install manager` |
+| run it | `rant run Manager` in the workspace, `rant stop Manager` |
+| output | `rant log Manager`, `-f` to follow |
+
+- Names start with the workspace's prefix, else its folder name in PascalCase (`cell` is
+  `Cell`). `Cell/Rant/Groups` lists every group as `GroupState[]`, `Cell/Rant/Nodes` every
+  node as `NodeState[]`.
+- Each group and node has a state variable and a function `Manage` that takes an `Action`
+  (Run, Stop, Restart), its path in PascalCase: `Cell/Rant/Groups/Io/Ft/Manage` for the group
+  `io/Ft`, `Cell/Rant/Nodes/Io/MyNode/Manage` for the node `io/my_node`. A state's
+  `manage_path` names its function.
+- Run and Restart wait up to 12 s for the nodes, so give the remote function handle a timeout
+  over that, such as 30 s. Its 5 s default ends the call first.
+- It never builds and passes no params. Stopping the manager leaves running what it started.
+
 ## HMI
 
 The package `hmi` makes HMIs and apps: pages operators use in a browser, designed in a
