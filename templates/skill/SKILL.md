@@ -233,6 +233,7 @@ is a folder of plain text files, and you may write them directly.
 | install | `rant install hmi` |
 | run a project | `rant run Hmi project=line-hmi`, a folder counted from where you run it. An empty folder becomes a new project. `port=N` and `bind=IP` set where it listens, 6739 on every address by default. `rtc_ports=6740-6759` pins its WebRTC ports for a firewall |
 | open it | `http://localhost:6739` designs it, `http://localhost:6739/run` is an operator's screen |
+| get it as an app | the editor's download button, or `curl -o line.exe "http://localhost:6739/app/win-x64?runs=device"` for `win-x64`, `linux-x64` or `linux-arm64`. `runs=screen&address=http://host:6739` makes one that shows that screen |
 | check an edit | `rant log Hmi -n 20` names a refused file and the reason |
 | stop it | `rant stop Hmi` |
 | at every boot | `rant enable Hmi project=...`, `rant disable Hmi` |
@@ -244,6 +245,11 @@ is a folder of plain text files, and you may write them directly.
 - It serves https beside http on the same port, with its own certificate kept in
   `~/.rant/hmi`, which a browser warns about until trusted. A screen away from the HMI's host
   needs https for gamepads and for video it decodes itself.
+- An app is one file that runs the HMI and its logic on the device with no server, or shows a
+  server's screen. The server fetches each platform's runtime from the HMI's GitHub release the
+  first time, about 170 MB. With no way to GitHub, put
+  `rant-hmi-runtime-<version>-<platform>.tar.gz` from that release in
+  `~/.rant/hmi/runtimes/<version>/`. On Linux, `chmod +x` the app first.
 - Work against a simulator on its own domain (`--domain N`), never on the domain of a
   machine in use. `rant ls entities` and `rant info <name>` give the names, types and fields
   to import.
