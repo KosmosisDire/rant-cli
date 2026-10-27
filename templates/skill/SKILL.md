@@ -237,6 +237,7 @@ is a folder of plain text files, and you may write them directly.
 | open it | `http://localhost:6739` designs it, `http://localhost:6739/run` is an operator's screen |
 | get it as an app | the editor's download button, or `curl -o line.exe "http://localhost:6739/app/win-x64?runs=device"` for `win-x64`, `linux-x64` or `linux-arm64`. `runs=screen&address=http://host:6739` makes one that shows that screen |
 | check an edit | `rant log Hmi -n 20` names a refused file and the reason |
+| see what is wrong | `curl http://localhost:6739/problems` gives every screen's problems as JSON: an expression or drawing that fails, a handler or logic that stopped, a fault in the HMI itself with its stack. The editor's status bar counts them, and `Hmi/Problems` on the mesh holds them too |
 | stop it | `rant stop Hmi` |
 | at every boot | `rant enable Hmi project=...`, `rant disable Hmi` |
 
