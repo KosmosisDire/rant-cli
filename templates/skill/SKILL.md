@@ -213,11 +213,13 @@ HMI can see which run and run, stop or restart them.
 
 - Names start with the workspace's prefix, else its folder name in PascalCase (`cell` is
   `Cell`). `Cell/Rant/Groups` lists every group as `GroupState[]`, `Cell/Rant/Nodes` every
-  node as `NodeState[]`.
-- Each group and node has a state variable and a function `Manage` that takes an `Action`
-  (Run, Stop, Restart), its path in PascalCase: `Cell/Rant/Groups/Io/Ft/Manage` for the group
-  `io/Ft`, `Cell/Rant/Nodes/Io/MyNode/Manage` for the node `io/my_node`. A state's
-  `manage_path` names its function.
+  node as `NodeState[]`, each row with its `name`, as the CLI takes it, and its `status`
+  (Stopped, Running).
+- A group's row lists the nodes its own file declares and the groups it includes, a node's
+  the groups whose files declare it, up to 32 names each in fixed `Name[32]` lists, unused
+  slots empty.
+- `Cell/Rant/Groups/Manage` and `Cell/Rant/Nodes/Manage` take a `ManageRequest { name,
+  action }`, the name from the list beside it and the action Run, Stop or Restart.
 - Run and Restart wait up to 12 s for the nodes, so give the remote function handle a timeout
   over that, such as 30 s. Its 5 s default ends the call first.
 - It never builds and passes no params. Stopping the manager leaves running what it started.
