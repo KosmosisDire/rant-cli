@@ -311,7 +311,6 @@ alias  = "Speed"          # PascalCase. The HMI's own names are camelCase, so th
 entity = "Line1/Speed"
 kind   = "variable"       # topic, variable, function or task
 intent = "read"           # write only what the HMI must change. A function or task is write
-# fields = ["points.x", "points.y"]  # an import that reads may bring only these fields, by paths
 # rate   = 5              # a topic it reads may come at most this many a second, best effort
 ```
 
