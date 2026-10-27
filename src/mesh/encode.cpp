@@ -95,28 +95,25 @@ public:
         d::rant_schema_field_at(s_.raw(), (uint16_t)idx, &f);
         const char* p = path.c_str();
         bool arr = f.kind == d::RANT_ARR || f.kind == d::RANT_VARR;
+        /* an array's element is its next row */
+        d::RantSchemaFieldInfo e{};
+        if (arr) d::rant_schema_field_at(s_.raw(), (uint16_t)(idx + 1), &e);
 
         if (f.kind == d::RANT_STRUCT) {
             if (!v.is_object()) wrong(path, v, "an object of its fields");
             for (auto& [k, val] : v.items()) set(join(path, k), val);
-        } else if (arr && f.elem == d::RANT_STRUCT) {
-            if (!v.is_array()) wrong(path, v, "a list");
-            size_t n = sized(path, f, v.size());
-            for (size_t i = 0; i < n; i++) {
-                if (!v[i].is_object()) wrong(path + "[" + std::to_string(i) + "]", v[i], "an object of its fields");
-                for (auto& [k, val] : v[i].items()) set(path + "[" + std::to_string(i) + "]." + k, val);
-            }
-        } else if (arr && f.elem == d::RANT_STR) {
-            if (!v.is_array()) wrong(path, v, "a list of text");
-            size_t n = sized(path, f, v.size());
-            for (size_t i = 0; i < n; i++) b_.set_string_at(p, (uint16_t)i, text_of(v[i]));
-        } else if (arr) {
+        } else if (arr && number(e.kind)) {
             if (!v.is_array()) wrong(path, v, "a list of numbers");
             if (f.kind == d::RANT_ARR && v.size() > f.count) wrong(path, v, "at most " + std::to_string(f.count) + " items");
-            std::vector<uint8_t> raw(v.size() * f.elem_size);
+            std::vector<uint8_t> raw(v.size() * e.size);
             for (size_t i = 0; i < v.size(); i++)
-                if (!put_scalar(raw.data() + i * f.elem_size, f.elem, v[i])) wrong(path + "[" + std::to_string(i) + "]", v[i], kind_word(f.elem));
+                if (!put_scalar(raw.data() + i * e.size, e.kind, v[i])) wrong(path + "[" + std::to_string(i) + "]", v[i], kind_word(e.kind));
             b_.set_array(p, rant::Bytes(raw.data(), raw.size()));
+        } else if (arr) {
+            /* any other element by its own path: an object, text, an option or another list */
+            if (!v.is_array()) wrong(path, v, "a list");
+            size_t n = sized(path, f, v.size());
+            for (size_t i = 0; i < n; i++) set(path + "[" + std::to_string(i) + "]", v[i]);
         } else if (f.kind == d::RANT_STR || f.kind == d::RANT_VSTR) {
             b_.set_string(p, text_of(v));
         } else if (f.kind == d::RANT_ENUM) {
@@ -151,6 +148,11 @@ public:
 private:
     [[noreturn]] void wrong(const std::string& path, const json& v, const std::string& want) const {
         throw app::Failure(shown(path) + " takes " + want + ", not " + text_of(v));
+    }
+
+    /* a kind an array packs as plain numbers */
+    static bool number(uint8_t kind) {
+        return kind == d::RANT_BOOL || (kind >= d::RANT_U8 && kind <= d::RANT_F64);
     }
 
     static std::string kind_word(uint8_t kind) {

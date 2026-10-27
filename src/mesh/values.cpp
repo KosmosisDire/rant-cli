@@ -108,29 +108,49 @@ private:
         return obj;
     }
 
-    /* The value of field i, leaving i past it and everything nested under it. */
+    /* The value of field i, leaving i past it and everything nested under it. An array's
+     * element is its next row: numbers and capped strings come packed, the rest one by one. */
     json field(uint16_t& i) {
         d::RantSchemaFieldInfo f = info(i);
         uint16_t at = i++;
         if (f.kind == d::RANT_STRUCT) return members(i, (uint16_t)(f.depth + 1));
-        bool struct_array = (f.kind == d::RANT_ARR || f.kind == d::RANT_VARR) && f.elem == d::RANT_STRUCT;
-        if (!struct_array) return leaf(at, f);
+        if (f.kind != d::RANT_ARR && f.kind != d::RANT_VARR) return leaf(at, f);
 
+        uint16_t end = i;
+        while (end < n_ && info(end).depth > f.depth) end++;
+        d::RantSchemaFieldInfo e = info(i);
         d::RantValue v{};
         d::rant_get_value_at(msg_, s_, at, elems_.data(), (uint16_t)elems_.size(), &v);
         json arr = json::array();
-        uint16_t end = i;
-        for (uint32_t k = 0; k < v.count; k++) {
-            elems_.push_back(k);
-            uint16_t j = i;
-            arr.push_back(members(j, (uint16_t)(f.depth + 1)));
-            end = j;
-            elems_.pop_back();
+        if (packed(e)) {
+            for (uint32_t k = 0; k < v.count && v.bytes.data && (size_t)(k + 1) * e.size <= v.bytes.len; k++) {
+                const uint8_t* p = v.bytes.data + (size_t)k * e.size;
+                if (e.kind == d::RANT_STR) {
+                    uint16_t len = (uint16_t)(p[0] | (p[1] << 8));
+                    arr.push_back(text(p + 2, len < e.str_cap ? len : e.str_cap));
+                } else {
+                    arr.push_back(scalar(p, e.kind));
+                }
+            }
+        } else {
+            for (uint32_t k = 0; k < v.count; k++) {
+                elems_.push_back(k);
+                uint16_t j = i;
+                arr.push_back(field(j));
+                elems_.pop_back();
+            }
         }
-        if (v.count == 0)
-            while (end < n_ && info(end).depth > f.depth) end++;
         i = end;
         return arr;
+    }
+
+    /* An element read straight from the array's packed bytes: a number or a capped string. */
+    static bool packed(const d::RantSchemaFieldInfo& e) {
+        switch (e.kind) {
+        case d::RANT_STRUCT: case d::RANT_ARR: case d::RANT_VARR: case d::RANT_VSTR:
+        case d::RANT_MAP: case d::RANT_ENUM: return false;
+        default: return e.size != 0;
+        }
     }
 
     json leaf(uint16_t at, const d::RantSchemaFieldInfo& f) {
@@ -143,20 +163,6 @@ private:
             d::RantString name = d::rant_enum_name_of(s_, at, v.v.i);
             if (name.data) return std::string(name.data, name.len);
             return v.v.i;
-        }
-        case d::RANT_ARR: case d::RANT_VARR: {
-            json arr = json::array();
-            for (uint32_t k = 0; k < v.count && f.elem_size; k++) {
-                const uint8_t* p = v.bytes.data + (size_t)k * f.elem_size;
-                if (f.elem == d::RANT_STR) {
-                    uint16_t len = (uint16_t)(p[0] | (p[1] << 8));
-                    if (len > f.elem_size - 2) len = (uint16_t)(f.elem_size - 2);
-                    arr.push_back(text(p + 2, len));
-                } else {
-                    arr.push_back(scalar(p, f.elem));
-                }
-            }
-            return arr;
         }
         case d::RANT_BOOL: return v.v.u != 0;
         case d::RANT_F32: case d::RANT_F64: return v.v.f;

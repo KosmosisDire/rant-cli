@@ -105,7 +105,7 @@ private:
     }
 
     std::string enum_text(uint16_t i, const d::RantSchemaFieldInfo& f) {
-        std::string s = paint(Style::Amber, "enum") + paint(Style::Faint, "<") + paint(Style::Amber, scalar_name(f.elem)) +
+        std::string s = paint(Style::Amber, "enum") + paint(Style::Faint, "<") + paint(Style::Amber, scalar_name(f.backing)) +
                         paint(Style::Faint, "> {");
         for (uint16_t k = 0; k < d::rant_schema_enum_count(s_, i); k++) {
             int64_t value = 0;
@@ -156,15 +156,8 @@ private:
         case d::RANT_VARR: {
             std::string suffix = paint(Style::Faint, "[") + (f.kind == d::RANT_ARR ? std::to_string(f.count) : "") +
                                  paint(Style::Faint, "]");
-            std::vector<std::string> elem;
-            if (f.elem == d::RANT_STRUCT) {
-                elem = struct_type(i, f.elem_name, indent);
-            } else {
-                std::string base = f.elem == d::RANT_STR
-                                       ? paint(Style::Amber, "string") + paint(Style::Faint, "<") + std::to_string(f.str_cap) + paint(Style::Faint, ">")
-                                       : paint(Style::Amber, scalar_name(f.elem));
-                elem = { f.elem_name.len ? named(std::string(f.elem_name.data, f.elem_name.len), { base }) : base };
-            }
+            /* the element is the next row, any type, a list of lists too */
+            std::vector<std::string> elem = type_lines((uint16_t)(i + 1), indent);
             elem.back() += suffix;
             if (f.type_name.len) return { named(std::string(f.type_name.data, f.type_name.len), elem) };
             return elem;
