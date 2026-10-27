@@ -359,6 +359,10 @@ A page is the HTML it draws as. Lengths are units of 10 px, and a page is 128 by
   `Cmd.speed = 0.5`), calls a function with `await Start(target)` and publishes with
   `Jog.send({ x: 1, y: 0 })`. It also has `await sleep(ms)`, `notify(text)`, `log(...)` and
   `await open(Pages.Confirm)`, which gives what that page passes to `close(answer)`.
+- A task is called as a function is, with a last function for each progress update:
+  `await Fill(5, (p) => { filled = p })`, and a bar bound to `filled` shows it. What the call
+  gives has `.cancel()` for that call, `Fill.cancel()` stops every call of it, and a stopped
+  call fails with `e.status` `"cancelled"`.
 
 ### Components
 
