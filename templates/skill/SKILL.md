@@ -303,7 +303,10 @@ data/theme.toml          tokens, read as $name
 pages/<name>.html        a page, named in small letters and dashes: Robot cell in robot-cell.html
 components/<name>.html   a component, the built in ones copied in when the project starts
 logic/handlers.html      handlers that run on the backend for no screen
+files/                   models, pictures and fonts a page loads, as src="files/arm.glb"
 ```
+
+Screens load nothing of the project but `files/`. Never put a model or a picture in a variable.
 
 ```toml
 [[import]]
@@ -343,9 +346,11 @@ A page is the HTML it draws as. Lengths are units of 10 px, and a page is 128 by
   component sends. The events:
   - pointer: `tap`, `press`, `release`, `hold` (`after` ms), `repeat` (`every` ms),
     `outside`, and `drag`, whose `p.dx` and `p.dy` count as the element's own `x` does, so
-    `x = x + p.dx` follows the pointer
+    `x = x + p.dx` follows the pointer. They take the left button, a finger or a pen, unless
+    `button="middle"`, `"right"` or `"any"`, and bring `p.button`, `p.shift`, `p.ctrl`,
+    `p.alt` and the element's size `p.w` and `p.h`
   - `scroll` (`p.dx`, `p.dy` as a finger would move what it shows) and `zoom` (`p.factor`), from
-    a wheel, a trackpad, a pinch or two fingers
+    a wheel, a trackpad, a pinch or two fingers, `from="wheel"` or `from="fingers"` for one
   - keys: `keydown`, `keyup` and `keyrepeat` (`every` ms), with `key="a"` for what it types or
     `code="KeyA"` for where it sits
   - gamepads: `buttondown` and `buttonup` with `button="south"` and `pad="1"`, and `axes`
@@ -464,10 +469,15 @@ A page is the HTML it draws as. Lengths are units of 10 px, and a page is 128 by
   `per = "screen"`.
 - `repeat="6"` or `repeat="Jobs"` draws an element per item, with `index` and `item`,
   instead of copies.
+- A long list is a frame with `overflow-y: "auto"`, which a wheel and a finger scroll, a
+  finger on a button in it too, as the Dropdown's `rows` does.
 - `shows="over"` on a page opens it as a dialog over the one beneath.
 - `<canvas>` draws with code in 2D or WebGL, and `<scene>` shows 3D parts (`box`, `points`,
   `model` and more) in metres with z up, each placed by its `pose`, as an import's. Fetch the
   reference before writing either.
+- A scene's camera reads a screen variable, its view, which the scene's drag, scroll and zoom
+  handlers move, as the editor makes a new one. `points` takes `color` and `size` as one or
+  a list one per point, as a cloud's colours beside its points: `color="Cloud.colors"`.
 
 ## Writing nodes
 
