@@ -274,8 +274,8 @@ The HMI does these by itself. Never build them:
 - Connections: a screen reconnects by itself, its data over WebRTC with the WebSocket as the
   fallback. Video plays as H264 when rant-transcoder runs on the camera's host, else as the
   pictures come. Write no player or reconnect code.
-- A screen that drops or goes silent: the HMI lets go of all it held, so its `release`
-  handlers run. Write no watchdog.
+- A screen that drops or goes silent for half a second: the HMI lets go of all it held, so its
+  `release` handlers run. Write no watchdog.
 - Writing back: a bindable input bound to a writable name writes it, and a refused write says
   why.
 - Theme: each screen follows its own light or dark setting through the tokens. Write no theme
