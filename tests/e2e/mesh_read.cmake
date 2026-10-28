@@ -18,15 +18,15 @@ rant_beside_node("${node}" ls entities cha --json)
 expect_match("${OUT}" "\"name\": \"chatter\"")
 expect_no_match("${OUT}" "speed|\"nodes\"")
 
-# Piped, sub prints a YAML line per message, numbers in place from line to line.
+# Piped, sub prints a record per message in any format: the sender, the rate and the value.
 rant_beside_node("${node}" sub chatter --count 3)
-expect_match("${OUT}" "^{seq: +[0-9]+, value: +[0-9]+[.][0-9][0-9]}\n{seq: ")
+expect_match("${OUT}" "^{from: talker, hz: +[0-9]+[.][0-9][0-9], value: {seq: +[0-9]+, value: +[0-9]+[.][0-9][0-9]}}\n{from: ")
 
 rant_beside_node("${node}" sub chatter --count 2 --csv)
-expect_match("${OUT}" "^seq,value\n[0-9]+,[0-9.]+\n[0-9]+,[0-9.]+\n$")
+expect_match("${OUT}" "^from,hz,value[.]seq,value[.]value\ntalker,[0-9.]+,[0-9]+,[0-9.]+\ntalker,[0-9.]+,[0-9]+,[0-9.]+\n$")
 
 rant_beside_node("${node}" sub chatter --count 1 --json)
-expect_match("${OUT}" "^{\"from\":\"talker\",\"value\":{\"seq\":[0-9]+,\"value\":[0-9.]+}}\n$")
+expect_match("${OUT}" "^{\"from\":\"talker\",\"hz\":[0-9.]+,\"value\":{\"seq\":[0-9]+,\"value\":[0-9.]+}}\n$")
 
 rant_beside_node("${node}" info talker)
 expect_match("${OUT}" "^node: +talker\n")

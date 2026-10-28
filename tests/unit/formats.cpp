@@ -1,4 +1,5 @@
 #include "check.hpp"
+#include "commands/format.hpp"
 #include "ui/csv.hpp"
 #include "ui/live.hpp"
 #include "ui/table.hpp"
@@ -48,6 +49,27 @@ TEST(yaml_quotes_only_what_would_misread) {
     CHECK_EQ(y.block(json("-x")), std::string("\"-x\""));
     CHECK_EQ(y.block(json("two\nlines")), std::string("\"two\\nlines\""));
     CHECK_EQ(y.flow(parse(R"({"k":"a,b"})")), std::string("{k: \"a,b\"}"));
+}
+
+TEST(printer_writes_the_same_record_in_each_format) {
+    using commands::Format;
+    json r = parse(R"({"from":"talker","hz":9.9,"value":{"seq":7,"value":0.5}})");
+    CHECK_EQ(commands::Printer(Format::Yaml, nullptr, false).line(r),
+             std::string("{from: talker, hz: 9.90, value: {seq: 7, value: 0.50}}"));
+    CHECK_EQ(commands::Printer(Format::Json, nullptr, false).line(r),
+             std::string(R"({"from":"talker","hz":9.9,"value":{"seq":7,"value":0.5}})"));
+    commands::Printer csv(Format::Csv, nullptr, false);
+    CHECK_EQ(csv.line(r), std::string("from,hz,value.seq,value.value\ntalker,9.9,7,0.5"));
+    CHECK_EQ(csv.line(r), std::string("talker,9.9,7,0.5"));
+}
+
+TEST(printer_block_is_whole_every_time) {
+    using commands::Format;
+    commands::Printer csv(Format::Csv, nullptr, false);
+    CHECK_EQ(csv.block(parse(R"({"seq":7})")), std::string("seq\n7"));
+    CHECK_EQ(csv.block(parse(R"({"seq":8})")), std::string("seq\n8"));
+    CHECK_EQ(commands::Printer(Format::Json, nullptr, false).block(parse(R"({"seq":7})")),
+             std::string("{\n  \"seq\": 7\n}"));
 }
 
 TEST(csv_header_once_then_rows) {
