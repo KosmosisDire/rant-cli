@@ -12,6 +12,16 @@ expect_match("${OUT}" "^value\n1.5\n$")
 rant_beside_node("${node}" set speed 3.25)
 expect_match("${OUT}" "^3.25\n$")
 
+# sub and pub take a variable too: its value at once from its owner, and a write the owner applied.
+rant_beside_node("${node}" sub speed --count 1)
+expect_match("${OUT}" "^{from: writer, hz: +0[.]00, value: +1[.]50}\n$")
+
+rant_beside_node("${node}" sub speed --count 1 --json)
+expect_match("${OUT}" "^{\"from\":\"writer\",\"hz\":0[.]0,\"value\":1[.]5}\n$")
+
+rant_beside_node("${node}" pub speed 3.25)
+expect_match("${ERR}" "wrote 1 value to speed")
+
 rant_beside_node("${node}" call double 21)
 expect_match("${OUT}" "^42.00\n$")
 
