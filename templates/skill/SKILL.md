@@ -318,7 +318,9 @@ The HMI does these by itself. Never build them:
   `p.lost`. Write no watchdog.
 - Writing back: a bindable input bound to a writable name writes it, and a refused write says
   why.
-- Theme: each screen follows its device's light or dark setting through the tokens.
+- Theme: each screen follows its device's light or dark setting through the tokens. For a
+  switch in the app, a handler calls `theme.toggle()` or `theme.set("light")`, and that device
+  keeps the choice.
 - Phones: a phone held upright lays a page out again for its width, never zoomed. Build no
   phone layout.
 - Files: a saved change reaches every screen. A file with a mistake is refused and the last
@@ -361,7 +363,8 @@ choices below.
 - One top level frame per panel, holding its title and its controls, so each panel stays
   whole when a phone lays the page out again.
 - Lay out with frames: `layout`, `gap`, `padding`, `w="fill"`, `h="hug"`, and a repeated part
-  for a list. Keep `x` and `y` for what sits on its own, as a marker over a picture.
+  for a list. `align` sets what a frame holds, or a text's lines, at one of nine points, as
+  `"center left"`. Keep `x` and `y` for what sits on its own, as a marker over a picture.
 - Read the project's `data/theme.toml` and use its tokens: `$ground` the page, `$surface` and
   `$panel` cards, `$panel2` and `$panel3` what sits on a card, `$text`, `$dim` and `$faint`,
   the `space`, `radius` and `text` sizes. Change the look there, never element by element,
