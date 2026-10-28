@@ -75,6 +75,12 @@ std::vector<Peer> Client::peers() const {
     return out;
 }
 
+std::string Client::provider_of(const rant::Entity& e) const {
+    for (auto& p : node_.reflection().peers())
+        if (p.active && p.id == e.provider) return p.name;
+    return e.from;
+}
+
 static void keep_public(std::vector<rant::Entity>& es) {
     es.erase(std::remove_if(es.begin(), es.end(), [](const rant::Entity& e) { return is_internal(e.name); }),
              es.end());

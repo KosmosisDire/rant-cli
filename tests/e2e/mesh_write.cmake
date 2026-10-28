@@ -19,12 +19,16 @@ expect_match("${ERR}" "wrote 1 value to speed")
 rant_beside_node("${node}" call double 21)
 expect_match("${OUT}" "^42.00\n$")
 
+# A task's progress is a stream as sub prints it, and the result is the last line.
 rant_beside_node("${node}" call count 3)
-expect_match("${OUT}" "^ 1\n 2\n 3\n3\n$")
+expect_match("${OUT}" "^{from: writer, hz: +[0-9.]+, value: +1}\n{from: writer, hz: +[0-9.]+, value: +2}\n{from: writer, hz: +[0-9.]+, value: +3}\n3\n$")
 expect_match("${ERR}" "task [0-9]+ running, Ctrl-C cancels it")
 
 rant_beside_node("${node}" call count 2 --json)
-expect_match("${OUT}" "{\"progress\":1}\n{\"progress\":2}\n{\n  \"result\": 2\n}")
+expect_match("${OUT}" "^{\"from\":\"writer\",\"hz\":[0-9.]+,\"value\":1}\n{\"from\":\"writer\",\"hz\":[0-9.]+,\"value\":2}\n2\n$")
+
+rant_beside_node("${node}" call count 2 --csv)
+expect_match("${OUT}" "^value\n2\n$")
 
 rant_beside_node("${node}" pub chatter seq=7 value=0.5)
 expect_match("${ERR}" "published 1 message to chatter")

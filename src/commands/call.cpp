@@ -6,14 +6,12 @@
 #include "app/failure.hpp"
 #include "commands/commands.hpp"
 #include "commands/format.hpp"
+#include "commands/stream.hpp"
 #include "complete/complete.hpp"
 #include "mesh/access.hpp"
-#include "ui/yaml.hpp"
 #include "util/interrupt.hpp"
 
 namespace commands {
-
-using mesh::json;
 
 static std::string status_text(rant::CallStatus s) {
     switch (s) {
@@ -39,20 +37,6 @@ static std::string status_text(rant::CallStatus s) {
     throw app::Failure("calling `" + name + "`: " + why);
 }
 
-/* A progress update as one line, so a stream of them reads down the screen, its numbers
- * kept in place. CSV leaves progress out, since its type is not the result's. */
-static void print_progress(app::Context& ctx, ui::Yaml& yaml, const json& v) {
-    Format f = format_of(ctx);
-    if (f == Format::Json) ctx.out.line(json{ { "progress", v } }.dump(-1, ' ', false, json::error_handler_t::replace));
-    else if (f == Format::Yaml) ctx.out.line(yaml.flow(v));
-    std::fflush(stdout);
-}
-
-static void print_result(app::Context& ctx, const char* key, const json& v) {
-    if (format_of(ctx) == Format::Json) ctx.out.line(json{ { key, v } }.dump(2, ' ', false, json::error_handler_t::replace));
-    else print_value(ctx, v);
-}
-
 static int call_function(app::Context& ctx, mesh::Client& mesh, const std::string& name,
                          const mesh::Assignments& values, std::chrono::milliseconds timeout) {
     rant::FunctionOptions o;
@@ -61,20 +45,24 @@ static int call_function(app::Context& ctx, mesh::Client& mesh, const std::strin
     std::vector<uint8_t> req = mesh::encode(values, fn.request_schema());
     auto r = fn.call(rant::Bytes(req.data(), req.size()), timeout);
     if (!r) fail(name, r);
-    print_result(ctx, "result", mesh::to_json(r.data(), rant::Schema(r.raw_schema())));
+    print_value(ctx, mesh::to_json(r.data(), rant::Schema(r.raw_schema())));
     return 0;
 }
 
-/* A task prints each progress update as it comes and the result last. Ctrl-C asks the
+/* A task streams its progress as sub does and prints the result last. Ctrl-C asks the
  * provider to cancel, and the call ends with the outcome it answers. */
-static int call_task(app::Context& ctx, mesh::Client& mesh, const std::string& name,
+static int call_task(app::Context& ctx, mesh::Client& mesh, const rant::Entity& e,
                      const mesh::Assignments& values, std::chrono::milliseconds timeout) {
+    const std::string& name = e.name;
     rant::TaskOptions o;
     o.reflect_from_mesh = true;
     auto task = mesh.node().remote_task<rant::Bytes, rant::Bytes, rant::Bytes>(name, o);
     std::vector<uint8_t> req = mesh::encode(values, task.request_schema());
 
-    ui::Yaml yaml(&ctx.out, true);
+    ValueStream out(ctx, name);
+    std::string from = mesh.provider_of(e);
+    /* CSV lines leave progress out, so the output stays one table: the result's */
+    bool show_progress = live_of(ctx) || format_of(ctx) != Format::Csv;
     std::atomic<uint32_t> id{ 0 };
     std::atomic<bool> done{ false };
     std::thread watcher([&] {
@@ -96,15 +84,16 @@ static int call_task(app::Context& ctx, mesh::Client& mesh, const std::string& n
             return;
         }
         id = p.call_id();
-        print_progress(ctx, yaml, mesh::to_json(p.data(), rant::Schema(p.raw_schema())));
+        if (show_progress) out.add(from, p.data(), rant::Schema(p.raw_schema()));
     };
     auto r = task.call(rant::Bytes(req.data(), req.size()), progress, timeout);
     done = true;
     watcher.join();
+    out.finish();
     if (r.status() == rant::CallStatus::Cancelled && r.data().size())
-        print_result(ctx, "partial", mesh::to_json(r.data(), rant::Schema(r.raw_schema())));
+        print_value(ctx, mesh::to_json(r.data(), rant::Schema(r.raw_schema())));
     if (!r) fail(name, r);
-    print_result(ctx, "result", mesh::to_json(r.data(), rant::Schema(r.raw_schema())));
+    print_value(ctx, mesh::to_json(r.data(), rant::Schema(r.raw_schema())));
     return 0;
 }
 
@@ -126,7 +115,7 @@ static int run(app::Context& ctx) {
     mesh::Client mesh(ctx.domain());
     mesh.settle();
     rant::Entity e = mesh::require_entity(mesh, { rant::EntityKind::Function, rant::EntityKind::Task }, name);
-    if (e.kind == rant::EntityKind::Task) return call_task(ctx, mesh, name, values, timeout);
+    if (e.kind == rant::EntityKind::Task) return call_task(ctx, mesh, e, values, timeout);
     return call_function(ctx, mesh, name, values, timeout);
 }
 
@@ -137,7 +126,8 @@ static complete::Candidates complete_words(complete::Request& r) {
 
 app::Command call() {
     app::Command c{ "call", "<function|task> [value]", "call a function and print the reply, or run a task", app::Section::Mesh,
-                    { { "timeout", 't', "S", "seconds to wait for an answer, 5 by default" }, csv_option() }, run };
+                    { { "timeout", 't', "S", "seconds to wait for an answer, 5 by default" }, lines_option(), csv_option() },
+                    run };
     c.complete = complete_words;
     return c;
 }

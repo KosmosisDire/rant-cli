@@ -30,6 +30,7 @@ add_library(rant_cli_core STATIC
   commands/run.cpp
   commands/setup.cpp
   commands/stop.cpp
+  commands/stream.cpp
   commands/sub.cpp
   commands/summary.cpp
   commands/uninstall.cpp

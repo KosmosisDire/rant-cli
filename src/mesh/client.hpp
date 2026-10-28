@@ -46,6 +46,9 @@ public:
     std::vector<rant::Entity> entities() const;     /* the mesh folded, builtins hidden, by name */
     std::vector<rant::Entity> entities_of(uint32_t peer) const;
 
+    /* The node that answers for an entity: a variable's owner, a function's or task's provider. */
+    std::string provider_of(const rant::Entity& e) const;
+
     /* Each peer's process id from its @rant/meta answer. A peer that does not answer within
      * limit is left out. */
     std::map<uint32_t, uint64_t> pids(const std::vector<uint32_t>& peers,

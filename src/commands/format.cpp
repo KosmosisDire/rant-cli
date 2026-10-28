@@ -42,7 +42,8 @@ std::string Printer::line(const json& v) {
 }
 
 void print_value(app::Context& ctx, const json& v) {
-    ctx.out.line(Printer(format_of(ctx), &ctx.out, false).block(v));
+    Printer p(format_of(ctx), &ctx.out, false);
+    ctx.out.line(live_of(ctx) ? p.block(v) : p.line(v));
 }
 
 }

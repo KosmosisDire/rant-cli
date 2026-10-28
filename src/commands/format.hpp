@@ -43,7 +43,8 @@ private:
     ui::Csv  csv_;
 };
 
-/* One value in the format asked for, such as a call's result. */
+/* One value in the format asked for, such as a call's result: whole on a terminal, one line
+ * with --lines or in a pipe. */
 void print_value(app::Context& ctx, const nlohmann::ordered_json& v);
 
 }
