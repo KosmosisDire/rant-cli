@@ -226,108 +226,68 @@ HMI can see which run and run, stop or restart them.
 
 ## HMI
 
-The package `hmi` makes HMIs and apps: pages operators use in a browser, designed in a
-browser editor, while their logic runs in a native backend that is the Rant node. A project
-is a folder of plain text files, and you may write them directly.
+The package `hmi` makes screens for machines: pages designed in a browser editor and run by a
+native backend that is the Rant node and runs their logic. A project is a folder of plain text
+files, and you may write them directly. This section is a guide. Fetch the docs, plain text,
+for anything it leaves out:
+
+| page | fetch it for |
+|---|---|
+| https://docs.rantlib.dev/hmi-start.md | running it, a first screen, finding problems |
+| https://docs.rantlib.dev/hmi-project.md | the files, objects and their members, logic, settings, theme tokens |
+| https://docs.rantlib.dev/hmi-pages.md | every element and property: layout, text, media, shapes, canvas, scenes, style, state |
+| https://docs.rantlib.dev/hmi-components.md | the component file, input types, the standard components and their inputs |
+| https://docs.rantlib.dev/hmi-events.md | every event, its settings and what its `p` holds |
+| https://docs.rantlib.dev/hmi-code.md | every name and function code reads, tasks, vectors, poses, colours |
+| https://docs.rantlib.dev/hmi-deploy.md | https, firewalls and WebRTC, apps for a device |
+| https://docs.rantlib.dev/hmi-status.md | `Hmi/Status`, `Hmi/Clients`, `Hmi/Problems` |
+
+### Set up
 
 | goal | command |
 |---|---|
 | install | `rant install hmi` |
-| run a project | `rant run Hmi project=line-hmi`, a folder counted from where you run it. An empty folder becomes a new project. `port=N` and `bind=IP` set where it listens, 6739 on every address by default. `rtc_ports=6740-6759` pins its WebRTC ports for a firewall |
+| run a project | `rant run Hmi project=line-hmi`, a folder counted from where you run it. An empty folder becomes a new project. `port=N` and `bind=IP` set where it listens, 6739 on every address by default |
 | open it | `http://localhost:6739` designs it, `http://localhost:6739/run` is an operator's screen |
-| get it as an app | the editor's download button, or `curl -o line.exe "http://localhost:6739/app/win-x64?runs=device"` for `win-x64`, `linux-x64` or `linux-arm64`. `runs=screen&address=http://host:6739` makes one that shows that screen |
 | check an edit | `rant log Hmi -n 20` names a refused file and the reason |
-| see what is wrong | `curl http://localhost:6739/problems` gives every screen's problems as JSON: an expression or drawing that fails, a handler or logic that stopped, a fault in the HMI itself with its stack. The editor's status bar counts them, and `Hmi/Problems` on the mesh holds them too |
+| see what is wrong | `curl http://localhost:6739/problems` gives every screen's problems as JSON |
 | stop it | `rant stop Hmi` |
 | at every boot | `rant enable Hmi project=...`, `rant disable Hmi` |
 
-- The full docs are plain text at https://docs.rantlib.dev/hmi-reference.md (every element,
-  property, event and name), https://docs.rantlib.dev/hmi-files.md (the files and how each
-  part behaves) and https://docs.rantlib.dev/hmi-math.md. Fetch them for anything this section
-  leaves out.
-- It serves https beside http on the same port, with its own certificate kept in
-  `~/.rant/hmi`, which a browser warns about until trusted. A screen away from the HMI's host
-  needs https for gamepads and for video it decodes itself.
-- An app is one file that runs the HMI and its logic on the device with no server, or shows a
-  server's screen. The server fetches each platform's runtime from the HMI's GitHub release the
-  first time, about 170 MB. With no way to GitHub, put
-  `rant-hmi-runtime-<version>-<platform>.tar.gz` from that release in
-  `~/.rant/hmi/runtimes/<version>/`. On Linux, `chmod +x` the app first.
 - Work against a simulator on its own domain (`--domain N`), never on the domain of a
-  machine in use. `rant ls entities` and `rant info <name>` give the names, types and fields
-  to import.
+  machine in use.
 - There are no logins yet: whoever reaches the port can change the project and press its
   buttons. Use `bind=127.0.0.1` on a shared network, or put access control in front.
 
-### What the HMI does, what you write
+### Workflow
 
-The HMI does these by itself. Never build them:
+1. Find the entities: `rant ls entities`, then `rant info <name>` for a type and its fields.
+2. Write one object per machine in `objects/<Name>.html`. Name only the entities the HMI
+   uses, and give `intent="write"` only to what it must change.
+3. Build pages from the standard components in `components/`, laid out with frames.
+4. Add handlers for what operators do, and logic in an object for what must happen with no
+   screen open.
+5. After each edit, read `rant log Hmi` and `/problems`.
 
-- Live values: every binding redraws as its values change, on every screen. Write no
-  polling, timers or refresh code.
-- Missing data: an element showing a value it cannot know yet, as an import missing from the
-  mesh, draws hatched, and a handler that reads one stops, never the rest. The HMI's own
-  variable `Hmi/Status`, imported like any entity, lists such imports in `missing`. Add no
-  fallback such as `Speed ?? 0`, which would show a made-up value as real.
-- Where code runs: drawing in each screen, handlers and logic on the backend. Write no client
-  and server split.
-- Connections: a screen reconnects by itself, its data over WebRTC with the WebSocket as the
-  fallback. Video plays as H264 when rant-transcoder runs on the camera's host, else as the
-  pictures come. Write no player or reconnect code.
-- A screen that drops or goes silent for half a second: the HMI lets go of all it held, so its
-  `release` handlers run. Write no watchdog.
-- Writing back: a bindable input bound to a writable name writes it, and a refused write says
-  why.
-- Theme: each screen follows its own light or dark setting through the tokens. Write no theme
-  switch.
-- Phones: a screen held upright lays a page wider than tall out again for its width, band by
-  band from the top, never zoomed. Build no phone layout.
-- Files: a saved change reaches every screen. A file with a mistake is refused and the last
-  good one stays.
-- Records sample on the backend and logic handlers run there, whether a screen is open or not.
-
-You write the rest: the imports and their intents, variables, computed values, records and
-tokens, the pages and components, handlers for what operators do, logic for what must happen
-on its own, and the safety choices under Pages.
-
-### Project
-
+```html
+<object name="Line" mesh="Line1">
+  <variable name="Speed" entity="Speed"/>
+  <variable name="Target" entity="Target" intent="write"/>
+  <function name="Start" entity="Start"/>
+  <var name="mode" start='"Auto"' per="hmi"/>
+  <record name="speedHistory" source="Speed" every="100" keep="600"/>
+</object>
 ```
-hmi.toml                 name, start = "overview" the page screens open on, and [[ice]] WebRTC's
-                         STUN and TURN servers (urls, username, credential), ice = [] for none
-data/imports.toml        the mesh imports: each entity it uses, under an alias
-data/variables.toml      its own state, per = "hmi" (one value) or "screen" (each screen's own)
-data/computed.toml       values worked out from others, written back through a setter
-data/records.toml        a value's history, sampled every_ms and kept keep_s
-data/theme.toml          tokens, read as $name
-pages/<name>.html        a page, named in small letters and dashes: Robot cell in robot-cell.html
-components/<name>.html   a component, the built in ones copied in when the project starts
-logic/handlers.html      handlers that run on the backend for no screen
-files/                   models, pictures and fonts a page loads, as src="files/arm.glb"
-```
-
-Screens load nothing of the project but `files/`. Never put a model or a picture in a variable.
-
-```toml
-[[import]]
-alias  = "Speed"          # PascalCase. The HMI's own names are camelCase, so the two never look alike
-entity = "Line1/Speed"
-kind   = "variable"       # topic, variable, function or task
-intent = "read"           # write only what the HMI must change. A function or task is write
-# rate   = 5              # a topic it reads may come at most this many a second, best effort
-```
-
-A page is the HTML it draws as. Lengths are units of 10 px, and a page is 128 by 72 by default.
 
 ```html
 <page name="Overview" size="128x72">
-  <div id="e1" name="Line panel" x="2" y="2" w="32" h="hug" style='background: $panel; border-radius: $radiusLarge; gap: $space; layout: "down"; padding: $spaceLarge'>
-    <span id="e2" name="Title" x="0" y="0" w="hug" h="hug" style="color: $dim">"Line 1"</span>
-    <Readout id="e3" name="Speed" x="0" y="0" w="fill" h="8" label='"Speed"' value="Speed" unit='"m/s"' digits="2" fill="$panel2"/>
-    <Stepper id="e4" name="Target" x="0" y="0" w="fill" h="5" value="target" max="20"/>
-    <Button id="e5" name="Start" x="0" y="0" w="fill" h="6" text='"Start"' fill="$green" holdMs="600" style='opacity: Ready ? 1 : 0.4; pointer-events: Ready ? "auto" : "none"'>
+  <div id="e1" name="Line panel" x="2" y="2" w="32" h="hug" style='layout: "down"; gap: $space; padding: $spaceLarge; background: $panel; border-radius: $radiusLarge'>
+    <span id="e2" name="Title" w="hug" h="hug" style="color: $dim">"Line 1"</span>
+    <Readout id="e3" name="Speed" w="fill" h="8" label='"Speed"' value="Line.Speed" unit='"m/s"' digits="2"/>
+    <Slider id="e4" name="Target" w="fill" h="5" value="Line.Target" max="2"/>
+    <Button id="e5" name="Start" w="fill" h="6" text='"Start"' fill="$green" holdMs="600">
       <on event="confirm">
-        await Start(target);
+        await Line.Start();
       </on>
     </Button>
   </div>
@@ -336,123 +296,78 @@ A page is the HTML it draws as. Lengths are units of 10 px, and a page is 128 by
 
 - Every element has an `id` of its own in its file. Keep the ids of what exists and give
   what you add the next free one.
-- Every attribute but `id` and `name` is an expression: `Speed * 10`, text in quotes,
-  `#2a6fd6` a colour, `$accent` a token. Put an attribute holding double quotes in single
-  quotes.
-- `x`, `y`, `w` and `h` take units, a percent of what holds the element, `hug` or `fill`.
-  In a frame with `layout`, its parts follow one another and their `x` and `y` wait.
-- A handler is `<on event="...">` first inside its element. `p` holds what the event brings:
-  `x` and `y` from 0 to 1 across the element, `angle`, `on` the part pressed, or the value a
-  component sends. The events:
-  - pointer: `tap`, `press`, `release`, `hold` (`after` ms), `repeat` (`every` ms),
-    `outside`, and `drag`, whose `p.dx` and `p.dy` count as the element's own `x` does, so
-    `x = x + p.dx` follows the pointer. They take the left button, a finger or a pen, unless
-    `button="middle"`, `"right"` or `"any"`, and bring `p.button`, `p.shift`, `p.ctrl`,
-    `p.alt` and the element's size `p.w` and `p.h`
-  - `scroll` (`p.dx`, `p.dy` as a finger would move what it shows) and `zoom` (`p.factor`), from
-    a wheel, a trackpad, a pinch or two fingers, `from="wheel"` or `from="fingers"` for one
-  - keys: `keydown`, `keyup` and `keyrepeat` (`every` ms), with `key="a"` for what it types or
-    `code="KeyA"` for where it sits
-  - gamepads: `buttondown` and `buttonup` with `button="south"` and `pad="1"`, and `axes`
-    (`p.lx`, `ly`, `rx`, `ry`, `lt`, `rt`) past a `deadband`, all 0 once at rest
-  - an event its component sends with `emit`
-- `while="condition"` on any handler but an end takes the event only while it holds. An
-  element holds one handler per event and filter. An end (`release`, `keyup`, `buttonup`)
-  always comes, with `p.lost` true when the HMI let go for the operator, as a screen that
-  dropped.
-- Code sets a variable, or one imported to write, by assignment (`target = 5`,
-  `Cmd.speed = 0.5`), calls a function with `await Start(target)` and publishes with
-  `Jog.send({ x: 1, y: 0 })`. It also has `await sleep(ms)`, `notify(text)`, `log(...)` and
-  `await open(Pages.Confirm)`, which gives what that page passes to `close(answer)`.
-- A task is called as a function is, with a last function for each progress update:
-  `await Fill(5, (p) => { filled = p })`, and a bar bound to `filled` shows it. What the call
-  gives has `.cancel()` for that call, `Fill.cancel()` stops every call of it, and a stopped
-  call fails with `e.status` `"cancelled"`.
+- Every value but `id` and `name` is an expression: `Line.Speed * 10`, text in quotes,
+  `$accent` a token. Put a value holding double quotes in single quotes.
+- Pages and other objects read `Line.Speed` and call `await Line.Start()`. The object's own
+  code reads its members bare.
+- Mesh members are PascalCase and the HMI's own state camelCase, so the two never look alike.
 
-### Components
+### What the HMI does, what you write
 
-```html
-<component name="Stepper" size="18x5" sizing="fill">
-  <prop name="value" default="0" bindable="true"/>
-  <prop name="step" default="1"/>
-  <prop name="min" default="0"/>
-  <prop name="max" default="10"/>
-  <prop name="fill" default="$panel3"/>
-  <prop name="textColour" default="$text"/>
-  <prop name="radius" default="$radius"/>
-  <event name="change"/>
-  <div id="e1" name="row" x="0" y="0" w="100%" h="100%" style='layout: "right"; gap: $spaceSmall'>
-    <div id="e2" name="less" x="0" y="0" w="hug" h="100%" style='align: "center"; aspect-ratio: 1; background: less.pressed ? fill.darken(0.15) : fill; border-radius: radius; layout: "right"'>
-      <on event="repeat" every="150">
-        value = clamp(value - step, min, max);
-        emit("change", value);
-      </on>
-      <span id="e3" name="lessSign" x="0" y="0" w="hug" h="hug" style="color: textColour; font-size: $textLarge">"-"</span>
-    </div>
-    <span id="e4" name="reading" x="0" y="0" w="fill" h="100%" style='align-content: "center"; color: textColour; font-size: $textLarge; font-weight: 600; text-align: "center"'>value</span>
-    <div id="e5" name="more" x="0" y="0" w="hug" h="100%" style='align: "center"; aspect-ratio: 1; background: more.pressed ? fill.darken(0.15) : fill; border-radius: radius; layout: "right"'>
-      <on event="repeat" every="150">
-        value = clamp(value + step, min, max);
-        emit("change", value);
-      </on>
-      <span id="e6" name="moreSign" x="0" y="0" w="hug" h="hug" style="color: textColour; font-size: $textLarge">"+"</span>
-    </div>
-  </div>
-</component>
-```
+The HMI does these by itself. Never build them:
 
-- Use a built in before writing one. Button, Toggle, Slider, Knob, Dropdown, ModeSwitch,
-  Joystick and Joystick1D take input, and Readout, Gauge, Plot, Lamp, Bar, Bars, Joints, Pose,
-  Position, Swatch and Table show what the machine reports. They sit in every new project's
-  components folder. Changing a project's copy changes every instance of it.
-- Give a view's main input a `type`, as `type="number"`, `type="Pose"` or `type="number[]"`.
-  The editor's Show an import then offers the component for each import of that type.
+- Live values: every value redraws as it changes, on every screen. Write no polling, timers
+  or refresh code.
+- Missing data: an element showing a value not known yet draws hatched, and a handler that
+  reads one stops. `Hmi.Status.missing` lists the mesh members not on the mesh. Add no
+  fallback such as `Line.Speed ?? 0`, which would show a made up value as real.
+- Where code runs: write no client and server split.
+- Connections: a screen reconnects by itself. Video plays as H264 when rant-transcoder runs
+  on the camera's host, else as the pictures come. Write no player or reconnect code.
+- A screen that drops: the HMI lets go of all it held, so its `release` handlers run with
+  `p.lost`. Write no watchdog.
+- Writing back: a bindable input bound to a writable name writes it, and a refused write says
+  why.
+- Theme: each screen follows its device's light or dark setting through the tokens.
+- Phones: a phone held upright lays a page out again for its width, never zoomed. Build no
+  phone layout.
+- Files: a saved change reaches every screen. A file with a mistake is refused and the last
+  good one stays.
+- Records sample and logic runs on the backend, whether a screen is open or not.
+
+You write the rest: objects, pages, components, tokens, handlers, logic, and the safety
+choices below.
+
+### Designing components
+
+- Use a standard component before writing one. Changing a project's copy changes every
+  instance of it.
 - One job and the fewest inputs that do it: what an instance must say (`value`, `text`,
   `min`, `max`, `unit`, `options`) and a few look inputs. Add more only when asked.
 - Every look input defaults to a token (`fill` `$panel3`, `colour` `$accent`, `textColour`
-  `$text`, `radius` `$radius`), so the component follows the theme, light and dark, until
-  an instance sets its own. Work states out from those rather than adding inputs:
-  `fill.darken(0.15)` pressed, `colour.alpha(0.15)` a tint.
-- Name inputs and events as the built ins do, so every instance reads alike: `value`,
-  `min`, `max`, `step`, `unit`, `digits`, `text`, `label`, `options`, `fill`, `colour`,
-  `textColour`, `textSize`, `radius`, and `change` with the new value, `confirm`, `move`.
+  `$text`, `radius` `$radius`), so the component follows the theme until an instance sets
+  its own. Work states out from those: `fill.darken(0.15)` pressed, `colour.alpha(0.15)` a
+  tint.
+- Name inputs and events as the standard ones do: `value`, `min`, `max`, `step`, `unit`,
+  `digits`, `text`, `label`, `options`, `fill`, `colour`, `textColour`, `textSize`, `radius`,
+  and `change` with the new value, `confirm`, `move`.
 - A control that holds a value has one `value` input with `bindable="true"`. Its code sets
-  `value`, then sends `change` with it. An instance bound to a writable name
-  (`value="target"`) writes back to it. One bound to the machine's state
-  (`value="Robot.servo_power"`) shows it, and the instance's `change` handler asks the
-  machine (`await SetServo(p)`), so the screen shows what the machine reports, not what was
-  pressed.
-- A component never names a mesh import. Data comes in through inputs and actions go out
-  as events, so one component serves any machine and the page decides what a press does.
-- `sizing="fill"` lays it out in each instance's box. Use it for what stretches (buttons,
-  cards, bars, plots), with parts in percents, `hug`, `fill` and layouts. Leave it out for a
-  drawing that must keep its shape, as a dial, which then scales whole.
-- Name each part for its role in camelCase (`track`, `thumb`, `label`). Code reads a part's
-  `pressed`, `hovered` and `heldFor` by that name, `root` for the whole. Give every press a
-  visible response.
-- Its own state is a `<var>`, each instance's own on each screen, as a dropdown's `open`.
+  `value`, then sends `change` with it. An instance bound to a writable name writes back to
+  it. One bound to the machine's state shows it, and its `change` handler asks the machine,
+  so the screen shows what the machine reports, not what was pressed.
+- Give a view's main input a `type`, as `type="number"` or `type="Pose"`, so the editor
+  offers it for members of that type.
+- A component never names an object. Data comes in through inputs and actions go out as
+  events, so one component serves any machine and the page decides what a press does.
+- `sizing="fill"` for what stretches (buttons, cards, bars, plots). Leave it out for a drawing
+  that must keep its shape, as a dial, which then scales whole.
+- Name each part for its role in camelCase (`track`, `thumb`). Give every press a visible
+  response through the part's `pressed`.
 - Made for touch: targets at least 4 units high, nothing shown only on hover, `outside`
   closes what a press opened.
-- An input may share a math function's name, as a knob's `min` and `max`: the plain name is
-  the input, and a call such as `max(a, b)` is always the function.
-- Draw with frames and SVG shapes, ease movement with `transition`, and move with
-  `time.now` only what must move on its own. A screen also reads `link` (`link.open`,
-  `link.pingMs`), `keys` (what is held, as `keys.a`) and `gamepads`.
 
-### Pages
+### Designing pages
 
 - One top level frame per panel, holding its title and its controls, so each panel stays
   whole when a phone lays the page out again.
 - Lay out with frames: `layout`, `gap`, `padding`, `w="fill"`, `h="hug"`, and a repeated part
-  for a list. Keep `x` and `y` for what sits on its own, as a marker over a picture, on whole
-  units.
-- Depth comes from tokens: `$ground` the page, `$surface` and `$panel` cards, `$panel2` and
-  `$panel3` for what sits on a card. Text is `$text`, labels `$dim`, hints `$faint`, in
-  `$textSmall`, `$textSize` and `$textLarge`. Spacing is `$spaceSmall`, `$space` and
-  `$spaceLarge`, corners `$radiusSmall` up to `$radiusPill`. Change the look in theme.toml,
-  never element by element, and add a token for any colour that means something new.
-- Colour means state, the same on every page: `$green` running or good, `$amber` waiting or
-  a warning, `$red` a fault or stop, `$accent` selected, with their `Bg` tokens behind them.
+  for a list. Keep `x` and `y` for what sits on its own, as a marker over a picture.
+- Read the project's `data/theme.toml` and use its tokens: `$ground` the page, `$surface` and
+  `$panel` cards, `$panel2` and `$panel3` what sits on a card, `$text`, `$dim` and `$faint`,
+  the `space`, `radius` and `text` sizes. Change the look there, never element by element,
+  and add a token for any colour that means something new.
+- Colour means state, the same on every page: `$green` running or good, `$amber` waiting or a
+  warning, `$red` a fault or stop, `$accent` selected, with their `Bg` tokens behind them.
   Always with words beside it, never colour alone.
 - Show state first: the machine's mode and faults where the eye lands, values large with
   their units, actions below them.
@@ -460,24 +375,13 @@ A page is the HTML it draws as. Lengths are units of 10 px, and a page is 128 by
   - An action that moves a machine takes a hold to confirm, as `holdMs="600"`.
   - Jogging runs only while pressed: `press` starts it and `release` stops it, which a
     screen that drops runs too. Never a toggle for motion.
-  - A control that cannot act now is dimmed and takes no presses (`opacity` and
-    `pointer-events` on the instance), with the reason in words nearby.
-- Keep logic in data where it fits: a computed value for a derived number, a record for a
-  plot's history, a handler in logic/handlers.html (`every`, `when` with `for`, `change`)
-  for what must happen with no screen open. Page handlers are for what an operator does.
-- A choice for the machine is `per = "hmi"`, an operator's own (a jog mode, a picked tab) is
-  `per = "screen"`.
-- `repeat="6"` or `repeat="Jobs"` draws an element per item, with `index` and `item`,
-  instead of copies.
-- A long list is a frame with `overflow-y: "auto"`, which a wheel and a finger scroll, a
-  finger on a button in it too, as the Dropdown's `rows` does.
-- `shows="over"` on a page opens it as a dialog over the one beneath.
-- `<canvas>` draws with code in 2D or WebGL, and `<scene>` shows 3D parts (`box`, `points`,
-  `model` and more) in metres with z up, each placed by its `pose`, as an import's. Fetch the
-  reference before writing either.
-- A scene's camera reads a screen variable, its view, which the scene's drag, scroll and zoom
-  handlers move, as the editor makes a new one. `points` takes `color` and `size` as one or
-  a list one per point, as a cloud's colours beside its points: `color="Cloud.colors"`.
+  - A control that cannot always act takes `enabled` in its style, as `enabled: Line.Ready`,
+    so it is dimmed and takes no presses while it cannot, with the reason in words nearby.
+- Keep logic in objects where it fits: a `<computed>` for a derived value, a `<record>` for a
+  plot's history, an `<on>` with `every`, `when` or `change` for what must happen with no
+  screen open. Page handlers are for what an operator does.
+- A choice for the machine is a `<var>` with `per="hmi"`. An operator's own, as a jog mode or
+  a picked tab, is a `<var>` each screen keeps.
 
 ## Writing nodes
 
