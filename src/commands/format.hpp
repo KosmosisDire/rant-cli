@@ -43,7 +43,7 @@ private:
     ui::Csv  csv_;
 };
 
-/* One value in the format asked for, the end of a get, a set or a call. */
+/* One value in the format asked for, such as a call's result. */
 void print_value(app::Context& ctx, const nlohmann::ordered_json& v);
 
 }

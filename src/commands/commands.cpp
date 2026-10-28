@@ -19,8 +19,6 @@ const std::vector<app::Command>& all() {
         info(),
         sub(),
         pub(),
-        get(),
-        set(),
         call(),
         setup(),
         lib(),

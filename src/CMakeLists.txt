@@ -15,7 +15,6 @@ add_library(rant_cli_core STATIC
   commands/commands.cpp
   commands/explore.cpp
   commands/format.cpp
-  commands/get.cpp
   commands/info.cpp
   commands/init.cpp
   commands/install.cpp
@@ -29,7 +28,6 @@ add_library(rant_cli_core STATIC
   commands/remove.cpp
   commands/restart.cpp
   commands/run.cpp
-  commands/set.cpp
   commands/setup.cpp
   commands/stop.cpp
   commands/sub.cpp
