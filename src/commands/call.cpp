@@ -1,7 +1,9 @@
-#include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstdlib>
-#include <thread>
+#include <memory>
+#include <mutex>
+#include <optional>
 
 #include "app/failure.hpp"
 #include "commands/commands.hpp"
@@ -29,11 +31,9 @@ static std::string status_text(rant::CallStatus s) {
 
 /* The outcome of a call that did not succeed, with the provider's own words when it gave
  * any. */
-[[noreturn]] static void fail(const std::string& name, const rant::Response<rant::Bytes>& r) {
-    if (r.send_status() != rant::SendStatus::Ok)
-        throw app::Failure("cannot call `" + name + "`: " + mesh::send_failure(r.send_status()));
-    std::string why = status_text(r.status());
-    if (!r.message().empty() && r.message() != why) why += ": " + std::string(r.message());
+[[noreturn]] static void fail(const std::string& name, rant::CallStatus status, std::string_view message) {
+    std::string why = status_text(status);
+    if (!message.empty() && message != why) why += ": " + std::string(message);
     throw app::Failure("calling `" + name + "`: " + why);
 }
 
@@ -44,18 +44,42 @@ static int call_function(app::Context& ctx, mesh::Client& mesh, const std::strin
     auto fn = mesh.node().remote_function<rant::Bytes, rant::Bytes>(name, o);
     std::vector<uint8_t> req = mesh::encode(values, fn.request_schema());
     auto r = fn.call(rant::Bytes(req.data(), req.size()), timeout);
-    if (!r) fail(name, r);
+    if (r.send_status() != rant::SendStatus::Ok)
+        throw app::Failure("cannot call `" + name + "`: " + mesh::send_failure(r.send_status()));
+    if (!r) fail(name, r.status(), r.message());
     print_value(ctx, mesh::to_json(r.data(), rant::Schema(r.raw_schema())));
     return 0;
 }
 
+/* A task's outcome, copied off the thread that answers. */
+struct Outcome {
+    rant::CallStatus     status;
+    std::string          message;
+    std::vector<uint8_t> data;
+    rant::Schema         schema;
+
+    mesh::json value() const { return mesh::to_json(rant::Bytes(data.data(), data.size()), schema); }
+};
+
+/* Shared with the call's handlers, which may still fire after the caller left. */
+struct TaskState {
+    std::mutex              mu;
+    std::condition_variable cv;
+    std::optional<Outcome>  outcome;
+    bool                    left = false;    /* the caller stopped waiting, the handlers touch nothing of it */
+};
+
+/* How long a cancelled task may take to answer before the caller leaves without it. */
+static constexpr std::chrono::seconds cancel_wait{ 10 };
+
 /* A task streams its progress as sub does and prints the result last. Ctrl-C asks the
- * provider to cancel, and the call ends with the outcome it answers. */
+ * provider to cancel and waits for its answer, at most cancel_wait. */
 static int call_task(app::Context& ctx, mesh::Client& mesh, const rant::Entity& e,
                      const mesh::Assignments& values, std::chrono::milliseconds timeout) {
     const std::string& name = e.name;
     rant::TaskOptions o;
     o.reflect_from_mesh = true;
+    o.timeout = timeout;
     auto task = mesh.node().remote_task<rant::Bytes, rant::Bytes, rant::Bytes>(name, o);
     std::vector<uint8_t> req = mesh::encode(values, task.request_schema());
 
@@ -63,37 +87,60 @@ static int call_task(app::Context& ctx, mesh::Client& mesh, const rant::Entity& 
     std::string from = mesh.provider_of(e);
     /* CSV lines leave progress out, so the output stays one table: the result's */
     bool show_progress = live_of(ctx) || format_of(ctx) != Format::Csv;
-    std::atomic<uint32_t> id{ 0 };
-    std::atomic<bool> done{ false };
-    std::thread watcher([&] {
-        bool asked = false;
-        while (!done) {
-            if (!asked && util::interrupted() && id) {
-                asked = true;
-                ctx.out.note("cancelling task " + std::to_string(id.load()));
-                rant::SendStatus st = task.cancel(id);
-                if (st != rant::SendStatus::Ok) ctx.out.warn("the provider cannot cancel it: " + mesh::send_failure(st));
-            }
-            std::this_thread::sleep_for(std::chrono::milliseconds(20));
-        }
-    });
-    auto progress = [&](const rant::ProgressView<rant::Bytes>& p) {
-        if (!p.has_value()) {    /* the provider's start acknowledgment */
-            id = p.call_id();
+    auto st = std::make_shared<TaskState>();
+    auto progress = [st, &ctx, &out, from, show_progress](const rant::ProgressView<rant::Bytes>& p) {
+        std::lock_guard<std::mutex> g(st->mu);
+        if (st->left) return;
+        if (!p.has_value())    /* the provider's start acknowledgment */
             ctx.out.note("task " + std::to_string(p.call_id()) + " running, Ctrl-C cancels it");
-            return;
-        }
-        id = p.call_id();
-        if (show_progress) out.add(from, p.data(), rant::Schema(p.raw_schema()));
+        else if (show_progress)
+            out.add(from, p.data(), rant::Schema(p.raw_schema()));
     };
-    auto r = task.call(rant::Bytes(req.data(), req.size()), progress, timeout);
-    done = true;
-    watcher.join();
-    bool partial = r.status() == rant::CallStatus::Cancelled && r.data().size();
-    out.finish(partial ? "partial result" : r ? "result" : "");
-    if (partial) print_value(ctx, mesh::to_json(r.data(), rant::Schema(r.raw_schema())));
-    if (!r) fail(name, r);
-    print_value(ctx, mesh::to_json(r.data(), rant::Schema(r.raw_schema())));
+    auto answer = [st](const rant::ResponseView<rant::Bytes>& r) {
+        std::lock_guard<std::mutex> g(st->mu);
+        st->outcome = Outcome{ r.status(), std::string(r.message()), { r.data().data(), r.data().data() + r.data().size() },
+                               rant::Schema(r.raw_schema()) };
+        st->cv.notify_one();
+    };
+    rant::TaskCall call = task.call_async(rant::Bytes(req.data(), req.size()), progress, answer);
+    if (!call.ok()) throw app::Failure("cannot call `" + name + "`: " + mesh::send_failure(call.status));
+
+    std::unique_lock<std::mutex> g(st->mu);
+    std::optional<std::chrono::steady_clock::time_point> cancelled;
+    while (!st->outcome) {
+        st->cv.wait_for(g, std::chrono::milliseconds(50));
+        if (st->outcome) break;
+        if (!cancelled && util::interrupted()) {
+            cancelled = std::chrono::steady_clock::now();
+            out.note("cancelling task " + std::to_string(call.id) + ", waiting up to " +
+                     std::to_string(cancel_wait.count()) + " s for " + from + " to stop it");
+            g.unlock();    /* the handlers take the lock, and a cancel may wait on them */
+            rant::SendStatus s = task.cancel(call.id);
+            g.lock();
+            if (s != rant::SendStatus::Ok) {
+                st->left = true;
+                out.finish();
+                throw app::Failure("cannot cancel task " + std::to_string(call.id) + ": " + mesh::send_failure(s) +
+                                   ", it may still run at " + from);
+            }
+        }
+        if (cancelled && std::chrono::steady_clock::now() - *cancelled >= cancel_wait) {
+            st->left = true;
+            out.finish();
+            throw app::Failure("task " + std::to_string(call.id) + " did not stop within " +
+                               std::to_string(cancel_wait.count()) + " s, it may still run at " + from);
+        }
+    }
+    st->left = true;
+    Outcome r = std::move(*st->outcome);
+    g.unlock();
+
+    bool partial = r.status == rant::CallStatus::Cancelled && !r.data.empty();
+    bool ok = r.status == rant::CallStatus::Ok;
+    out.finish(partial ? "partial result" : ok ? "result" : "");
+    if (partial) print_value(ctx, r.value());
+    if (!ok) fail(name, r.status, r.message);
+    print_value(ctx, r.value());
     return 0;
 }
 

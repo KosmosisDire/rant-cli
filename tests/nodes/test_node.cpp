@@ -1,10 +1,11 @@
 /* A Rant node for the end to end tests. Every flag adds one entity:
  *
  *   test_node [--name N] [--domain D] [--pub TOPIC] [--var NAME] [--fn NAME] [--task NAME]
- *             [--life SECONDS] [--exit CODE] [--ignore-stop]
+ *             [--life SECONDS] [--exit CODE] [--ignore-stop] [--ignore-cancel]
  *
  * --pub sends Reading { seq, value } at 20 Hz. --var owns an f64 starting at 1.5. --fn
- * doubles an f64. --task counts to its u32 request, one step each 100 ms, cancellable.
+ * doubles an f64. --task counts to its u32 request, one step each 100 ms, cancellable
+ * unless --ignore-cancel.
  * Ctrl-C, Ctrl-Break and SIGTERM print "stopped" and exit 0, unless --ignore-stop. When
  * --life ends it exits with --exit, 0 by default.
  * Without --domain the domain comes from TEST_NODE_DOMAIN, which a node started by rant
@@ -35,6 +36,7 @@ RANT_SCHEMA(Reading, seq, value);
 
 static std::atomic<bool> stop{ false };
 static bool ignore_stop = false;
+static bool ignore_cancel = false;
 
 #ifdef _WIN32
 static BOOL WINAPI on_ctrl(DWORD) {
@@ -68,6 +70,7 @@ int main(int argc, char** argv) {
         else if (a == "--life") life = std::atof(next().c_str());
         else if (a == "--exit") exit_code = std::atoi(next().c_str());
         else if (a == "--ignore-stop") ignore_stop = true;
+        else if (a == "--ignore-cancel") ignore_cancel = true;
         else { std::fprintf(stderr, "unknown argument %s\n", a.c_str()); return 2; }
     }
 
@@ -103,7 +106,7 @@ int main(int argc, char** argv) {
                 workers.emplace_back([n, p = t.defer()]() mutable {
                     for (uint32_t i = 1; i <= n; i++) {
                         std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                        if (p.cancelled()) { p.complete_cancelled("cancelled", i); return; }
+                        if (p.cancelled() && !ignore_cancel) { p.complete_cancelled("cancelled", i); return; }
                         p.progress(i);
                     }
                     p.complete(n);

@@ -56,6 +56,12 @@ void ValueStream::tick() {
         draw(now);
 }
 
+void ValueStream::note(const std::string& text) {
+    if (!view_ || !latest_) return ctx_.out.note(text);
+    note_ = text;
+    draw(Clock::now());
+}
+
 void ValueStream::finish(const std::string& label) {
     if (!view_) return;
     if (dirty_ && latest_) draw(Clock::now());
@@ -68,6 +74,7 @@ void ValueStream::finish(const std::string& label) {
 void ValueStream::draw(Clock::time_point now) {
     std::vector<std::string> lines;
     if (!value_only_) lines.push_back(header(now));
+    if (!note_.empty()) lines.push_back(ctx_.out.paint(ui::Style::Amber, note_));
     if (latest_) {
         std::string body = printer_.block(mesh::to_json(rant::Bytes(latest_->data.data(), latest_->data.size()), latest_->schema));
         size_t start = 0;

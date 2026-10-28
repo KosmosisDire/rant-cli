@@ -38,6 +38,10 @@ public:
     /* Redraws when due, so the rate and age keep moving between values. */
     void tick();
 
+    /* A line over the value while the view shows one, such as a task cancelling. On stderr
+     * when nothing is drawn. */
+    void note(const std::string& text);
+
     /* Draws a value not yet shown and gives the cursor back. A label, such as "result", heads
      * what is printed next when the view showed a value. */
     void finish(const std::string& label = {});
@@ -59,6 +63,7 @@ private:
     Printer                      printer_;
     std::optional<ui::LiveView>  view_;
     std::optional<Latest>        latest_;
+    std::string                  note_;
     Rate                         rate_;
     bool                         value_only_;
     long                         seen_ = 0;
