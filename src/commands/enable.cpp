@@ -93,8 +93,7 @@ static void write_entry(app::Context& ctx, const std::string& when) {
 
 /* Keeps the group or node for every boot, or login with --login, writes the entry that
  * starts it, and runs it now unless it runs, building what it starts. */
-static int enable_run(app::Context& ctx) {
-    auto& w = ctx.args.words;
+int enable_named(app::Context& ctx, const std::vector<std::string>& w) {
     services::Enabled e = named(ctx, w, "enable").e;
     if (e.kind == "group") {
         config::Plan plan = config::plan_group(ctx.cwd(), w[0], e.words);
@@ -298,7 +297,7 @@ app::Command enable() {
                     { { "login", 0, "", "start it when you log in instead, for what needs your desktop" },
                       { "dry-run", 0, "", "show what would run without starting or keeping it" }, no_build_option(), wait_option(),
                       watch_option() },
-                    enable_run };
+                    [](app::Context& ctx) { return enable_named(ctx, ctx.args.words); } };
     c.complete = complete_enable;
     return c;
 }

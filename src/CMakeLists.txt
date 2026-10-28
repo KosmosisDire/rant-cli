@@ -59,7 +59,9 @@ add_library(rant_cli_core STATIC
   services/entry.cpp
   services/services.cpp
   state/state.cpp
+  ui/checklist.cpp
   ui/csv.cpp
+  ui/keys.cpp
   ui/live.cpp
   ui/output.cpp
   ui/prompt.cpp

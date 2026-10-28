@@ -330,19 +330,15 @@ static int list_available(app::Context& ctx, const std::string& pattern) {
     auto dim = [&](const std::string& s) { return ctx.out.paint(ui::Style::Dim, s); };
     json out = json::array();
     ui::Table t;
-    for (auto& s : sources.all()) {
-        if (!util::name_matches(pattern, s.name)) continue;
-        std::string from = s.repo.empty() ? config::to_utf8(s.path) : s.repo, description;
-        try {
-            description = packages::about(s, false).description;
-        } catch (const app::Failure& e) {
-            ctx.out.warn(s.name + ": " + e.what());
-        }
-        std::optional<packages::Record> rec = packages::record(s.name);
+    for (auto& o : packages::offers(sources, pattern)) {
+        const packages::Source& s = o.source;
+        if (!o.problem.empty()) ctx.out.warn(s.name + ": " + o.problem);
+        std::string from = s.repo.empty() ? config::to_utf8(s.path) : s.repo;
+        const std::optional<packages::Record>& rec = o.record;
         std::string installed = !rec ? "" : rec->version.empty() ? "installed" : "installed " + rec->version;
-        out.push_back({ { "name", s.name }, { s.repo.empty() ? "path" : "repo", from }, { "description", description },
+        out.push_back({ { "name", s.name }, { s.repo.empty() ? "path" : "repo", from }, { "description", o.description },
                         { "installed", rec ? json(rec->version.empty() ? json(true) : json(rec->version)) : json(false) } });
-        t.row({ s.name, dim(from), dim(installed), description });
+        t.row({ s.name, dim(from), dim(installed), o.description });
     }
     if (ctx.json) ctx.out.line(out.dump(2));
     else section(ctx, "AVAILABLE", t.lines());

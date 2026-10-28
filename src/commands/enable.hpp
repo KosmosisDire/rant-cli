@@ -9,6 +9,9 @@
 
 namespace commands {
 
+/* `rant enable` with these words, such as {"Bridge"} or {"node", "talker"}. */
+int enable_named(app::Context& ctx, const std::vector<std::string>& words);
+
 /* `rant ls services`: what rant enable named, whether it runs and how often its nodes were
  * started again. */
 int list_services(app::Context& ctx, const std::string& pattern);

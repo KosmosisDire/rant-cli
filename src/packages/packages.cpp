@@ -15,6 +15,7 @@
 #include "services/services.hpp"
 #include "state/state.hpp"
 #include "util/home.hpp"
+#include "util/match.hpp"
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -129,6 +130,21 @@ About about(const Source& s, bool release) {
         a.vsix = rel.vsix;
     }
     return a;
+}
+
+std::vector<Offer> offers(Sources& sources, const std::string& pattern) {
+    std::vector<Offer> out;
+    for (auto& s : sources.all()) {
+        if (!util::name_matches(pattern, s.name)) continue;
+        Offer o{ s, "", record(s.name), "" };
+        try {
+            o.description = about(s, false).description;
+        } catch (const app::Failure& e) {
+            o.problem = e.what();
+        }
+        out.push_back(std::move(o));
+    }
+    return out;
 }
 
 std::vector<std::string> cached_names() {

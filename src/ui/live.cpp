@@ -6,15 +6,13 @@
 
 namespace ui {
 
-static void put(const std::string& s) {
-    std::fwrite(s.data(), 1, s.size(), stdout);
-}
+void LiveView::put(const std::string& s) { std::fwrite(s.data(), 1, s.size(), f_); }
 
-LiveView::LiveView() { put("\x1b[?25l"); }
+LiveView::LiveView(std::FILE* f) : f_(f) { put("\x1b[?25l"); }
 
 LiveView::~LiveView() {
     put("\x1b[?25h");
-    std::fflush(stdout);
+    std::fflush(f_);
 }
 
 std::string clip(const std::string& text, size_t cols) {
@@ -53,7 +51,7 @@ void LiveView::draw(const std::vector<std::string>& lines) {
     if (shown < lines.size()) frame += clip("... " + std::to_string(lines.size() - shown) + " more lines", cols) + "\n";
     drawn_ = shown + (shown < lines.size() ? 1 : 0);
     put(frame);
-    std::fflush(stdout);
+    std::fflush(f_);
 }
 
 }

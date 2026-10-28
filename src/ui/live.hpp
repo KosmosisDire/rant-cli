@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdio>
 #include <string>
 #include <vector>
 
@@ -11,7 +12,7 @@ namespace ui {
  * while the view lives, and the last frame stays on screen after it. */
 class LiveView {
 public:
-    LiveView();
+    explicit LiveView(std::FILE* f = stdout);
     ~LiveView();
     LiveView(const LiveView&) = delete;
     LiveView& operator=(const LiveView&) = delete;
@@ -19,7 +20,10 @@ public:
     void draw(const std::vector<std::string>& lines);
 
 private:
-    size_t drawn_ = 0;
+    void put(const std::string& s);
+
+    std::FILE* f_;
+    size_t     drawn_ = 0;
 };
 
 /* text cut to cols visible characters, color codes kept whole and closed. */

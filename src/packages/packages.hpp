@@ -83,6 +83,20 @@ struct About {
  * default branch, which costs no GitHub API call. Throws app::Failure. */
 About about(const Source& s, bool release);
 
+/* A package rant install can install: where it comes from, the description its package.rant
+ * gives at the default branch, and its record when installed. problem says why there is no
+ * description. */
+struct Offer {
+    Source                source;
+    std::string           description;
+    std::optional<Record> record;
+    std::string           problem;
+};
+
+/* The packages the sources name whose name matches pattern, as rant ls matches, each from the
+ * first source that names it. Throws app::Failure. */
+std::vector<Offer> offers(Sources& sources, const std::string& pattern = "");
+
 /* The names the databases listed when last fetched, from the cache, for completion. */
 std::vector<std::string> cached_names();
 
