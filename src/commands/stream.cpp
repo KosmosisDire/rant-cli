@@ -24,7 +24,8 @@ static std::string fixed(double v, int decimals) {
 }
 
 ValueStream::ValueStream(app::Context& ctx, std::string name)
-    : ctx_(ctx), name_(std::move(name)), printer_(format_of(ctx), &ctx.out, true) {
+    : ctx_(ctx), name_(std::move(name)), printer_(format_of(ctx), &ctx.out, true),
+      value_only_(ctx.args.has("value-only")) {
     if (live_of(ctx)) view_.emplace();
 }
 
@@ -33,9 +34,11 @@ void ValueStream::add(const std::string& from, rant::Bytes data, const rant::Sch
     last_msg_ = Clock::now();
     rate_.hit(last_msg_);
     if (!view_) {
-        ctx_.out.line(printer_.line(json{ { "from", from },
-                                          { "hz", std::round(rate_.hz(last_msg_) * 10) / 10 },
-                                          { "value", mesh::to_json(data, schema) } }));
+        json value = mesh::to_json(data, schema);
+        ctx_.out.line(printer_.line(value_only_ ? value
+                                                : json{ { "from", from },
+                                                        { "hz", std::round(rate_.hz(last_msg_) * 10) / 10 },
+                                                        { "value", value } }));
         std::fflush(stdout);
         return;
     }
@@ -53,25 +56,18 @@ void ValueStream::tick() {
         draw(now);
 }
 
-void ValueStream::finish() {
+void ValueStream::finish(const std::string& label) {
     if (!view_) return;
     if (dirty_ && latest_) draw(Clock::now());
     view_.reset();
+    if (!latest_ || label.empty()) return;
+    if (value_only_) ctx_.out.line();
+    else ctx_.out.line(ctx_.out.paint(ui::Style::Bold, name_) + "  " + ctx_.out.paint(ui::Style::Faint, label));
 }
 
 void ValueStream::draw(Clock::time_point now) {
-    std::string status;
-    if (!latest_) {
-        status = "waiting for a message";
-    } else {
-        double age = std::chrono::duration<double>(now - last_msg_).count();
-        std::string hz = fixed(rate_.hz(now), 1);
-        hz.insert(0, hz.size() < 6 ? 6 - hz.size() : 0, ' ');    /* the header holds still too */
-        status = "from " + latest_->from + "  " + hz + " Hz  " + std::to_string(seen_) +
-                 (seen_ == 1 ? " message" : " messages");
-        if (age > 1) status += "  last " + fixed(age, 1) + " s ago";
-    }
-    std::vector<std::string> lines{ ctx_.out.paint(ui::Style::Bold, name_) + "  " + ctx_.out.paint(ui::Style::Faint, status) };
+    std::vector<std::string> lines;
+    if (!value_only_) lines.push_back(header(now));
     if (latest_) {
         std::string body = printer_.block(mesh::to_json(rant::Bytes(latest_->data.data(), latest_->data.size()), latest_->schema));
         size_t start = 0;
@@ -85,6 +81,21 @@ void ValueStream::draw(Clock::time_point now) {
     view_->draw(lines);
     last_draw_ = now;
     dirty_ = false;
+}
+
+std::string ValueStream::header(Clock::time_point now) {
+    std::string status;
+    if (!latest_) {
+        status = "waiting for a message";
+    } else {
+        double age = std::chrono::duration<double>(now - last_msg_).count();
+        std::string hz = fixed(rate_.hz(now), 1);
+        hz.insert(0, hz.size() < 6 ? 6 - hz.size() : 0, ' ');    /* the header holds still too */
+        status = "from " + latest_->from + "  " + hz + " Hz  " + std::to_string(seen_) +
+                 (seen_ == 1 ? " message" : " messages");
+        if (age > 1) status += "  last " + fixed(age, 1) + " s ago";
+    }
+    return ctx_.out.paint(ui::Style::Bold, name_) + "  " + ctx_.out.paint(ui::Style::Faint, status);
 }
 
 }

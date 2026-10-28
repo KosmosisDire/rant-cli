@@ -89,9 +89,9 @@ static int call_task(app::Context& ctx, mesh::Client& mesh, const rant::Entity& 
     auto r = task.call(rant::Bytes(req.data(), req.size()), progress, timeout);
     done = true;
     watcher.join();
-    out.finish();
-    if (r.status() == rant::CallStatus::Cancelled && r.data().size())
-        print_value(ctx, mesh::to_json(r.data(), rant::Schema(r.raw_schema())));
+    bool partial = r.status() == rant::CallStatus::Cancelled && r.data().size();
+    out.finish(partial ? "partial result" : r ? "result" : "");
+    if (partial) print_value(ctx, mesh::to_json(r.data(), rant::Schema(r.raw_schema())));
     if (!r) fail(name, r);
     print_value(ctx, mesh::to_json(r.data(), rant::Schema(r.raw_schema())));
     return 0;
@@ -126,7 +126,8 @@ static complete::Candidates complete_words(complete::Request& r) {
 
 app::Command call() {
     app::Command c{ "call", "<function|task> [value]", "call a function and print the reply, or run a task", app::Section::Mesh,
-                    { { "timeout", 't', "S", "seconds to wait for an answer, 5 by default" }, lines_option(), csv_option() },
+                    { { "timeout", 't', "S", "seconds to wait for an answer, 5 by default" }, lines_option(), value_only_option(),
+                      csv_option() },
                     run };
     c.complete = complete_words;
     return c;

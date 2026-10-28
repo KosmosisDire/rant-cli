@@ -28,6 +28,13 @@ expect_match("${OUT}" "^from,hz,value[.]seq,value[.]value\ntalker,[0-9.]+,[0-9]+
 rant_beside_node("${node}" sub chatter --count 1 --json)
 expect_match("${OUT}" "^{\"from\":\"talker\",\"hz\":[0-9.]+,\"value\":{\"seq\":[0-9]+,\"value\":[0-9.]+}}\n$")
 
+# --value-only leaves the sender and rate out.
+rant_beside_node("${node}" sub chatter --count 2 --value-only --json)
+expect_match("${OUT}" "^{\"seq\":[0-9]+,\"value\":[0-9.]+}\n{\"seq\":[0-9]+,\"value\":[0-9.]+}\n$")
+
+rant_beside_node("${node}" sub chatter --count 1 --value-only --csv)
+expect_match("${OUT}" "^seq,value\n[0-9]+,[0-9.]+\n$")
+
 rant_beside_node("${node}" info talker)
 expect_match("${OUT}" "^node: +talker\n")
 expect_match("${OUT}" "pid: +[0-9]+")

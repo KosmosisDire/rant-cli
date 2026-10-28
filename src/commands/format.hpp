@@ -16,8 +16,9 @@ enum class Format { Yaml, Json, Csv };
 /* The --csv option, for the commands that print values. */
 app::OptionSpec csv_option();
 
-/* The --lines option, for the commands that print a stream. */
+/* The --lines and --value-only options, for the commands that print a stream. */
 app::OptionSpec lines_option();
+app::OptionSpec value_only_option();
 
 /* The format asked for: YAML, JSON with the global --json, CSV with --csv, not both. */
 Format format_of(const app::Context& ctx);

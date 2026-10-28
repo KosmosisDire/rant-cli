@@ -13,6 +13,10 @@ app::OptionSpec lines_option() {
     return { "lines", 'l', "", "print each record on its own line instead of updating in place" };
 }
 
+app::OptionSpec value_only_option() {
+    return { "value-only", 0, "", "print only the values, without who sent them, the rate or the header" };
+}
+
 Format format_of(const app::Context& ctx) {
     bool csv = ctx.args.has("csv");
     if (csv && ctx.json) throw app::UsageError("give --json or --csv, not both");

@@ -26,7 +26,8 @@ private:
 };
 
 /* A stream of values as the display asks: the newest redrawn in place under a header naming
- * who sends it and how fast, or a record a line of the sender, the rate and the value. */
+ * who sends it and how fast, or a record a line of the sender, the rate and the value.
+ * --value-only leaves out the header and the sender and rate. */
 class ValueStream {
 public:
     ValueStream(app::Context& ctx, std::string name);
@@ -37,13 +38,15 @@ public:
     /* Redraws when due, so the rate and age keep moving between values. */
     void tick();
 
-    /* Draws a value not yet shown and gives the cursor back. */
-    void finish();
+    /* Draws a value not yet shown and gives the cursor back. A label, such as "result", heads
+     * what is printed next when the view showed a value. */
+    void finish(const std::string& label = {});
 
     long seen() const { return seen_; }
 
 private:
     void draw(Rate::Clock::time_point now);
+    std::string header(Rate::Clock::time_point now);    /* who sends it, how fast, how many */
 
     struct Latest {
         std::vector<uint8_t> data;
@@ -57,6 +60,7 @@ private:
     std::optional<ui::LiveView>  view_;
     std::optional<Latest>        latest_;
     Rate                         rate_;
+    bool                         value_only_;
     long                         seen_ = 0;
     Rate::Clock::time_point      last_msg_{}, last_draw_{};
     bool                         dirty_ = true;

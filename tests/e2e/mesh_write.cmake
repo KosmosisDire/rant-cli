@@ -30,6 +30,9 @@ expect_match("${OUT}" "^{\"from\":\"writer\",\"hz\":[0-9.]+,\"value\":1}\n{\"fro
 rant_beside_node("${node}" call count 2 --csv)
 expect_match("${OUT}" "^value\n2\n$")
 
+rant_beside_node("${node}" call count 2 --value-only --json)
+expect_match("${OUT}" "^1\n2\n2\n$")
+
 rant_beside_node("${node}" pub chatter seq=7 value=0.5)
 expect_match("${ERR}" "published 1 message to chatter")
 

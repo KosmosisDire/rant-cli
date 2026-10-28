@@ -105,7 +105,8 @@ static complete::Candidates complete_words(complete::Request& r) {
 
 app::Command sub() {
     app::Command c{ "sub", "<topic|variable>", "show the newest value of a topic or variable until Ctrl-C", app::Section::Mesh,
-                    { { "count", 'n', "N", "stop after N values" }, lines_option(), csv_option() }, run };
+                    { { "count", 'n', "N", "stop after N values" }, lines_option(), value_only_option(), csv_option() },
+                    run };
     c.complete = complete_words;
     return c;
 }
