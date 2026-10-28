@@ -233,7 +233,7 @@ for anything it leaves out:
 
 | page | fetch it for |
 |---|---|
-| https://docs.rantlib.dev/hmi-start.md | running it, a first screen, finding problems |
+| https://docs.rantlib.dev/hmi-start.md | running it, a first screen in the editor |
 | https://docs.rantlib.dev/hmi-project.md | the files, objects and their members, logic, settings, theme tokens |
 | https://docs.rantlib.dev/hmi-pages.md | every element and property: layout, text, media, shapes, canvas, scenes, style, state |
 | https://docs.rantlib.dev/hmi-components.md | the component file, input types, the standard components and their inputs |
