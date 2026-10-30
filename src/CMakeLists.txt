@@ -68,6 +68,7 @@ add_library(rant_cli_core STATIC
   ui/table.cpp
   ui/terminal.cpp
   ui/yaml.cpp
+  util/files.cpp
   util/home.cpp
   util/interrupt.cpp
   util/lock.cpp

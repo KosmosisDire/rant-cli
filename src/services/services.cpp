@@ -16,6 +16,7 @@
 #include "process/supervisor.hpp"
 #include "run/nodes.hpp"
 #include "state/state.hpp"
+#include "util/files.hpp"
 #include "util/home.hpp"
 #include "util/lock.hpp"
 
@@ -171,7 +172,7 @@ void save(const std::vector<Enabled>& list) {
         if (!f) throw app::Failure("cannot write " + config::to_utf8(tmp));
     }
     std::error_code ec;
-    fs::rename(tmp, list_file(), ec);
+    util::rename(tmp, list_file(), ec);
     if (ec) throw app::Failure("cannot write " + config::to_utf8(list_file()) + ": " + ec.message());
 }
 

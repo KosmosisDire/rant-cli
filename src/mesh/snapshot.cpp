@@ -6,6 +6,7 @@
 #include <nlohmann/json.hpp>
 
 #include "mesh/client.hpp"
+#include "util/files.hpp"
 #include "util/home.hpp"
 
 namespace mesh {
@@ -48,7 +49,7 @@ void Snapshot::save(uint16_t domain) const {
         out << j.dump();
         if (!out) return;
     }
-    fs::rename(tmp, file, ec);
+    util::rename(tmp, file, ec);
 }
 
 void Snapshot::add(const Client& mesh) {

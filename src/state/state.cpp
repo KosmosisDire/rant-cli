@@ -8,6 +8,7 @@
 
 #include "app/failure.hpp"
 #include "config/config.hpp"
+#include "util/files.hpp"
 #include "util/home.hpp"
 
 namespace state {
@@ -123,7 +124,9 @@ void Store::save() {
         f << to_json(state_).dump(2) << '\n';
         if (!f) throw app::Failure("cannot write " + tmp.u8string());
     }
-    fs::rename(tmp, path_);
+    std::error_code ec;
+    util::rename(tmp, path_, ec);
+    if (ec) throw app::Failure("cannot write " + path_.u8string() + ": " + ec.message());
 }
 
 std::vector<std::string> prune(State& s, const std::function<bool(uint32_t session)>& restarting) {

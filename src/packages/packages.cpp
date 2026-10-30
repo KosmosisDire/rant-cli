@@ -6,7 +6,6 @@
 #include <fstream>
 #include <iterator>
 #include <system_error>
-#include <thread>
 
 #include <nlohmann/json.hpp>
 
@@ -16,6 +15,7 @@
 #include "process/command.hpp"
 #include "services/services.hpp"
 #include "state/state.hpp"
+#include "util/files.hpp"
 #include "util/home.hpp"
 #include "util/match.hpp"
 
@@ -353,30 +353,13 @@ static void sweep(const std::string& name) {
 }
 
 /* Moves the package's folder out of the way, or drops its link. */
-/* Windows refuses to rename a folder while a file inside is open, as a virus scan holds fresh
- * files for a moment, so a refused rename is tried again for up to 3 s. */
-static void rename_folder(const fs::path& from, const fs::path& to, std::error_code& ec) {
-    auto until = std::chrono::steady_clock::now() + std::chrono::seconds(3);
-    for (;;) {
-        fs::rename(from, to, ec);
-#ifdef _WIN32
-        bool held = ec.category() == std::system_category() &&
-                    (ec.value() == ERROR_ACCESS_DENIED || ec.value() == ERROR_SHARING_VIOLATION);
-#else
-        bool held = false;
-#endif
-        if (!held || std::chrono::steady_clock::now() >= until) return;
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    }
-}
-
 static void retire(const std::string& name) {
     fs::path target = dir() / name;
     if (is_link(target)) return unlink(target);
     std::error_code ec;
     if (!fs::exists(target, ec)) return;
     fs::path old = dir() / ("." + name + ".old-" + stamp());
-    rename_folder(target, old, ec);
+    util::rename(target, old, ec);
     if (ec) throw app::Failure("cannot replace " + u8(target) + ": " + ec.message());
     fs::remove_all(old, ec);
 }
@@ -448,7 +431,7 @@ static void place(const std::string& name, const fs::path& archive, const std::s
         }
     }
     retire(name);
-    rename_folder(staging, dir() / name, ec);
+    util::rename(staging, dir() / name, ec);
     if (ec) throw app::Failure("cannot place " + u8(dir() / name) + ": " + ec.message());
 }
 
