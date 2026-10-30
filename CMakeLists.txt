@@ -35,7 +35,7 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/get_cpm.cmake")
 # the working tree instead.
 CPMAddPackage(NAME rant
   GITHUB_REPOSITORY KosmosisDire/Rant
-  VERSION 0.0.39
+  VERSION 0.0.40
   EXCLUDE_FROM_ALL YES
   SYSTEM YES)
 
