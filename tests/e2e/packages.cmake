@@ -141,8 +141,6 @@ expect_match("${ERR}" "a path must name a folder or an archive")
 
 # A package's skill folder is linked for each AI coding agent found, and goes with it. A
 # package that is more than a skill asks first, until its skill is given.
-set(ENV{HOME} "${SCRATCH}/home")
-set(ENV{XDG_CONFIG_HOME} "${SCRATCH}/home/.config")
 file(REMOVE "${home}/sources.rant")
 file(WRITE "${build}/skill/SKILL.md" "---\nname: tool\ndescription: Use the tool\n---\n")
 rant(install tool --from tool-build)

@@ -8,6 +8,20 @@ cmake_minimum_required(VERSION 3.21)
 # workspace started.
 set(OTHER "${SCRATCH}-other")
 
+# Shell files and the skill folders of AI coding agents hang off the home, so no test reaches the
+# real one. Toolchains keep theirs, which on Windows they find through USERPROFILE instead.
+if(UNIX)
+  set(tools CARGO_HOME RUSTUP_HOME NUGET_PACKAGES DOTNET_CLI_HOME PYTHONUSERBASE)
+  set(tool_dirs .cargo .rustup .nuget/packages . .local)
+  foreach(tool dir IN ZIP_LISTS tools tool_dirs)
+    if(NOT DEFINED ENV{${tool}})
+      set(ENV{${tool}} "$ENV{HOME}/${dir}")
+    endif()
+  endforeach()
+endif()
+set(ENV{HOME} "${SCRATCH}/home")
+set(ENV{XDG_CONFIG_HOME} "${SCRATCH}/home/.config")
+
 # A run that failed may have left nodes running in its scratch workspaces or its scratch
 # home. They are stopped through the CLI first, since a running executable cannot be replaced.
 set(ENV{RANT_HOME} "${SCRATCH}/home/.rant")

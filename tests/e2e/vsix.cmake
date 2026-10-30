@@ -113,8 +113,6 @@ expect_match("${calls}" "--uninstall-extension test[.]ext --profile Mixed")
 # --profile picks one outright, and uninstall takes the extension out too.
 rant(install ext --from ext-build --editor "${editor}" --profile Mixed)
 expect_match("${ERR}" "in the profile Mixed")
-set(ENV{HOME} "${SCRATCH}/home")
-set(ENV{XDG_CONFIG_HOME} "${SCRATCH}/home/.config")
 rant(uninstall)
 expect_match("${OUT}" "the VS Code extension test[.]ext, through [^\n]*fake-code[^\n]* in the profile Mixed\n")
 file(READ "${bin}/calls.txt" calls)

@@ -1,8 +1,5 @@
 include("${CMAKE_CURRENT_LIST_DIR}/lib.cmake")
 
-# Shell startup files are written in the scratch home.
-set(ENV{HOME} "${SCRATCH}/home")
-
 # complete(<words before...> CUR <word at the cursor>) asks for completions the way a shell
 # hook does and sets OUT to the candidates, one a line.
 function(complete)
@@ -108,7 +105,6 @@ rant(setup tcsh FAILS)
 expect_match("${ERR}" "unknown shell `tcsh`")
 
 # Setup points the agents found to the rant skill, which a package carries.
-set(ENV{XDG_CONFIG_HOME} "${SCRATCH}/home/.config")
 file(MAKE_DIRECTORY "${SCRATCH}/home/.claude" "${SCRATCH}/home/.cursor")
 rant(setup bash)
 expect_match("${ERR}" "`rant install rant_skill` teaches Claude Code, Cursor to use Rant")

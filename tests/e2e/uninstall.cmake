@@ -2,8 +2,6 @@ include("${CMAKE_CURRENT_LIST_DIR}/lib.cmake")
 
 # A home set up the way the installers and setup leave it, beside the user's own lines.
 set(home "${SCRATCH}/home")
-set(ENV{HOME} "${home}")
-set(ENV{XDG_CONFIG_HOME} "${home}/.config")
 file(WRITE "${home}/.bashrc" "alias ll='ls -l'\n")
 rant(setup bash)
 file(APPEND "${home}/.bashrc" "\nexport PATH=\"${home}/.rant/bin:$PATH\"    # rant-cli\n")

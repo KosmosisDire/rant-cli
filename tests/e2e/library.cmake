@@ -90,3 +90,14 @@ expect_match("${OUT}" "everything here is at [0-9.]+ or newer")
 
 rant(ls libraries --available)
 expect_match("${OUT}" "rant +KosmosisDire/Rant +cmake python csharp rust")
+
+# A release that carries a skill gives it to the agents found, and remove takes it back.
+file(MAKE_DIRECTORY "${SCRATCH}/home/.claude")
+rant(add rant cam --version 0.0.40)
+expect_match("${ERR}" "Also give the skill of rant to Claude Code")
+file(READ "${SCRATCH}/home/.claude/skills/rant/SKILL.md" skill)
+expect_match("${skill}" "name: rant")
+rant(remove rant)
+if(EXISTS "${SCRATCH}/home/.claude/skills/rant")
+  message(FATAL_ERROR "rant remove left the skill of rant linked")
+endif()
