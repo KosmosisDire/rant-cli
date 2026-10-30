@@ -41,18 +41,15 @@ its own packages, and a package of the same name in the workspace hides one. Out
 workspace `run`, `stop`, `log` and `ls` act on them alone, with logs in `~/.rant/logs`.
 
 `rant install <name>` finds a package in `~/.rant/sources.rant` first, then the official
-package database, then the databases sources.rant adds, in order. sources.rant is written by
-hand and points a package at a local build folder, which is linked so each build counts at
-once, or at another repo:
+package database, then the databases sources.rant adds, in order. Each lists GitHub repos, and
+the `name` in a repo's root package.rant names its package. `rant install someone/rant-tool`
+or the repo's link installs any repo. sources.rant is written by hand and may also list local
+build folders, linked so each build counts at once:
 
 ```hcl
-package "explorer" {
-  path = "C:/src/explorer-rant"   # a folder with package.rant, its run files and bin/
-}
-package "tool" {
-  repo = "someone/rant-tool"      # its GitHub releases
-}
-database "someone/rant-packages" {}
+paths     = ["C:/src/explorer-rant"]     # folders with package.rant, their run files and bin/
+repos     = ["someone/rant-tool"]        # their GitHub releases
+databases = ["someone/rant-packages"]
 ```
 
 ## Commands
@@ -70,7 +67,7 @@ database "someone/rant-packages" {}
 | explain one thing | `rant info [kind] <name>`, a type shows its fields and who uses it, a node its source file |
 | read and write | `rant sub <topic\|var> -n 1`, `rant pub <topic\|var> <value>`, `rant call <fn> [value]`. On a terminal sub and a task's progress redraw in place, `--lines` (and any pipe) prints a record a line of `from`, `hz` and `value`, a call's result last. `--value-only` prints only the values. `--json` and `--csv` only change the format |
 | Rant version in packages | `rant lib [folder]` shows it, `rant lib install [folder]` adds it, `rant lib update [folder]` moves it, both take `--version V` |
-| packages | `rant install <package>...` (`--version V` for one release, `--from PATH` for a local build folder, linked, or a .tar.gz). `rant install` alone on a terminal is a checklist for a person, then one of their groups to run at every boot, so an agent names the packages. `rant remove <package>...`, `rant ls packages --available` for what there is, `rant ls sources` for where it looks, `rant info package <name>` before installing. `rant install` and `rant remove` need a package's nodes stopped, `rant update` stops them and starts them again |
+| packages | `rant install <package\|repo>...` (`--version V` for one release, `--from PATH` for a local build folder, linked, or a .tar.gz). A package installed from a repo's link is never replaced by one of the same name from elsewhere, `rant remove` it first. `rant install` alone on a terminal is a checklist for a person, then one of their groups to run at every boot, so an agent names the packages. `rant remove <package>...`, `rant ls packages --available` for what there is, `rant ls sources` for where it looks, `rant info package <name>` before installing. `rant install` and `rant remove` need a package's nodes stopped, `rant update` stops them and starts them again |
 | update | `rant update`: the CLI, the installed packages and the skill, then the workspace's packages. `rant update <package>...` updates only those. A package from `--from` stays until `rant install` replaces it |
 | visual debugger | `rant explore`, after `rant install explorer` |
 | web frontends | `rant install bridge`, then `rant run Bridge`, see Bridge |
@@ -98,12 +95,12 @@ package.rant in a package: `name`, `description`, `build` (commands replacing th
 `expect_mesh = false` to one that never joins the mesh, so `rant run` waits only for it to
 start.
 
-A package others install names its release files by rule: `<name>-<version>-<platform>.tar.gz`
-holds bin/, package.rant and the run files, unpacked into `~/.rant/packages/<name>`, and
-`<name>-<version>.vsix` goes into editors. `version` is the release tag without its v, such as
-1.2.0 or 1.2.0-beta.1, `platform` one of win-x64, win-arm64, linux-x64, linux-arm64, osx-x64
-and osx-arm64. A plain install takes the newest release that is no pre-release, `--version`
-any one.
+A package others install gives its `name` in package.rant and names its release files by
+rule: `<name>-<version>-<platform>.tar.gz` holds bin/, package.rant and the run files,
+unpacked into `~/.rant/packages/<name>`, and `<name>-<version>.vsix` goes into editors.
+`version` is the release tag without its v, such as 1.2.0 or 1.2.0-beta.1, `platform` one of
+win-x64, win-arm64, linux-x64, linux-arm64, osx-x64 and osx-arm64. A plain install takes the
+newest release that is no pre-release, `--version` any one.
 
 A group is `<Name>.run`:
 

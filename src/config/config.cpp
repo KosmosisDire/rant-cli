@@ -233,13 +233,17 @@ Database read_database(const fs::path& file, const std::string& text, bool local
         rant_config_database(to_utf8(file).c_str(), text.c_str(), local), &rant_config_database_free);
     const RantConfigDatabaseView* v = rant_config_database_view(h.get());
     Database out;
-    for (size_t i = 0; i < v->package_count; i++) {
-        auto& l = v->packages[i];
-        out.packages.push_back({ str(l.name), str(l.repo), l.path ? from_utf8(l.path) : fs::path() });
-    }
+    out.repos = strs(v->repos, v->repo_count);
+    for (auto& p : strs(v->paths, v->path_count)) out.paths.push_back(from_utf8(p));
     out.databases = strs(v->databases, v->database_count);
     out.diagnostics = diagnostics(v->diagnostics, v->diagnostic_count);
     return out;
+}
+
+std::optional<std::string> repo_of(const std::string& word) {
+    char out[256];
+    if (!rant_config_repo_of(word.c_str(), out, sizeof out)) return std::nullopt;
+    return std::string(out);
 }
 
 bool is_package_name(const std::string& name) { return rant_config_is_package_name(name.c_str()); }

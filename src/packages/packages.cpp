@@ -44,12 +44,12 @@ static std::string read_file(const fs::path& p) {
 fs::path dir() { return util::rant_home() / "packages"; }
 fs::path sources_file() { return util::rant_home() / "sources.rant"; }
 
-/* Where a fetched database is kept for completion, a name its repo cannot clash in. */
-static fs::path cache_dir() { return util::rant_home() / "cache" / "databases"; }
-static fs::path cached(const std::string& repo) {
-    std::string file = repo;
+/* The names a list of sources gave when last read, kept for completion, in a file its key
+ * cannot clash in. */
+static fs::path names_file(const std::string& named_by) {
+    std::string file = named_by;
     std::replace(file.begin(), file.end(), '/', '+');
-    return cache_dir() / (file + ".rant");
+    return util::rant_home() / "cache" / "names" / (file + ".json");
 }
 
 static config::Database checked(config::Database db) {
@@ -57,55 +57,130 @@ static config::Database checked(config::Database db) {
     return db;
 }
 
-Sources::Sources() {
-    if (fs::is_regular_file(sources_file())) local_ = checked(config::read_database(sources_file(), read_file(sources_file()), true));
-    databases_.push_back({ official, std::nullopt });
-    for (auto& d : local_.databases)
-        if (d != official) databases_.push_back({ d, std::nullopt });
-}
-
-std::vector<std::string> Sources::databases() const {
-    std::vector<std::string> out;
-    for (auto& [repo, _] : databases_) out.push_back(repo);
-    return out;
-}
-
-const config::Database& Sources::fetched(size_t i) {
-    auto& [repo, db] = databases_[i];
-    if (db) return *db;
-    std::optional<std::string> text = net::fetch(net::raw_url(repo, "HEAD", "packages.rant"));
-    if (!text) throw app::Failure(repo + " holds no packages.rant, so it is no package database");
-    db = checked(config::read_database(repo + "/packages.rant", *text, false));
+static std::optional<std::string> read_text(const fs::path& p) {
     std::error_code ec;
-    fs::create_directories(cache_dir(), ec);
-    std::ofstream(cached(repo), std::ios::binary) << *text;
-    return *db;
-}
-
-static Source source_of(const config::Listed& l, const std::string& named_by) { return { l.name, l.repo, l.path, named_by }; }
-
-std::optional<Source> Sources::find(const std::string& name) {
-    for (auto& l : local_.packages)
-        if (l.name == name) return source_of(l, "sources.rant");
-    for (size_t i = 0; i < databases_.size(); i++)
-        for (auto& l : fetched(i).packages)
-            if (l.name == name) return source_of(l, databases_[i].first);
-    return std::nullopt;
-}
-
-std::vector<Source> Sources::all() {
-    std::vector<Source> out;
-    auto add = [&](const config::Listed& l, const std::string& by) {
-        if (std::none_of(out.begin(), out.end(), [&](const Source& s) { return s.name == l.name; })) out.push_back(source_of(l, by));
-    };
-    for (auto& l : local_.packages) add(l, "sources.rant");
-    for (size_t i = 0; i < databases_.size(); i++)
-        for (auto& l : fetched(i).packages) add(l, databases_[i].first);
-    return out;
+    if (!fs::is_regular_file(p, ec)) return std::nullopt;
+    return read_file(p);
 }
 
 static bool ends_with(const std::string& s, const std::string& end) {
     return s.size() >= end.size() && s.compare(s.size() - end.size(), end.size(), end) == 0;
+}
+
+static bool is_archive(const fs::path& p) { return ends_with(u8(p.filename()), ".tar.gz"); }
+
+/* GitHub takes a repo's owner and name in any case. */
+static bool same_repo(const std::string& a, const std::string& b) {
+    return std::equal(a.begin(), a.end(), b.begin(), b.end(), [](char x, char y) { return std::tolower((unsigned char)x) == std::tolower((unsigned char)y); });
+}
+
+static std::string shown(const Source& s) { return s.repo.empty() ? u8(s.path) : s.repo; }
+
+/* A package.rant, which must name its package, read as dir would hold it. where names it in
+ * errors. */
+static config::PackageRelease named(const fs::path& dir, const std::string& where, const std::optional<std::string>& text) {
+    if (!text) throw app::Failure(where + " holds no package.rant, so it is no package");
+    config::PackageRelease rel = config::read_release(dir, *text);
+    if (!rel.diagnostics.empty()) throw app::Failure(rel.diagnostics[0].str());
+    if (rel.name.empty()) throw app::Failure("the package.rant of " + where + " gives no name, which a package needs to install");
+    if (!config::is_package_name(rel.name))
+        throw app::Failure(where + " names its package `" + rel.name + "`, which is no package name: lowercase letters, digits and _");
+    return rel;
+}
+
+/* The package an archive holds by its file name, <name>-<version>-<platform>.tar.gz. */
+static std::string archive_package(const fs::path& p) {
+    std::string file = u8(p.filename());
+    file.resize(file.size() - 7);
+    return file.substr(0, file.find('-'));
+}
+
+Sources::Sources() {
+    if (fs::is_regular_file(sources_file())) local_ = checked(config::read_database(sources_file(), read_file(sources_file()), true));
+    lists_.push_back({ "sources.rant", std::nullopt });
+    lists_.push_back({ official, std::nullopt });
+    for (auto& d : local_.databases)
+        if (!same_repo(d, official)) lists_.push_back({ d, std::nullopt });
+}
+
+std::vector<std::string> Sources::databases() const {
+    std::vector<std::string> out;
+    for (size_t i = 1; i < lists_.size(); i++) out.push_back(lists_[i].named_by);
+    return out;
+}
+
+const std::vector<Sources::Found>& Sources::found(size_t i) {
+    List& l = lists_[i];
+    if (l.found) return *l.found;
+    config::Database db = local_;
+    if (i > 0) {
+        std::optional<std::string> text = net::fetch(net::raw_url(l.named_by, "HEAD", "packages.rant"));
+        if (!text) throw app::Failure(l.named_by + " holds no packages.rant, so it is no package database");
+        db = checked(config::read_database(l.named_by + "/packages.rant", *text, false));
+    }
+    std::vector<Found> out;
+    auto add = [&](Found f) {
+        for (auto& o : out)
+            if (o.source.name == f.source.name)
+                return problems_.push_back(shown(f.source) + " also names the package " + f.source.name + ", after " + shown(o.source));
+        out.push_back(std::move(f));
+    };
+    std::error_code ec;
+    for (auto& p : db.paths) {
+        try {
+            if (fs::is_directory(p, ec)) {
+                config::PackageRelease rel = named(p, u8(p), read_text(p / package_file));
+                add({ { rel.name, "", p, l.named_by }, rel.description });
+            } else if (is_archive(p) && fs::is_regular_file(p, ec)) {
+                std::string name = archive_package(p);
+                if (!config::is_package_name(name)) throw app::Failure(u8(p) + " is no archive named <name>-<version>-<platform>.tar.gz");
+                add({ { name, "", p, l.named_by }, "" });
+            } else {
+                throw app::Failure(fs::exists(p, ec) ? u8(p) + " is no package folder or .tar.gz archive" : "no folder or archive " + u8(p));
+            }
+        } catch (const app::Failure& e) {
+            problems_.push_back(e.what());
+        }
+    }
+    std::vector<std::string> urls;
+    for (auto& r : db.repos) urls.push_back(net::raw_url(r, "HEAD", package_file));
+    std::vector<std::optional<std::string>> texts = net::fetch_all(urls);
+    for (size_t k = 0; k < db.repos.size(); k++) {
+        try {
+            config::PackageRelease rel = named(config::from_utf8(db.repos[k]), db.repos[k], texts[k]);
+            add({ { rel.name, db.repos[k], {}, l.named_by }, rel.description });
+        } catch (const app::Failure& e) {
+            problems_.push_back(e.what());
+        }
+    }
+    json names = json::array();
+    for (auto& f : out) names.push_back(f.source.name);
+    fs::create_directories(names_file(l.named_by).parent_path(), ec);
+    std::ofstream(names_file(l.named_by), std::ios::binary) << names.dump() << "\n";
+    l.found = std::move(out);
+    return *l.found;
+}
+
+std::optional<Source> Sources::find(const std::string& name) {
+    for (size_t i = 0; i < lists_.size(); i++)
+        for (auto& f : found(i))
+            if (f.source.name == name) return f.source;
+    return std::nullopt;
+}
+
+std::vector<Offer> Sources::offers(const std::string& pattern) {
+    std::vector<Offer> out;
+    for (size_t i = 0; i < lists_.size(); i++)
+        for (auto& f : found(i))
+            if (util::name_matches(pattern, f.source.name) &&
+                std::none_of(out.begin(), out.end(), [&](const Offer& o) { return o.source.name == f.source.name; }))
+                out.push_back({ f.source, f.description, record(f.source.name) });
+    return out;
+}
+
+Source from_repo(const std::string& repo) {
+    config::PackageRelease rel = named(config::from_utf8(repo), repo, net::fetch(net::raw_url(repo, "HEAD", package_file)));
+    return { rel.name, repo, {}, "link" };
 }
 
 Carried carried(const net::Release& r, const std::string& name, const std::string& platform) {
@@ -119,58 +194,33 @@ Carried carried(const net::Release& r, const std::string& name, const std::strin
     return c;
 }
 
-About about(const Source& s, bool release) {
+About about(const Source& s) {
     About a;
-    std::string text;
     std::error_code ec;
-    if (!s.repo.empty()) {
-        std::string ref = "HEAD";
-        if (release) {
-            net::Release r = net::release(s.repo);
-            a.version = r.version;
-            ref = r.tag;
-            Carried c = carried(r, s.name, net::platform());
-            for (const net::Asset* f : { c.archive, c.extension })
-                if (f) a.files.push_back(f->name);
-        }
-        std::optional<std::string> t = net::fetch(net::raw_url(s.repo, ref, package_file));
-        if (!t) throw app::Failure(s.repo + " has no package.rant at " + ref);
-        text = *t;
-    } else if (fs::is_regular_file(s.path / package_file, ec)) {
-        text = read_file(s.path / package_file);
-    } else {
+    if (s.repo.empty()) {
+        if (fs::is_directory(s.path, ec)) a.description = named(s.path, u8(s.path), read_text(s.path / package_file)).description;
         return a;
     }
-    config::PackageRelease rel = config::read_release(dir() / s.name, text);
-    if (!rel.diagnostics.empty()) throw app::Failure(rel.diagnostics[0].str());
-    a.description = rel.description;
+    net::Release r = net::release(s.repo);
+    a.version = r.version;
+    Carried c = carried(r, s.name, net::platform());
+    for (const net::Asset* f : { c.archive, c.extension })
+        if (f) a.files.push_back(f->name);
+    std::string where = s.repo + " at " + r.tag;
+    a.description = named(config::from_utf8(s.repo), where, net::fetch(net::raw_url(s.repo, r.tag, package_file))).description;
     return a;
 }
 
-std::vector<Offer> offers(Sources& sources, const std::string& pattern) {
-    std::vector<Offer> out;
-    for (auto& s : sources.all()) {
-        if (!util::name_matches(pattern, s.name)) continue;
-        Offer o{ s, "", record(s.name), "" };
-        try {
-            o.description = about(s, false).description;
-        } catch (const app::Failure& e) {
-            o.problem = e.what();
-        }
-        out.push_back(std::move(o));
-    }
-    return out;
-}
-
 std::vector<std::string> cached_names() {
-    std::vector<std::string> out;
+    std::vector<std::string> lists = { "sources.rant", official }, out;
     std::error_code ec;
-    std::vector<std::pair<fs::path, bool>> files = { { sources_file(), true } };
-    for (fs::directory_iterator it(cache_dir(), ec), end; !ec && it != end; it.increment(ec)) files.push_back({ it->path(), false });
-    for (auto& [file, local] : files) {
-        if (!fs::is_regular_file(file, ec)) continue;
-        for (auto& l : config::read_database(file, read_file(file), local).packages)
-            if (std::find(out.begin(), out.end(), l.name) == out.end()) out.push_back(l.name);
+    if (fs::is_regular_file(sources_file(), ec))
+        for (auto& d : config::read_database(sources_file(), read_file(sources_file()), true).databases) lists.push_back(d);
+    for (auto& l : lists) {
+        json j = json::parse(read_file(names_file(l)), nullptr, false);
+        if (!j.is_array()) continue;
+        for (auto& n : j)
+            if (n.is_string() && std::find(out.begin(), out.end(), n.get<std::string>()) == out.end()) out.push_back(n.get<std::string>());
     }
     return out;
 }
@@ -254,7 +304,7 @@ std::optional<Record> record(const std::string& name) {
     r.name = name;
     r.repo = j.value("repo", "");
     r.path = config::from_utf8(j.value("path", ""));
-    r.once = j.value("once", false);
+    r.named_by = j.value("named_by", "");
     r.version = j.value("version", "");
     json e = j.value("extension", json::object());
     if (e.is_object()) {
@@ -269,7 +319,7 @@ static void save(const Record& r) {
     json j = json::object();
     if (!r.repo.empty()) j["repo"] = r.repo;
     if (!r.path.empty()) j["path"] = u8(r.path);
-    if (r.once) j["once"] = true;
+    if (!r.named_by.empty()) j["named_by"] = r.named_by;
     if (!r.version.empty()) j["version"] = r.version;
     if (!r.extension.empty()) j["extension"] = { { "id", r.extension }, { "editor", u8(r.editor) }, { "profile", r.profile } };
     std::ofstream(record_file(r.name), std::ios::binary) << j.dump(2) << "\n";
@@ -367,6 +417,11 @@ static fs::path tar_program() {
     throw app::Failure("unpacking needs tar, which is not on PATH");
 }
 
+/* Refuses a package.rant that names another package than the one being installed. */
+static void refuse_other_name(const config::PackageRelease& rel, const std::string& name, const std::string& where) {
+    if (rel.name != name) throw app::Failure(where + " holds the package " + rel.name + ", not " + name);
+}
+
 /* Fills a new folder for the package, an archive unpacked or only the package.rant text of a
  * release without one, then puts it in place of the old. */
 static void place(const std::string& name, const fs::path& archive, const std::string& text = "") {
@@ -383,6 +438,14 @@ static void place(const std::string& name, const fs::path& archive, const std::s
     if (!fs::is_regular_file(staging / package_file)) {
         fs::remove_all(staging, ec);
         throw app::Failure(u8(archive) + " holds no package.rant at its top, so it is no package archive");
+    }
+    if (!archive.empty()) {
+        try {
+            refuse_other_name(named(dir() / name, u8(archive), read_text(staging / package_file)), name, u8(archive));
+        } catch (const app::Failure&) {
+            fs::remove_all(staging, ec);
+            throw;
+        }
     }
     retire(name);
     rename_folder(staging, dir() / name, ec);
@@ -422,25 +485,23 @@ struct Download {
     }
 };
 
-static bool is_archive(const fs::path& p) { return ends_with(u8(p.filename()), ".tar.gz"); }
-
 /* A release of a repo, the files it carries found by their names. */
 static void install_release(app::Context& ctx, const Source& s, const std::string& version, Record& rec) {
     net::Release r = net::release(s.repo, version);
     std::optional<Record> had = record(s.name);
     std::error_code ec;
     bool retarget = ctx.args.has("editor") || ctx.args.has("profile");
-    if (had && had->repo == s.repo && !had->once && had->version == r.version && fs::is_directory(dir() / s.name, ec) &&
+    if (had && same_repo(had->repo, s.repo) && had->named_by != "--from" && had->version == r.version && fs::is_directory(dir() / s.name, ec) &&
         !(retarget && !had->extension.empty())) {
         ctx.out.note(s.name + " " + r.version + " is already installed");
         rec = *had;
+        rec.named_by = s.named_by;
         return;
     }
     refuse_running(s.name);
+    std::string where = s.repo + " at " + r.tag;
     std::optional<std::string> text = net::fetch(net::raw_url(s.repo, r.tag, package_file));
-    if (!text) throw app::Failure(s.repo + " has no package.rant at " + r.tag + ", so that release is no package");
-    config::PackageRelease rel = config::read_release(dir() / s.name, *text);
-    if (!rel.diagnostics.empty()) throw app::Failure(s.repo + " " + r.tag + ": " + rel.diagnostics[0].str());
+    refuse_other_name(named(config::from_utf8(s.repo), where, text), s.name, where);
     Carried c = carried(r, s.name, net::platform());
     const net::Asset *archive = c.archive, *extension = c.extension;
     std::string release = "the " + s.name + " " + r.version + " release";
@@ -490,10 +551,7 @@ static void install_path(app::Context& ctx, const Source& s, Record& rec) {
     std::error_code ec;
     bool retarget = ctx.args.has("editor") || ctx.args.has("profile");
     if (fs::is_directory(s.path, ec)) {
-        fs::path file = s.path / package_file;
-        if (!fs::is_regular_file(file, ec)) throw app::Failure(u8(s.path) + " holds no package.rant, so it is no package");
-        config::PackageRelease rel = config::read_release(s.path, read_file(file));
-        if (!rel.diagnostics.empty()) throw app::Failure(rel.diagnostics[0].str());
+        refuse_other_name(named(s.path, u8(s.path), read_text(s.path / package_file)), s.name, u8(s.path));
         fs::path extension = newest_vsix(s.path, s.name);
         if (extension.empty() && retarget) throw app::Failure(s.name + " is no VS Code extension, so --editor and --profile do not apply");
         if (!extension.empty()) install_extension(ctx, extension_target(ctx, s.name), extension, rec);
@@ -515,8 +573,15 @@ static void install_path(app::Context& ctx, const Source& s, Record& rec) {
 void install(app::Context& ctx, const Source& s, const std::string& version) {
     std::error_code ec;
     fs::create_directories(dir(), ec);
+    /* a link names a package by its own word, so it never quietly takes the place of another */
+    std::optional<Record> had = record(s.name);
+    bool same = had && (s.repo.empty() ? had->repo.empty() && util::holds(had->path, s.path) && util::holds(s.path, had->path)
+                                       : same_repo(had->repo, s.repo));
+    if (had && !same && (had->named_by == "link" || s.named_by == "link"))
+        throw app::Failure(s.name + " is installed from " + (had->repo.empty() ? u8(had->path) : had->repo) + ", `rant remove " + s.name +
+                           "` first to install it from " + shown(s));
     sweep(s.name);
-    Record rec{ s.name, s.repo, s.path, s.named_by == "--from", "" };
+    Record rec{ s.name, s.repo, s.path, s.named_by, "" };
     if (s.repo.empty()) {
         refuse_running(s.name);
         install_path(ctx, s, rec);
@@ -555,17 +620,17 @@ std::optional<Update> check(app::Context& ctx, Sources& sources, const std::stri
         ctx.out.note(name + " was put in " + u8(dir()) + " by hand, so update leaves it alone");
         return std::nullopt;
     }
-    if (rec->once) {
+    if (rec->named_by == "--from") {
         ctx.out.note(name + " came from " + u8(rec->path) + " through --from, so update leaves it alone");
         return std::nullopt;
     }
-    std::optional<Source> s = sources.find(name);
+    std::optional<Source> s = rec->named_by == "link" ? Source{ name, rec->repo, {}, "link" } : sources.find(name);
     if (!s) throw app::Failure("no source names " + name + " any more, see `rant ls sources`");
     Update u{ *s, rec->version, "", false };
     if (!s->repo.empty()) {
         net::Release r = net::release(s->repo);
         u.to = r.version;
-        u.needed = rec->repo != s->repo || net::newer(r.version, rec->version);
+        u.needed = !same_repo(rec->repo, s->repo) || net::newer(r.version, rec->version);
         return u;
     }
     if (!util::holds(rec->path, s->path) || !util::holds(s->path, rec->path)) {

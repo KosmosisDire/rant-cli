@@ -328,7 +328,7 @@ static int run(app::Context& ctx) {
     /* a package rant install could install, only when asked for a package, since it costs a fetch */
     if (answers.empty() && kind == Kind::Package)
         if (std::optional<packages::Source> s = packages::Sources().find(name)) {
-            packages::About about = packages::about(*s, true);
+            packages::About about = packages::about(*s);
             Answer a;
             a.fields["package"] = name;
             if (!about.description.empty()) a.fields["description"] = about.description;

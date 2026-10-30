@@ -330,9 +330,10 @@ static int list_available(app::Context& ctx, const std::string& pattern) {
     auto dim = [&](const std::string& s) { return ctx.out.paint(ui::Style::Dim, s); };
     json out = json::array();
     ui::Table t;
-    for (auto& o : packages::offers(sources, pattern)) {
+    std::vector<packages::Offer> offers = sources.offers(pattern);
+    for (auto& p : sources.problems()) ctx.out.warn(p);
+    for (auto& o : offers) {
         const packages::Source& s = o.source;
-        if (!o.problem.empty()) ctx.out.warn(s.name + ": " + o.problem);
         std::string from = s.repo.empty() ? config::to_utf8(s.path) : s.repo;
         const std::optional<packages::Record>& rec = o.record;
         std::string installed = !rec ? "" : rec->version.empty() ? "installed" : "installed " + rec->version;
@@ -345,17 +346,20 @@ static int list_available(app::Context& ctx, const std::string& pattern) {
     return 0;
 }
 
-/* Where rant install looks, in order: the packages sources.rant names, the official database,
- * then the databases sources.rant adds. */
+/* Where rant install looks, in order: the paths and repos sources.rant lists, the official
+ * database, then the databases sources.rant adds. */
 static int list_sources(app::Context& ctx) {
     packages::Sources sources;
     auto dim = [&](const std::string& s) { return ctx.out.paint(ui::Style::Dim, s); };
     json out = json::array();
     ui::Table t;
-    for (auto& l : sources.local().packages) {
-        std::string from = l.repo.empty() ? config::to_utf8(l.path) : l.repo;
-        out.push_back({ { "package", l.name }, { l.repo.empty() ? "path" : "repo", from } });
-        t.row({ l.name, dim("package"), from });
+    for (auto& p : sources.local().paths) {
+        out.push_back({ { "path", config::to_utf8(p) } });
+        t.row({ config::to_utf8(p), dim("path"), "" });
+    }
+    for (auto& r : sources.local().repos) {
+        out.push_back({ { "repo", r } });
+        t.row({ r, dim("repo"), "" });
     }
     for (auto& d : sources.databases()) {
         bool official = d == packages::official;
@@ -367,8 +371,9 @@ static int list_sources(app::Context& ctx) {
         return 0;
     }
     section(ctx, "SOURCES", t.lines());
-    if (sources.local().packages.empty() && sources.local().databases.empty())
-        ctx.out.note("name your own in " + config::to_utf8(packages::sources_file()));
+    const config::Database& local = sources.local();
+    if (local.paths.empty() && local.repos.empty() && local.databases.empty())
+        ctx.out.note("list your own in " + config::to_utf8(packages::sources_file()));
     return 0;
 }
 

@@ -9,7 +9,7 @@ use std::rc::Rc;
 use std::sync::Mutex;
 
 use crate::build_plan;
-use crate::database::{self, Origin};
+use crate::database;
 use crate::diag::Diag;
 use crate::group::{GroupDef, Groups};
 use crate::manifest::ManifestKind;
@@ -1162,19 +1162,14 @@ pub unsafe extern "C" fn rant_config_release_free(r: *mut RantConfigRelease) {
     }
 }
 
-/// One package a database names, from a GitHub repo as owner/name or, in sources.rant, a
-/// path on this machine. Exactly one of repo and path is set.
-#[repr(C)]
-pub struct RantConfigListed {
-    pub name: *const c_char,
-    pub repo: *const c_char,
-    pub path: *const c_char,
-}
-
 #[repr(C)]
 pub struct RantConfigDatabaseView {
-    pub packages: *const RantConfigListed,
-    pub package_count: usize,
+    /// GitHub repos as owner/name, each releasing one package.
+    pub repos: *const *const c_char,
+    pub repo_count: usize,
+    /// Local build folders and release archives, only in sources.rant.
+    pub paths: *const *const c_char,
+    pub path_count: usize,
     /// The databases sources.rant adds, as owner/name, in the order to read them.
     pub databases: *const *const c_char,
     pub database_count: usize,
@@ -1184,7 +1179,6 @@ pub struct RantConfigDatabaseView {
 
 pub struct RantConfigDatabase {
     view: RantConfigDatabaseView,
-    #[allow(dead_code)]
     store: Store,
 }
 
@@ -1195,26 +1189,23 @@ pub struct RantConfigDatabase {
 /// file and text must be NULL or NUL terminated UTF-8 strings.
 #[no_mangle]
 pub unsafe extern "C" fn rant_config_database(file: *const c_char, text: *const c_char, local: bool) -> *mut RantConfigDatabase {
+    use std::ptr::null;
     let mut store = Store::default();
     let mut view = RantConfigDatabaseView {
-        packages: std::ptr::null(),
-        package_count: 0,
-        databases: std::ptr::null(),
+        repos: null(),
+        repo_count: 0,
+        paths: null(),
+        path_count: 0,
+        databases: null(),
         database_count: 0,
-        diagnostics: std::ptr::null(),
+        diagnostics: null(),
         diagnostic_count: 0,
     };
     match database::parse(&arg_path(file), arg_str(text), local) {
         Ok(db) => {
-            let listed: Vec<RantConfigListed> = db
-                .packages
-                .iter()
-                .map(|l| match &l.origin {
-                    Origin::Repo(r) => RantConfigListed { name: store.str(&l.name), repo: store.str(r), path: std::ptr::null() },
-                    Origin::Path(p) => RantConfigListed { name: store.str(&l.name), repo: std::ptr::null(), path: store.path(p) },
-                })
-                .collect();
-            (view.packages, view.package_count) = store.array(listed);
+            (view.repos, view.repo_count) = store.strs(&db.repos);
+            let paths: Vec<String> = db.paths.iter().map(|p| crate::eval::slash(p)).collect();
+            (view.paths, view.path_count) = store.strs(&paths);
             (view.databases, view.database_count) = store.strs(&db.databases);
         }
         Err(d) => (view.diagnostics, view.diagnostic_count) = store.diags(&[d]),
@@ -1245,6 +1236,23 @@ pub unsafe extern "C" fn rant_config_database_free(d: *mut RantConfigDatabase) {
 #[no_mangle]
 pub unsafe extern "C" fn rant_config_is_package_name(name: *const c_char) -> bool {
     database::is_name(&arg_str(name))
+}
+
+/// Writes the GitHub repo a word names, owner/name itself or a link into the repo, as owner/name
+/// into out, NUL terminated. False when it names none or out holds less than cap bytes.
+///
+/// # Safety
+/// word must be NULL or a NUL terminated UTF-8 string, and out must hold cap bytes.
+#[no_mangle]
+pub unsafe extern "C" fn rant_config_repo_of(word: *const c_char, out: *mut c_char, cap: usize) -> bool {
+    match database::repo_of(&arg_str(word)) {
+        Some(repo) if repo.len() < cap => {
+            std::ptr::copy_nonoverlapping(repo.as_ptr() as *const c_char, out, repo.len());
+            *out.add(repo.len()) = 0;
+            true
+        }
+        _ => false,
+    }
 }
 
 /// Whether two names are one, matching without case or underscores.

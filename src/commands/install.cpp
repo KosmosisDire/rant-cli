@@ -12,33 +12,41 @@
 
 namespace commands {
 
-/* Each package from where sources.rant or a database names it, or from --from. With several,
- * one that fails leaves the rest to go on. Returns the names that installed. */
-static std::vector<std::string> install_all(app::Context& ctx, const std::vector<std::string>& names, int& code) {
+/* Each package from where sources.rant or a database names it, a repo by its link, or one
+ * from --from. With several, one that fails leaves the rest to go on. Returns the names that
+ * installed. */
+static std::vector<std::string> install_all(app::Context& ctx, const std::vector<std::string>& words, int& code) {
     std::optional<std::string> version = ctx.args.get("version"), from = ctx.args.get("from");
-    if ((version || from) && names.size() > 1) throw app::UsageError(std::string(from ? "--from" : "--version") + " takes one package");
+    if ((version || from) && words.size() > 1) throw app::UsageError(std::string(from ? "--from" : "--version") + " takes one package");
     if (version && from) throw app::UsageError("--version picks a release, and --from has none");
     std::optional<packages::Sources> sources;
     std::vector<std::string> done;
-    for (auto& name : names) {
+    for (auto& word : words) {
         try {
-            if (!config::is_package_name(name))
-                throw app::UsageError("`" + name + "` is no package name, which is lowercase letters, digits and _");
+            std::optional<std::string> repo = config::is_package_name(word) ? std::nullopt : config::repo_of(word);
+            if (!config::is_package_name(word) && !repo)
+                throw app::UsageError("`" + word + "` is no package name, which is lowercase letters, digits and _, and no GitHub repo");
+            if (from && repo) throw app::UsageError("--from takes the name of the package it holds, not a repo");
             packages::Source s;
             if (from) {
-                s = { name, "", ctx.cwd() / config::from_utf8(*from), "--from" };
+                s = { word, "", ctx.cwd() / config::from_utf8(*from), "--from" };
+            } else if (repo) {
+                s = packages::from_repo(*repo);
             } else {
                 if (!sources) sources.emplace();
-                std::optional<packages::Source> found = sources->find(name);
-                if (!found) throw app::Failure("no package `" + name + "` in sources.rant or the package databases, `rant ls packages --available` lists them");
+                std::optional<packages::Source> found = sources->find(word);
+                if (!found) {
+                    for (auto& p : sources->problems()) ctx.out.warn(p);
+                    throw app::Failure("no package `" + word + "` in sources.rant or the package databases, `rant ls packages --available` lists them");
+                }
                 s = *found;
             }
             if (version && s.repo.empty())
-                throw app::UsageError("--version picks a release, and " + name + " comes from " + config::to_utf8(s.path) + " in sources.rant");
+                throw app::UsageError("--version picks a release, and " + word + " comes from " + config::to_utf8(s.path) + " in sources.rant");
             packages::install(ctx, s, version.value_or(""));
-            done.push_back(name);
+            done.push_back(s.name);
         } catch (const app::Failure& e) {
-            if (names.size() == 1) throw;
+            if (words.size() == 1) throw;
             ctx.out.error(e.what());
             code = 1;
         }
@@ -81,12 +89,13 @@ static int pick(app::Context& ctx) {
         throw app::UsageError("install needs a package, `rant ls packages --available` lists them");
     ctx.out.note("looking up the packages");
     packages::Sources sources;
-    std::vector<packages::Offer> offers = packages::offers(sources);
+    std::vector<packages::Offer> offers = sources.offers();
+    for (auto& p : sources.problems()) ctx.out.warn(p);
     std::vector<ui::Choice> choices;
     for (auto& o : offers) {
         std::string state;
         if (o.record) state = o.record->version.empty() ? "installed, " : "installed " + o.record->version + ", ";
-        choices.push_back({ o.source.name, state + (o.problem.empty() ? o.description : o.problem) });
+        choices.push_back({ o.source.name, state + o.description });
     }
     std::optional<std::vector<size_t>> ticked = ui::pick(ctx.out, "Packages to install", choices);
     if (!ticked || ticked->empty()) return 0;
@@ -108,9 +117,10 @@ static int run(app::Context& ctx) {
 static complete::Candidates complete_words(complete::Request&) { return { packages::cached_names() }; }
 
 app::Command install() {
-    app::Command c{ "install", "[package...]",
-                    "install packages, or another release of one, from ~/.rant/sources.rant and the package databases, "
-                    "`rant ls sources` shows where it looks. With none named, pick them from a list",
+    app::Command c{ "install", "[package|repo...]",
+                    "install packages, or another release of one, by name from ~/.rant/sources.rant and the package databases, "
+                    "`rant ls sources` shows where it looks, or from any GitHub repo as owner/name or its link. "
+                    "With none named, pick them from a list",
                     app::Section::Setup,
                     { { "version", 0, "V", "with one package: this release instead of the newest" },
                       { "from", 0, "PATH", "with one package: a local build folder, linked, or a .tar.gz archive, instead of its source" },

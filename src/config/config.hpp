@@ -208,23 +208,21 @@ struct PackageRelease {
 /* Reads package.rant text as if it were in dir, where the release installs. */
 PackageRelease read_release(const fs::path& dir, const std::string& text);
 
-/* One package a database names, from a GitHub repo as owner/name or, in sources.rant, a
- * folder or archive on this machine. Exactly one of repo and path is set. */
-struct Listed {
-    std::string name;
-    std::string repo;
-    fs::path    path;
-};
-
+/* What a database lists: GitHub repos as owner/name, each releasing one package its package.rant
+ * names, and only in sources.rant, folders and archives on this machine and more databases. */
 struct Database {
-    std::vector<Listed>      packages;
-    std::vector<std::string> databases;    /* those sources.rant adds, in the order to read them */
+    std::vector<std::string> repos;
+    std::vector<fs::path>    paths;
+    std::vector<std::string> databases;    /* in the order to read them */
     std::vector<Diagnostic>  diagnostics;
 };
 
 /* Reads a database's text, sources.rant when local. file names it in errors, and a relative
  * path in sources.rant is from its folder. */
 Database read_database(const fs::path& file, const std::string& text, bool local);
+
+/* The GitHub repo a word names, owner/name itself or a link into the repo, as owner/name. */
+std::optional<std::string> repo_of(const std::string& word);
 
 /* Whether a name can name a package, and so the folder it installs into. */
 bool is_package_name(const std::string& name);

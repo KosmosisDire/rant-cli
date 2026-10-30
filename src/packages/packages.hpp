@@ -10,9 +10,10 @@
 #include "net/github.hpp"
 
 /* The packages rant install puts in ~/.rant/packages, a folder each that every workspace sees.
- * A package comes from a GitHub repo's releases or from a path on this machine, as
- * sources.rant, the official database and the databases sources.rant adds name it, in that
- * order. Beside each folder a record says where it came from. */
+ * A package comes from a GitHub repo's releases or from a path on this machine. Its name is
+ * the one its package.rant gives, looked up in sources.rant, the official database and the
+ * databases sources.rant adds, in that order, or a repo is named by its link. Beside each
+ * folder a record says where it came from. */
 namespace packages {
 
 namespace fs = std::filesystem;
@@ -25,7 +26,7 @@ struct Source {
     std::string name;
     std::string repo;        /* owner/name, empty for a path */
     fs::path    path;        /* a local build folder or a .tar.gz archive */
-    std::string named_by;    /* "sources.rant", a database's repo, or "--from" */
+    std::string named_by;    /* "sources.rant", a database's repo, "link" or "--from" */
 };
 
 /* What rant install recorded of a package it installed. */
@@ -33,7 +34,7 @@ struct Record {
     std::string name;
     std::string repo;
     fs::path    path;
-    bool        once = false;    /* installed with --from, which update leaves alone */
+    std::string named_by;        /* its source's, so update looks where install did */
     std::string version;         /* the release, empty from a path */
     std::string extension;       /* the VS Code extension it installed, empty for none */
     fs::path    editor;          /* and the editor and profile that took it */
@@ -46,8 +47,17 @@ fs::path dir();
 /* ~/.rant/sources.rant, which the user writes. */
 fs::path sources_file();
 
-/* The package sources, read from sources.rant once and the databases each fetched once,
- * only when a name is not found before them. */
+/* A package rant install can install: where it comes from, the description its package.rant
+ * gives at the default branch or in its folder, and its record when installed. */
+struct Offer {
+    Source                source;
+    std::string           description;
+    std::optional<Record> record;
+};
+
+/* The package sources as lists read in order: the paths and repos sources.rant lists, then
+ * each database. A list is read once, only when a name is not found before it, and a repo's
+ * package.rant at its default branch names its package. */
 class Sources {
 public:
     /* Throws app::Failure when sources.rant is broken. */
@@ -56,8 +66,12 @@ public:
     /* Where a name comes from, nullopt when no source names it. Throws app::Failure. */
     std::optional<Source> find(const std::string& name);
 
-    /* Every package the sources name, each from the first that names it. Throws app::Failure. */
-    std::vector<Source> all();
+    /* The packages the sources name whose name matches pattern, as rant ls matches, each from
+     * the first source that names it. Throws app::Failure. */
+    std::vector<Offer> offers(const std::string& pattern = "");
+
+    /* Why entries of the lists read so far name no package, one line each. */
+    const std::vector<std::string>& problems() const { return problems_; }
 
     /* What sources.rant says, empty without one. */
     const config::Database& local() const { return local_; }
@@ -66,15 +80,28 @@ public:
     std::vector<std::string> databases() const;
 
 private:
-    const config::Database& fetched(size_t i);
+    struct Found {
+        Source      source;
+        std::string description;
+    };
+    struct List {
+        std::string                       named_by;
+        std::optional<std::vector<Found>> found;
+    };
+    const std::vector<Found>& found(size_t i);
 
-    config::Database                                                    local_;
-    std::vector<std::pair<std::string, std::optional<config::Database>>> databases_;
+    config::Database         local_;
+    std::vector<List>        lists_;
+    std::vector<std::string> problems_;
 };
 
-/* What a package's package.rant says of it, at its newest release or as its source has it now. */
+/* The package a repo releases, as its package.rant at the default branch names it, for an
+ * install by the repo's link. Throws app::Failure. */
+Source from_repo(const std::string& repo);
+
+/* What a package's package.rant says of it, at its newest release or as its folder has it. */
 struct About {
-    std::string              version;        /* the newest release, empty when not asked or from a path */
+    std::string              version;        /* the newest release, empty from a path */
     std::string              description;
     std::vector<std::string> files;          /* those of the newest release that install here */
 };
@@ -90,25 +117,10 @@ struct Carried {
 
 Carried carried(const net::Release& r, const std::string& name, const std::string& platform);
 
-/* Reads a source's package.rant: at its newest release when release, else at the repo's
- * default branch, which costs no GitHub API call. Throws app::Failure. */
-About about(const Source& s, bool release);
+/* Reads a source's package.rant, a repo's at its newest release. Throws app::Failure. */
+About about(const Source& s);
 
-/* A package rant install can install: where it comes from, the description its package.rant
- * gives at the default branch, and its record when installed. problem says why there is no
- * description. */
-struct Offer {
-    Source                source;
-    std::string           description;
-    std::optional<Record> record;
-    std::string           problem;
-};
-
-/* The packages the sources name whose name matches pattern, as rant ls matches, each from the
- * first source that names it. Throws app::Failure. */
-std::vector<Offer> offers(Sources& sources, const std::string& pattern = "");
-
-/* The names the databases listed when last fetched, from the cache, for completion. */
+/* The names the sources gave when last read, from the cache, for completion. */
 std::vector<std::string> cached_names();
 
 /* The installed packages by name: folders in dir() and records. */

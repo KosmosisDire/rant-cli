@@ -44,6 +44,9 @@ void download(const std::string& url, const fs::path& dest, bool program = false
  * when it cannot be fetched. */
 std::optional<std::string> fetch(const std::string& url);
 
+/* The text at each url, as fetch gives it, fetched together over one connection. */
+std::vector<std::optional<std::string>> fetch_all(const std::vector<std::string>& urls);
+
 /* The address of one file of a GitHub repo at a tag or branch, "HEAD" for the default branch. */
 std::string raw_url(const std::string& repo, const std::string& ref, const std::string& file);
 

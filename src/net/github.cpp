@@ -6,6 +6,7 @@
 #include <iterator>
 #include <map>
 #include <optional>
+#include <sstream>
 #include <tuple>
 
 #include <nlohmann/json.hpp>
@@ -34,10 +35,12 @@ static std::string read_file(const fs::path& p) {
 struct Scratch {
     fs::path path;
     explicit Scratch(const std::string& what) {
+        static unsigned made = 0;
         fs::path dir = util::rant_home() / "cache";
         std::error_code ec;
         fs::create_directories(dir, ec);
-        path = dir / (what + "-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+        path = dir / (what + "-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + "-" +
+                      std::to_string(made++));
     }
     ~Scratch() {
         std::error_code ec;
@@ -154,28 +157,35 @@ Release parse_release(const std::string& body) {
     return r;
 }
 
-/* Fetches url into body and returns the HTTP status, with the token when given one. */
-static std::string get(const std::string& url, const fs::path& body, bool api) {
+/* Fetches each url into its body file and returns each HTTP status, with the token when given
+ * one. One curl run fetches them all over one connection. */
+static std::vector<std::string> get(const std::vector<std::pair<std::string, fs::path>>& urls, bool api) {
     need_curl();
     Scratch status("status"), headers("headers");
-    std::vector<std::string> argv = { "curl", "-sS", "-L", "--max-time", "60", "-A", "rant-cli", "-o", config::to_utf8(body), "-w", "%{http_code}" };
+    std::vector<std::string> argv = { "curl", "-sS", "-L", "--max-time", "60", "-A", "rant-cli", "-w", "%{http_code}\n" };
     if (api) argv.insert(argv.end(), { "-H", "Accept: application/vnd.github+json" });
     /* the token goes through a file, never the command line other users can read */
     if (const char* token = std::getenv("GITHUB_TOKEN"); api && token && *token) {
         std::ofstream(headers.path, std::ios::binary) << "Authorization: Bearer " << token << "\n";
         argv.insert(argv.end(), { "-H", "@" + config::to_utf8(headers.path) });
     }
-    argv.push_back(url);
+    for (auto& [url, body] : urls) argv.insert(argv.end(), { "-o", config::to_utf8(body), url });
     int code = process::run({ argv, fs::temp_directory_path(), {} }, status.path);
-    if (code != 0) throw app::Failure(curl_failure(url, code));
-    return read_file(status.path);
+    std::vector<std::string> out;
+    std::istringstream lines(read_file(status.path));
+    for (std::string line; std::getline(lines, line);) out.push_back(line.substr(0, line.find('\r')));
+    /* a transfer that reached no server shows the status 000 */
+    for (size_t i = 0; i < urls.size(); i++)
+        if (i >= out.size() || out[i] == "000") throw app::Failure(curl_failure(urls[i].first, code ? code : 7));
+    if (code != 0) throw app::Failure(curl_failure(urls[0].first, code));
+    return out;
 }
 
 /* One release by the API's path for it, nullopt when there is none. */
 static std::optional<Release> release_at(const std::string& repo, const std::string& path) {
     std::string url = "https://api.github.com/repos/" + repo + "/releases/" + path;
     Scratch body("release");
-    std::string http = get(url, body.path, true);
+    std::string http = get({ { url, body.path } }, true)[0];
     if (http == "200") return parse_release(read_file(body.path));
     if (http == "404") return std::nullopt;
     if (http == "403" || http == "429") throw app::Failure("GitHub refused, its rate limit was probably reached. Wait an hour or set GITHUB_TOKEN");
@@ -193,13 +203,23 @@ Release release(const std::string& repo, const std::string& version) {
     throw app::Failure(repo + " has no release " + bare);
 }
 
-std::optional<std::string> fetch(const std::string& url) {
-    Scratch body("fetch");
-    std::string http = get(url, body.path, false);
-    if (http == "200") return read_file(body.path);
-    if (http == "404") return std::nullopt;
-    throw app::Failure(host(url) + " answered " + http + " for " + url);
+std::vector<std::optional<std::string>> fetch_all(const std::vector<std::string>& urls) {
+    std::vector<std::optional<std::string>> out;
+    if (urls.empty()) return out;
+    std::vector<Scratch> bodies;
+    bodies.reserve(urls.size());
+    std::vector<std::pair<std::string, fs::path>> pairs;
+    for (auto& url : urls) pairs.push_back({ url, bodies.emplace_back("fetch").path });
+    std::vector<std::string> http = get(pairs, false);
+    for (size_t i = 0; i < urls.size(); i++) {
+        if (http[i] == "200") out.push_back(read_file(bodies[i].path));
+        else if (http[i] == "404") out.push_back(std::nullopt);
+        else throw app::Failure(host(urls[i]) + " answered " + http[i] + " for " + urls[i]);
+    }
+    return out;
 }
+
+std::optional<std::string> fetch(const std::string& url) { return fetch_all({ url })[0]; }
 
 std::string raw_url(const std::string& repo, const std::string& ref, const std::string& file) {
     return "https://raw.githubusercontent.com/" + repo + "/" + ref + "/" + file;

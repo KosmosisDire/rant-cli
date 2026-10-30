@@ -30,7 +30,7 @@ endif()
 # An extension's build folder: its package.rant and the .vsix its build wrote, a zip whose
 # extension/package.json names the extension.
 set(build "${SCRATCH}/ext-build")
-file(WRITE "${build}/package.rant" "description = \"A test extension\"\n")
+file(WRITE "${build}/package.rant" "name = \"ext\"\ndescription = \"A test extension\"\n")
 file(WRITE "${SCRATCH}/zip/extension/package.json" "{ \"name\": \"ext\", \"publisher\": \"Test\", \"version\": \"0.0.1\" }\n")
 execute_process(COMMAND "${CMAKE_COMMAND}" -E tar cf "${build}/ext-0.0.1.vsix" --format=zip extension
                 WORKING_DIRECTORY "${SCRATCH}/zip" RESULT_VARIABLE packed)
@@ -40,7 +40,7 @@ endif()
 
 # The editor options belong to an extension, and a missing editor is refused before anything
 # is installed.
-file(WRITE "${SCRATCH}/plain/package.rant" "description = \"No extension\"\n")
+file(WRITE "${SCRATCH}/plain/package.rant" "name = \"plain\"\ndescription = \"No extension\"\n")
 rant(install plain --from plain --editor "${editor}" FAILS)
 expect_match("${ERR}" "plain is no VS Code extension, so --editor and --profile do not apply")
 rant(install ext --from ext-build --editor no-such-editor-here FAILS)
