@@ -507,6 +507,9 @@ rant_queue_dispatch(q, 0, 100);              /* on the thread that runs them */
     `src/bin/arm_controller.rs`. Name a node for what it is (`lidar`, not `lidar_node`).
   - Entities and namespaces are PascalCase, `/` between levels: `FrontLidar/JointState`,
     `Line1/Conveyor`. So are types and enum options.
+  - Every struct and enum has a name, the same in every language that sends or reads it.
+    In schema text define it once and use the name: `Mode = enum<u8> { Idle, Run }` then
+    `Arm { mode: Mode }`. An inline `{ }` or `enum` in a field is refused.
   - Groups are PascalCase: `Nav.run`, run as `rant run Nav`. Names match without case or
     underscores, so the group `Nav` and the node `nav` are one name and the group wins:
     `rant stop nav` stops the group, `rant stop node nav` the node alone.
