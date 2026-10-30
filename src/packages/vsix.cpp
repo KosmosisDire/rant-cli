@@ -234,6 +234,11 @@ static fs::path editor_of(const app::Context& ctx) {
                        "or pass --editor for another editor");
 }
 
+bool editor_found(const app::Context& ctx) {
+    std::optional<std::string> given = ctx.args.get("editor");
+    return process::find_program(given ? *given : "code", ctx.cwd()).has_value();
+}
+
 Target target(const app::Context& ctx) {
     fs::path editor = editor_of(ctx);
     return { editor, profile_of(ctx, editor) };

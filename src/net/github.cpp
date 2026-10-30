@@ -181,15 +181,31 @@ static std::vector<std::string> get(const std::vector<std::pair<std::string, fs:
     return out;
 }
 
-/* One release by the API's path for it, nullopt when there is none. */
-static std::optional<Release> release_at(const std::string& repo, const std::string& path) {
-    std::string url = "https://api.github.com/repos/" + repo + "/releases/" + path;
-    Scratch body("release");
-    std::string http = get({ { url, body.path } }, true)[0];
-    if (http == "200") return parse_release(read_file(body.path));
-    if (http == "404") return std::nullopt;
-    if (http == "403" || http == "429") throw app::Failure("GitHub refused, its rate limit was probably reached. Wait an hour or set GITHUB_TOKEN");
-    throw app::Failure("GitHub answered " + http + " for " + url);
+/* Releases of repos by the API's path for each, nullopt for one there is none of. */
+static std::vector<std::optional<Release>> releases_at(const std::vector<std::pair<std::string, std::string>>& wanted) {
+    std::vector<std::optional<Release>> out;
+    if (wanted.empty()) return out;
+    std::vector<Scratch> bodies;
+    bodies.reserve(wanted.size());
+    std::vector<std::pair<std::string, fs::path>> urls;
+    for (auto& [repo, path] : wanted) urls.push_back({ "https://api.github.com/repos/" + repo + "/releases/" + path, bodies.emplace_back("release").path });
+    std::vector<std::string> http = get(urls, true);
+    for (size_t i = 0; i < urls.size(); i++) {
+        if (http[i] == "200") out.push_back(parse_release(read_file(bodies[i].path)));
+        else if (http[i] == "404") out.push_back(std::nullopt);
+        else if (http[i] == "403" || http[i] == "429")
+            throw app::Failure("GitHub refused, its rate limit was probably reached. Wait an hour or set GITHUB_TOKEN");
+        else throw app::Failure("GitHub answered " + http[i] + " for " + urls[i].first);
+    }
+    return out;
+}
+
+static std::optional<Release> release_at(const std::string& repo, const std::string& path) { return releases_at({ { repo, path } })[0]; }
+
+std::vector<std::optional<Release>> latest(const std::vector<std::string>& repos) {
+    std::vector<std::pair<std::string, std::string>> wanted;
+    for (auto& r : repos) wanted.push_back({ r, "latest" });
+    return releases_at(wanted);
 }
 
 Release release(const std::string& repo, const std::string& version) {

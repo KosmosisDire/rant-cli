@@ -28,6 +28,10 @@ struct Release {
  * one tagged v<version> or <version>, given with or without its v. Throws app::Failure. */
 Release release(const std::string& repo, const std::string& version = "");
 
+/* The latest release of each repo as release finds it, nullopt for one with none, asked for
+ * together over one connection. Throws app::Failure. */
+std::vector<std::optional<Release>> latest(const std::vector<std::string>& repos);
+
 /* Whether a version is newer than another, number by number, 0.0.12 over 0.0.9, and a
  * pre-release such as 1.2.0-beta.1, 1.2.0-rc.1 or 1.2.0b1 before its release. */
 bool newer(const std::string& version, const std::string& than);

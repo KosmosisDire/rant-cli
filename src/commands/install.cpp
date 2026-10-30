@@ -6,7 +6,9 @@
 #include "commands/enable.hpp"
 #include "complete/complete.hpp"
 #include "config/config.hpp"
+#include "net/github.hpp"
 #include "packages/packages.hpp"
+#include "packages/vsix.hpp"
 #include "ui/checklist.hpp"
 #include "ui/terminal.hpp"
 
@@ -82,8 +84,29 @@ static int offer_boot(app::Context& ctx, const std::vector<std::string>& install
     return code;
 }
 
-/* With no names on a terminal: a checklist of every package there is, then one of their
- * groups to run at every boot. */
+/* Whether each offer is a VS Code extension its latest release carries, all false when that
+ * cannot be told. */
+static std::vector<bool> extensions(app::Context& ctx, const std::vector<packages::Offer>& offers) {
+    std::vector<bool> out(offers.size(), false);
+    std::vector<std::string> repos;
+    std::vector<size_t> at;
+    for (size_t i = 0; i < offers.size(); i++)
+        if (!offers[i].source.repo.empty() && !offers[i].record) {
+            repos.push_back(offers[i].source.repo);
+            at.push_back(i);
+        }
+    try {
+        std::vector<std::optional<net::Release>> found = net::latest(repos);
+        for (size_t k = 0; k < at.size(); k++)
+            out[at[k]] = found[k] && packages::carried(*found[k], offers[at[k]].source.name, net::platform()).extension;
+    } catch (const app::Failure& e) {
+        ctx.out.warn(e.what());
+    }
+    return out;
+}
+
+/* With no names on a terminal: a checklist of every package there is, those not installed
+ * ticked but an editor extension with no editor found, then their groups to run at every boot. */
 static int pick(app::Context& ctx) {
     if (ctx.yes || !ui::is_terminal(stdin) || ctx.args.has("version") || ctx.args.has("from"))
         throw app::UsageError("install needs a package, `rant ls packages --available` lists them");
@@ -91,11 +114,14 @@ static int pick(app::Context& ctx) {
     packages::Sources sources;
     std::vector<packages::Offer> offers = sources.offers();
     for (auto& p : sources.problems()) ctx.out.warn(p);
+    std::vector<bool> skipped = packages::vsix::editor_found(ctx) ? std::vector<bool>(offers.size(), false) : extensions(ctx, offers);
     std::vector<ui::Choice> choices;
-    for (auto& o : offers) {
+    for (size_t i = 0; i < offers.size(); i++) {
+        auto& o = offers[i];
         std::string state;
         if (o.record) state = o.record->version.empty() ? "installed, " : "installed " + o.record->version + ", ";
-        choices.push_back({ o.source.name, state + o.description });
+        else if (skipped[i]) state = "no editor found, ";
+        choices.push_back({ o.source.name, state + o.description, !o.record && !skipped[i] });
     }
     std::optional<std::vector<size_t>> ticked = ui::pick(ctx.out, "Packages to install", choices);
     if (!ticked || ticked->empty()) return 0;

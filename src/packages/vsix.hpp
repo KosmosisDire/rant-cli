@@ -45,6 +45,9 @@ std::vector<std::string> folder_profiles(const std::string& storage, const std::
  * one the user picks. Throws app::Failure. */
 Target target(const app::Context& ctx);
 
+/* Whether target would find an editor: --editor's, else VS Code's `code`. */
+bool editor_found(const app::Context& ctx);
+
 /* An extension's version in a target, empty when it does not have it. */
 std::string installed_version(const Target& t, const std::string& id);
 
