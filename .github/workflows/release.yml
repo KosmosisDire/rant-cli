@@ -105,7 +105,7 @@ jobs:
       # the package rant carries its skill folder, the files at the zip's top
       - name: Skill
         working-directory: source/skill
-        run: zip -r "$GITHUB_WORKSPACE/release/rant-${{ needs.plan.outputs.version }}-skill.zip" .
+        run: zip -r "$GITHUB_WORKSPACE/release/rant_skill-${{ needs.plan.outputs.version }}-skill.zip" .
 
       - uses: softprops/action-gh-release@v3
         with:

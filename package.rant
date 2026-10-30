@@ -1,2 +1,2 @@
-name        = "rant"
+name        = "rant_skill"
 description = "The rant skill, which teaches AI coding agents to use Rant and the CLI"

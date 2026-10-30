@@ -582,7 +582,8 @@ static void install_path(app::Context& ctx, const Source& s, Record& rec) {
 }
 
 /* Links the package's skill folder as <skills>/<name> into each folder of skills an AI coding
- * agent found reads, replacing what is there, and drops the links had made when it has none. */
+ * agent found reads, each _ written as -, since a skill's name takes no _. It replaces what is
+ * there, and drops the links had made when the package has no skill. */
 static void link_skills(app::Context& ctx, Record& rec, const std::vector<fs::path>& had) {
     fs::path skill = fs::absolute(dir() / rec.name / "skill").lexically_normal();
     std::error_code ec;
@@ -598,16 +599,18 @@ static void link_skills(app::Context& ctx, Record& rec, const std::vector<fs::pa
         if (r == readers.end()) readers.push_back({ a.skills, a.name });
         else r->second += ", " + a.name;
     }
-    if (readers.empty()) ctx.out.note("found no AI coding agent here to give the " + rec.name + " skill to");
+    if (readers.empty()) ctx.out.note("found no AI coding agent here to give the skill of " + rec.name + " to");
+    std::string folder_name = rec.name;
+    std::replace(folder_name.begin(), folder_name.end(), '_', '-');
     for (auto& [folder, names] : readers) {
-        fs::path link = folder / rec.name;
+        fs::path link = folder / folder_name;
         try {
             if (!is_link(link) || std::find(had.begin(), had.end(), link) == had.end()) {
                 if (is_link(link)) unlink(link);
                 fs::remove_all(link, ec);
                 fs::create_directories(folder, ec);
                 make_link(link, skill);
-                ctx.out.note("linked the " + rec.name + " skill for " + names + " as " + u8(link));
+                ctx.out.note("linked the skill of " + rec.name + " for " + names + " as " + u8(link));
             }
             rec.skills.push_back(link);
         } catch (const app::Failure& e) {

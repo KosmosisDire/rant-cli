@@ -158,7 +158,7 @@ static int run(app::Context& ctx) {
         std::optional<packages::Record> r = packages::record(name);
         if (!r) continue;
         for (auto& link : r->skills)
-            if (packages::is_link(link)) steps.push_back({ link, "the " + name + " skill", [link] { packages::unlink(link); } });
+            if (packages::is_link(link)) steps.push_back({ link, "the skill of " + name, [link] { packages::unlink(link); } });
         if (r->extension.empty() || !fs::is_regular_file(r->editor)) continue;
         packages::vsix::Target t{ r->editor, r->profile };
         if (!packages::vsix::installed_version(t, r->extension).empty())

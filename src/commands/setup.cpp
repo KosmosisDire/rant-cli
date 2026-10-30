@@ -44,7 +44,7 @@ static int run(app::Context& ctx) {
     ctx.out.note("new shells load it, this one does not");
     std::string names;
     for (auto& a : agents::detected()) names += (names.empty() ? "" : ", ") + a.name;
-    if (!names.empty() && !packages::record("rant")) ctx.out.note("`rant install rant` teaches " + names + " to use Rant");
+    if (!names.empty() && !packages::record("rant_skill")) ctx.out.note("`rant install rant_skill` teaches " + names + " to use Rant");
     return failed ? 1 : 0;
 }
 

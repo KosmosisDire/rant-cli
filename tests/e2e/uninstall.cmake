@@ -19,7 +19,7 @@ rant(uninstall)
 expect_match("${OUT}" "removing:\n")
 expect_match("${OUT}" "[.]bashrc [(]its rant lines[)]\n")
 expect_match("${OUT}" "conf[.]d.rant[.]fish\n")
-expect_match("${OUT}" "[.]claude.skills.tool [(]the tool skill[)]\n")
+expect_match("${OUT}" "[.]claude.skills.tool [(]the skill of tool[)]\n")
 expect_match("${OUT}" "Workspaces stay as they are")
 expect_match("${OUT}" "uninstalled rant-cli\n")
 

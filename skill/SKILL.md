@@ -1,5 +1,5 @@
 ---
-name: rant
+name: rant-skill
 description: Rant robotics middleware and the rant CLI. Use when a project uses Rant (workspace.rant, package.rant, *.run, rant.hpp, import rant, using Rant), or the user asks to make, build, run, debug or inspect Rant nodes, topics, variables, functions or tasks.
 ---
 
@@ -67,7 +67,7 @@ databases = ["someone/rant-packages"]
 | explain one thing | `rant info [kind] <name>`, a type shows its fields and who uses it, a node its source file |
 | read and write | `rant sub <topic\|var> -n 1`, `rant pub <topic\|var> <value>`, `rant call <fn> [value]`. On a terminal sub and a task's progress redraw in place, `--lines` (and any pipe) prints a record a line of `from`, `hz` and `value`, a call's result last. `--value-only` prints only the values. `--json` and `--csv` only change the format |
 | Rant version in packages | `rant lib [folder]` shows it, `rant lib install [folder]` adds it, `rant lib update [folder]` moves it, both take `--version V` |
-| packages | `rant install <package\|repo>...` (`--version V` for one release, `--from PATH` for a local build folder, linked, or a .tar.gz). A package installed from a repo's link is never replaced by one of the same name from elsewhere, `rant remove` it first. `rant install` alone on a terminal is a checklist for a person, then one of their groups to run at every boot, so an agent names the packages. `rant remove <package>...`, `rant ls packages --available` for what there is, `rant ls sources` for where it looks, `rant info package <name>` before installing. A package that carries a skill gives it to each AI coding agent found, as this skill is the package `rant`. `rant install` and `rant remove` need a package's nodes stopped, `rant update` stops them and starts them again |
+| packages | `rant install <package\|repo>...` (`--version V` for one release, `--from PATH` for a local build folder, linked, or a .tar.gz). A package installed from a repo's link is never replaced by one of the same name from elsewhere, `rant remove` it first. `rant install` alone on a terminal is a checklist for a person, then one of their groups to run at every boot, so an agent names the packages. `rant remove <package>...`, `rant ls packages --available` for what there is, `rant ls sources` for where it looks, `rant info package <name>` before installing. A package that carries a skill gives it to each AI coding agent found, as this skill is the package `rant_skill`. `rant install` and `rant remove` need a package's nodes stopped, `rant update` stops them and starts them again |
 | update | `rant update`: the CLI and the installed packages with their skills, then the workspace's packages. `rant update <package>...` updates only those. A package from `--from` stays until `rant install` replaces it |
 | visual debugger | `rant explore`, after `rant install explorer` |
 | web frontends | `rant install bridge`, then `rant run Bridge`, see Bridge |
