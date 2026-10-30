@@ -4,7 +4,7 @@ include("${CMAKE_CURRENT_LIST_DIR}/lib.cmake")
 # the groups beside them, as rant install leaves it.
 set(PKG "$ENV{RANT_HOME}/packages/tool")
 install_test_node("home/.rant/packages/tool/bin")
-file(WRITE "${PKG}/package.rant" "description = \"Answers questions\"\narchive = \"tool-$\{version}.tar.gz\"\nnode \"tool\" {\n  run = [\"./bin/test_node\", \"--life\", \"60\"]\n}\nnode \"idle\" {\n  run = [\"${CMAKE_COMMAND}\", \"-E\", \"sleep\", \"60\"]\n  expect_mesh = false\n}\n")
+file(WRITE "${PKG}/package.rant" "description = \"Answers questions\"\nnode \"tool\" {\n  run = [\"./bin/test_node\", \"--life\", \"60\"]\n}\nnode \"idle\" {\n  run = [\"${CMAKE_COMMAND}\", \"-E\", \"sleep\", \"60\"]\n  expect_mesh = false\n}\n")
 file(WRITE "${PKG}/Tool.run" "node \"tool\" {}\n")
 if(TEST_WINDOW)
   file(COPY_FILE "${TEST_WINDOW}" "${PKG}/bin/test_window.exe")

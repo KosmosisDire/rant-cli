@@ -7,6 +7,7 @@
 
 #include "app/context.hpp"
 #include "config/config.hpp"
+#include "net/github.hpp"
 
 /* The packages rant install puts in ~/.rant/packages, a folder each that every workspace sees.
  * A package comes from a GitHub repo's releases or from a path on this machine, as
@@ -73,11 +74,21 @@ private:
 
 /* What a package's package.rant says of it, at its newest release or as its source has it now. */
 struct About {
-    std::string version;        /* the newest release, empty when not asked or from a path */
-    std::string description;
-    std::string archive;        /* the files that release carries, empty for a kind it lacks */
-    std::string vsix;
+    std::string              version;        /* the newest release, empty when not asked or from a path */
+    std::string              description;
+    std::vector<std::string> files;          /* those of the newest release that install here */
 };
+
+/* What a release carries for a package on a platform, found by the names a release gives its
+ * files: <name>-<version>-<platform>.tar.gz, unpacked into the package's folder, and
+ * <name>-<version>.vsix, installed into an editor. */
+struct Carried {
+    const net::Asset*        archive = nullptr;
+    const net::Asset*        extension = nullptr;
+    std::vector<std::string> platforms;    /* those it has archives for */
+};
+
+Carried carried(const net::Release& r, const std::string& name, const std::string& platform);
 
 /* Reads a source's package.rant: at its newest release when release, else at the repo's
  * default branch, which costs no GitHub API call. Throws app::Failure. */

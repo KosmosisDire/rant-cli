@@ -104,6 +104,21 @@ std::vector<Source> Sources::all() {
     return out;
 }
 
+static bool ends_with(const std::string& s, const std::string& end) {
+    return s.size() >= end.size() && s.compare(s.size() - end.size(), end.size(), end) == 0;
+}
+
+Carried carried(const net::Release& r, const std::string& name, const std::string& platform) {
+    Carried c;
+    std::string prefix = name + "-" + r.version;
+    c.archive = r.asset(prefix + "-" + platform + ".tar.gz");
+    c.extension = r.asset(prefix + ".vsix");
+    for (auto& a : r.assets)
+        if (a.name.rfind(prefix + "-", 0) == 0 && ends_with(a.name, ".tar.gz"))
+            c.platforms.push_back(a.name.substr(prefix.size() + 1, a.name.size() - prefix.size() - 8));
+    return c;
+}
+
 About about(const Source& s, bool release) {
     About a;
     std::string text;
@@ -114,6 +129,9 @@ About about(const Source& s, bool release) {
             net::Release r = net::release(s.repo);
             a.version = r.version;
             ref = r.tag;
+            Carried c = carried(r, s.name, net::platform());
+            for (const net::Asset* f : { c.archive, c.extension })
+                if (f) a.files.push_back(f->name);
         }
         std::optional<std::string> t = net::fetch(net::raw_url(s.repo, ref, package_file));
         if (!t) throw app::Failure(s.repo + " has no package.rant at " + ref);
@@ -123,14 +141,9 @@ About about(const Source& s, bool release) {
     } else {
         return a;
     }
-    config::PackageRelease rel = config::read_release(dir() / s.name, text, a.version, net::platform());
+    config::PackageRelease rel = config::read_release(dir() / s.name, text);
     if (!rel.diagnostics.empty()) throw app::Failure(rel.diagnostics[0].str());
     a.description = rel.description;
-    /* a file name needs the release's version, and a path installs no file */
-    if (release && !s.repo.empty()) {
-        a.archive = rel.archive;
-        a.vsix = rel.vsix;
-    }
     return a;
 }
 
@@ -409,12 +422,9 @@ struct Download {
     }
 };
 
-static bool is_archive(const fs::path& p) {
-    std::string s = u8(p.filename());
-    return s.size() > 7 && s.compare(s.size() - 7, 7, ".tar.gz") == 0;
-}
+static bool is_archive(const fs::path& p) { return ends_with(u8(p.filename()), ".tar.gz"); }
 
-/* A release of a repo: its package.rant at the release's tag names the file to fetch. */
+/* A release of a repo, the files it carries found by their names. */
 static void install_release(app::Context& ctx, const Source& s, const std::string& version, Record& rec) {
     net::Release r = net::release(s.repo, version);
     std::optional<Record> had = record(s.name);
@@ -429,15 +439,20 @@ static void install_release(app::Context& ctx, const Source& s, const std::strin
     refuse_running(s.name);
     std::optional<std::string> text = net::fetch(net::raw_url(s.repo, r.tag, package_file));
     if (!text) throw app::Failure(s.repo + " has no package.rant at " + r.tag + ", so that release is no package");
-    config::PackageRelease rel = config::read_release(dir() / s.name, *text, r.version, net::platform());
+    config::PackageRelease rel = config::read_release(dir() / s.name, *text);
     if (!rel.diagnostics.empty()) throw app::Failure(s.repo + " " + r.tag + ": " + rel.diagnostics[0].str());
-    if (rel.archive.empty() && rel.vsix.empty())
-        throw app::Failure(s.name + " " + r.version + " names no `archive` or `vsix` in its package.rant, so it has nothing to install");
-    if (rel.vsix.empty() && retarget) throw app::Failure(s.name + " is no VS Code extension, so --editor and --profile do not apply");
-    const net::Asset* archive = rel.archive.empty() ? nullptr : r.asset(rel.archive);
-    const net::Asset* extension = rel.vsix.empty() ? nullptr : r.asset(rel.vsix);
-    for (auto [name, asset] : { std::pair{ rel.archive, archive }, std::pair{ rel.vsix, extension } })
-        if (!name.empty() && !asset) throw app::Failure("the " + s.name + " " + r.version + " release has no " + name + ", built for " + net::platform());
+    Carried c = carried(r, s.name, net::platform());
+    const net::Asset *archive = c.archive, *extension = c.extension;
+    std::string release = "the " + s.name + " " + r.version + " release";
+    if (!archive && !c.platforms.empty()) {
+        std::string built;
+        for (auto& p : c.platforms) built += (built.empty() ? "" : ", ") + p;
+        throw app::Failure(release + " is built for " + built + ", not for " + net::platform());
+    }
+    if (!archive && !extension)
+        throw app::Failure(release + " carries no " + s.name + "-" + r.version + "-" + net::platform() + ".tar.gz or " + s.name + "-" +
+                           r.version + ".vsix, so it has nothing to install");
+    if (!extension && retarget) throw app::Failure(s.name + " is no VS Code extension, so --editor and --profile do not apply");
     /* the editor and profile first, since picking one may ask */
     std::optional<vsix::Target> t;
     if (extension) t = extension_target(ctx, s.name);
@@ -454,17 +469,19 @@ static void install_release(app::Context& ctx, const Source& s, const std::strin
     ctx.out.note("installed " + s.name + " " + r.version + " from " + s.repo);
 }
 
-/* The newest .vsix in a build folder, which its build wrote last. */
-static fs::path newest_vsix(const fs::path& folder) {
+/* The newest extension of a package a build folder holds, which its build wrote last, named as
+ * a release names it. Empty when there is none. */
+static fs::path newest_vsix(const fs::path& folder, const std::string& name) {
     fs::path out;
     fs::file_time_type when{};
     std::error_code ec;
-    for (fs::directory_iterator it(folder, ec), end; !ec && it != end; it.increment(ec))
-        if (it->path().extension() == ".vsix" && (out.empty() || it->last_write_time(ec) > when)) {
+    for (fs::directory_iterator it(folder, ec), end; !ec && it != end; it.increment(ec)) {
+        std::string file = u8(it->path().filename());
+        if (file.rfind(name + "-", 0) == 0 && ends_with(file, ".vsix") && (out.empty() || it->last_write_time(ec) > when)) {
             out = it->path();
             when = it->last_write_time(ec);
         }
-    if (out.empty()) throw app::Failure(u8(folder) + " holds no .vsix to install, build one there first");
+    }
     return out;
 }
 
@@ -475,13 +492,14 @@ static void install_path(app::Context& ctx, const Source& s, Record& rec) {
     if (fs::is_directory(s.path, ec)) {
         fs::path file = s.path / package_file;
         if (!fs::is_regular_file(file, ec)) throw app::Failure(u8(s.path) + " holds no package.rant, so it is no package");
-        config::PackageRelease rel = config::read_release(s.path, read_file(file), "", net::platform());
+        config::PackageRelease rel = config::read_release(s.path, read_file(file));
         if (!rel.diagnostics.empty()) throw app::Failure(rel.diagnostics[0].str());
-        if (rel.vsix.empty() && retarget) throw app::Failure(s.name + " is no VS Code extension, so --editor and --profile do not apply");
-        if (!rel.vsix.empty()) install_extension(ctx, extension_target(ctx, s.name), newest_vsix(s.path), rec);
+        fs::path extension = newest_vsix(s.path, s.name);
+        if (extension.empty() && retarget) throw app::Failure(s.name + " is no VS Code extension, so --editor and --profile do not apply");
+        if (!extension.empty()) install_extension(ctx, extension_target(ctx, s.name), extension, rec);
         retire(s.name);
         make_link(dir() / s.name, fs::absolute(s.path).lexically_normal());
-        ctx.out.note("linked " + s.name + " to " + u8(s.path) + (rel.vsix.empty() ? ", so its builds there count at once" : ""));
+        ctx.out.note("linked " + s.name + " to " + u8(s.path) + (extension.empty() ? ", so its builds there count at once" : ""));
         return;
     }
     if (retarget) throw app::Failure("--editor and --profile go with a VS Code extension, which an archive holds none of");
@@ -556,7 +574,9 @@ std::optional<Update> check(app::Context& ctx, Sources& sources, const std::stri
         /* a linked folder is current by itself, but its extension is built into a file */
         u.needed = !is_link(target);
         if (!rec->extension.empty()) {
-            u.to = config::read_vsix(newest_vsix(s->path)).version;
+            fs::path extension = newest_vsix(s->path, name);
+            if (extension.empty()) throw app::Failure(u8(s->path) + " holds no " + name + "-*.vsix to install, build one there first");
+            u.to = config::read_vsix(extension).version;
             u.needed = u.needed || u.to != rec->version;
         }
     } else {

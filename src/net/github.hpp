@@ -18,17 +18,18 @@ struct Asset {
 
 struct Release {
     std::string        tag;
-    std::string        version;    /* the tag without its v */
+    std::string        version;    /* the tag without a v before its number */
     std::vector<Asset> assets;
 
     const Asset* asset(const std::string& name) const;
 };
 
-/* A release of owner/name, the latest when tag is empty. A version without its v finds the
- * v tag too. Throws app::Failure. */
-Release release(const std::string& repo, const std::string& tag = "");
+/* A release of owner/name: the latest that is no pre-release when version is empty, else the
+ * one tagged v<version> or <version>, given with or without its v. Throws app::Failure. */
+Release release(const std::string& repo, const std::string& version = "");
 
-/* Whether a dotted version is newer than another, number by number: 0.0.12 over 0.0.9. */
+/* Whether a version is newer than another, number by number, 0.0.12 over 0.0.9, and a
+ * pre-release such as 1.2.0-beta.1, 1.2.0-rc.1 or 1.2.0b1 before its release. */
 bool newer(const std::string& version, const std::string& than);
 
 /* A release from the API's JSON answer. Throws app::Failure when it cannot be read. */

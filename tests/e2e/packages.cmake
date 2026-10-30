@@ -5,7 +5,7 @@ include("${CMAKE_CURRENT_LIST_DIR}/lib.cmake")
 set(home "$ENV{RANT_HOME}")
 set(build "${SCRATCH}/tool-build")
 install_test_node("tool-build/bin" tool)
-file(WRITE "${build}/package.rant" "description = \"A test tool\"\narchive = \"tool-$\{version}-$\{platform}.tar.gz\"\nnode \"worker\" {\n  run = [\"$\{path.package}/bin/tool\", \"--life\", \"60\"]\n}\n")
+file(WRITE "${build}/package.rant" "description = \"A test tool\"\nnode \"worker\" {\n  run = [\"$\{path.package}/bin/tool\", \"--life\", \"60\"]\n}\n")
 file(WRITE "${build}/Tool.run" "node \"tool/worker\" {}\n")
 execute_process(COMMAND "${CMAKE_COMMAND}" -E tar czf "${SCRATCH}/tool.tar.gz" package.rant Tool.run bin
                 WORKING_DIRECTORY "${build}" RESULT_VARIABLE packed)

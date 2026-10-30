@@ -334,10 +334,7 @@ static int run(app::Context& ctx) {
             if (!about.description.empty()) a.fields["description"] = about.description;
             a.fields["source"] = s->repo.empty() ? config::to_utf8(s->path) : s->repo;
             if (!about.version.empty()) a.fields["latest"] = about.version;
-            json files = json::array();
-            for (auto& f : { about.archive, about.vsix })
-                if (!f.empty()) files.push_back(f);
-            a.fields["files"] = files;
+            a.fields["files"] = about.files;
             a.fields["installed"] = false;
             answers.push_back({ Kind::Package, a });
             if (!ctx.json) ctx.out.note("`rant install " + name + "` installs it");

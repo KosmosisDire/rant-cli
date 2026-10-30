@@ -98,11 +98,12 @@ package.rant in a package: `name`, `description`, `build` (commands replacing th
 `expect_mesh = false` to one that never joins the mesh, so `rant run` waits only for it to
 start.
 
-A package others install says what each release carries, by kind: `archive =
-"rant-x-${version}-${platform}.tar.gz"` holds bin/, package.rant and the run files, unpacked into
-`~/.rant/packages/<name>`, and `vsix = "rant-x-${version}.vsix"` goes into editors. `version`
-is the release tag without its v, `platform` one of win-x64, win-arm64, linux-x64,
-linux-arm64, osx-x64 and osx-arm64.
+A package others install names its release files by rule: `<name>-<version>-<platform>.tar.gz`
+holds bin/, package.rant and the run files, unpacked into `~/.rant/packages/<name>`, and
+`<name>-<version>.vsix` goes into editors. `version` is the release tag without its v, such as
+1.2.0 or 1.2.0-beta.1, `platform` one of win-x64, win-arm64, linux-x64, linux-arm64, osx-x64
+and osx-arm64. A plain install takes the newest release that is no pre-release, `--version`
+any one.
 
 A group is `<Name>.run`:
 

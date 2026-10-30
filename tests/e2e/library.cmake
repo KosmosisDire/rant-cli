@@ -56,4 +56,4 @@ rant(lib update cam --version 0.0.17)
 expect_match("${OUT}" "everything here is at 0[.]0[.]17")
 
 rant(lib install --version 0.0.99 FAILS)
-expect_match("${ERR}" "has no release v0[.]0[.]99")
+expect_match("${ERR}" "has no release 0[.]0[.]99")

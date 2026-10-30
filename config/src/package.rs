@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use crate::argv;
 use crate::diag::Diag;
-use crate::eval::{self, FileName, Scope, StringOrList};
+use crate::eval::{self, Scope, StringOrList};
 use crate::placement::{self, Placement};
 use crate::source::{one_label, Fields, Source};
 
@@ -17,10 +17,6 @@ pub struct PackageBlock {
     pub name: Option<String>,
     /// What the package is for, shown by `rant info package`.
     pub description: Option<String>,
-    /// The files its releases carry for `rant install`, by kind: an archive unpacked into
-    /// rant's home, a vsix installed into editors.
-    pub archive: Option<FileName>,
-    pub vsix: Option<FileName>,
     /// Commands run in order, replacing the default build. None keeps the default.
     pub build: Option<Vec<Vec<String>>>,
     pub depend: Vec<String>,
@@ -54,7 +50,7 @@ pub fn from_text(dir: &Path, text: String, workspace: &Path) -> Result<PackageBl
 
 fn from_source(src: Source, dir: &Path, workspace: &Path) -> Result<PackageBlock, Diag> {
     let scope = Scope { params: None, file_dir: dir, package_dir: Some(dir), workspace };
-    let keys = [&["name", "description", "archive", "vsix", "build", "depend", "ignore", "python"][..], &placement::KEYS[..]].concat();
+    let keys = [&["name", "description", "build", "depend", "ignore", "python"][..], &placement::KEYS[..]].concat();
     let fields = Fields::of_body(&src, &src.body, PACKAGE_FILE, &keys, &["node"])?;
 
     let mut out = PackageBlock { file: src.path.clone(), placement: Placement::read(&src, &fields.attrs, &scope)?, ..Default::default() };
@@ -64,8 +60,6 @@ fn from_source(src: Source, dir: &Path, workspace: &Path) -> Result<PackageBlock
     if let Some(a) = fields.attr("description") {
         out.description = Some(eval::string(&src, a, &scope)?);
     }
-    out.archive = fields.attr("archive").map(|a| FileName::read(&src, a)).transpose()?;
-    out.vsix = fields.attr("vsix").map(|a| FileName::read(&src, a)).transpose()?;
     if let Some(a) = fields.attr("build") {
         let commands = match eval::string_or_list(&src, a, &scope)? {
             StringOrList::One(s) => vec![s],
@@ -140,15 +134,13 @@ node "raw" {
     }
 
     #[test]
-    fn reads_what_its_releases_carry() {
+    fn reads_a_release_not_yet_installed() {
         let t = TestDir::new();
-        let text = "name = \"bridge\"\ndescription = \"Lends sockets\"\narchive = \"rant-bridge-${version}-${platform}.zip\"\n";
-        let p = from_text(&t.path("bridge"), text.into(), t.root()).unwrap();
-        assert_eq!(p.description.as_deref(), Some("Lends sockets"));
-        let target = eval::Target { version: "0.3.0", platform: "linux-x64" };
-        assert_eq!(p.archive.unwrap().of(&target).unwrap(), "rant-bridge-0.3.0-linux-x64.zip");
-        assert!(p.vsix.is_none());
+        let p = from_text(&t.path("bridge"), "name = \"bridge\"\ndescription = \"Lends sockets\"\n".into(), t.root()).unwrap();
+        assert_eq!((p.name.as_deref(), p.description.as_deref()), (Some("bridge"), Some("Lends sockets")));
         assert!(p.file.ends_with("bridge/package.rant"));
+        let err = from_text(&t.path("x"), "archive = \"x.tar.gz\"\n".into(), t.root()).err().unwrap();
+        assert!(err.message.contains("unknown attribute `archive`"), "{}", err.message);
     }
 
     #[test]

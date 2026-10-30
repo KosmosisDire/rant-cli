@@ -200,15 +200,13 @@ Folders folders_under(const fs::path& start);
 
 /* A package.rant as one release carries it, read before that release is installed. */
 struct PackageRelease {
+    std::string             name;
     std::string             description;
-    std::string             archive;    /* the release's files by kind, empty for a kind it lacks */
-    std::string             vsix;
     std::vector<Diagnostic> diagnostics;
 };
 
-/* Reads package.rant text as if it were in dir, where the release installs, and names the
- * release's files for version and platform. */
-PackageRelease read_release(const fs::path& dir, const std::string& text, const std::string& version, const std::string& platform);
+/* Reads package.rant text as if it were in dir, where the release installs. */
+PackageRelease read_release(const fs::path& dir, const std::string& text);
 
 /* One package a database names, from a GitHub repo as owner/name or, in sources.rant, a
  * folder or archive on this machine. Exactly one of repo and path is set. */

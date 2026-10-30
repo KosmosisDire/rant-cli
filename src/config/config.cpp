@@ -221,11 +221,11 @@ Folders folders_under(const fs::path& start) {
     return out;
 }
 
-PackageRelease read_release(const fs::path& dir, const std::string& text, const std::string& version, const std::string& platform) {
+PackageRelease read_release(const fs::path& dir, const std::string& text) {
     std::unique_ptr<RantConfigRelease, decltype(&rant_config_release_free)> h(
-        rant_config_release(to_utf8(dir).c_str(), text.c_str(), version.c_str(), platform.c_str()), &rant_config_release_free);
+        rant_config_release(to_utf8(dir).c_str(), text.c_str()), &rant_config_release_free);
     const RantConfigReleaseView* v = rant_config_release_view(h.get());
-    return { str(v->description), str(v->archive), str(v->vsix), diagnostics(v->diagnostics, v->diagnostic_count) };
+    return { str(v->name), str(v->description), diagnostics(v->diagnostics, v->diagnostic_count) };
 }
 
 Database read_database(const fs::path& file, const std::string& text, bool local) {

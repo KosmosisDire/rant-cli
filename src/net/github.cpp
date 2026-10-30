@@ -4,6 +4,9 @@
 #include <cstdlib>
 #include <fstream>
 #include <iterator>
+#include <map>
+#include <optional>
+#include <tuple>
 
 #include <nlohmann/json.hpp>
 
@@ -88,26 +91,63 @@ std::string exe_suffix() {
 #endif
 }
 
-static std::vector<long> numbers(const std::string& v) {
-    std::vector<long> out;
+/* A version as a tag writes it, its numbers then the stage of a pre-release, compared in
+ * this order. */
+struct Version {
+    std::vector<long> numbers;      /* trailing zeros dropped, so 1.2 is 1.2.0 */
+    int               stage = 4;    /* dev, alpha, beta, rc, the release, then post */
+    long              n = 0;        /* the number after the stage, as in beta.2 */
+    std::string       rest;
+};
+
+static Version parse_version(std::string v) {
+    if (!v.empty() && (v[0] == 'v' || v[0] == 'V')) v.erase(0, 1);
+    v = v.substr(0, v.find('+'));    /* build metadata orders nothing */
+    Version out;
     size_t at = 0;
-    while (at < v.size()) {
-        size_t dot = v.find('.', at);
-        out.push_back(std::strtol(v.substr(at, dot - at).c_str(), nullptr, 10));
-        if (dot == std::string::npos) break;
-        at = dot + 1;
+    while (at < v.size() && std::isdigit(static_cast<unsigned char>(v[at]))) {
+        size_t end = at;
+        while (end < v.size() && std::isdigit(static_cast<unsigned char>(v[end]))) end++;
+        out.numbers.push_back(std::strtol(v.substr(at, end - at).c_str(), nullptr, 10));
+        at = end;
+        if (at + 1 < v.size() && v[at] == '.' && std::isdigit(static_cast<unsigned char>(v[at + 1]))) at++;
+        else break;
     }
+    while (!out.numbers.empty() && out.numbers.back() == 0) out.numbers.pop_back();
+    /* -beta.1, -rc.1 and PEP 440's b1 all read as a word and a number */
+    std::string tag;
+    for (char c : v.substr(at))
+        if (c != '-' && c != '.' && c != '_') tag += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    if (tag.empty()) return out;
+    size_t letters = 0;
+    while (letters < tag.size() && std::isalpha(static_cast<unsigned char>(tag[letters]))) letters++;
+    static const std::map<std::string, int> stages = { { "dev", 0 },  { "a", 1 },  { "alpha", 1 }, { "b", 2 },       { "beta", 2 },
+                                                       { "c", 3 },    { "rc", 3 }, { "pre", 3 },   { "preview", 3 }, { "post", 5 } };
+    auto it = stages.find(tag.substr(0, letters));
+    out.stage = it == stages.end() ? 1 : it->second;
+    char* end = nullptr;
+    out.n = std::strtol(tag.c_str() + letters, &end, 10);
+    out.rest = end;
     return out;
 }
 
-bool newer(const std::string& version, const std::string& than) { return numbers(version) > numbers(than); }
+bool newer(const std::string& version, const std::string& than) {
+    Version a = parse_version(version), b = parse_version(than);
+    return std::tie(a.numbers, a.stage, a.n, a.rest) > std::tie(b.numbers, b.stage, b.n, b.rest);
+}
+
+/* A tag's version: the tag without a v in front of its first digit. */
+static std::string version_of(const std::string& tag) {
+    bool v = tag.size() > 1 && (tag[0] == 'v' || tag[0] == 'V') && std::isdigit(static_cast<unsigned char>(tag[1]));
+    return v ? tag.substr(1) : tag;
+}
 
 Release parse_release(const std::string& body) {
     json j = json::parse(body, nullptr, false);
     if (!j.is_object() || !j.value("tag_name", json()).is_string()) throw app::Failure("cannot read the release from GitHub");
     Release r;
     r.tag = j["tag_name"].get<std::string>();
-    r.version = r.tag.rfind('v', 0) == 0 ? r.tag.substr(1) : r.tag;
+    r.version = version_of(r.tag);
     for (auto& a : j.value("assets", json::array()))
         if (a.is_object() && a.value("name", json()).is_string() && a.value("browser_download_url", json()).is_string())
             r.assets.push_back({ a["name"].get<std::string>(), a["browser_download_url"].get<std::string>() });
@@ -131,15 +171,26 @@ static std::string get(const std::string& url, const fs::path& body, bool api) {
     return read_file(status.path);
 }
 
-Release release(const std::string& repo, const std::string& tag) {
-    std::string t = tag.empty() || tag[0] == 'v' ? tag : "v" + tag;
-    std::string url = "https://api.github.com/repos/" + repo + "/releases/" + (t.empty() ? "latest" : "tags/" + t);
+/* One release by the API's path for it, nullopt when there is none. */
+static std::optional<Release> release_at(const std::string& repo, const std::string& path) {
+    std::string url = "https://api.github.com/repos/" + repo + "/releases/" + path;
     Scratch body("release");
     std::string http = get(url, body.path, true);
     if (http == "200") return parse_release(read_file(body.path));
-    if (http == "404") throw app::Failure(t.empty() ? repo + " has no release yet" : repo + " has no release " + t);
+    if (http == "404") return std::nullopt;
     if (http == "403" || http == "429") throw app::Failure("GitHub refused, its rate limit was probably reached. Wait an hour or set GITHUB_TOKEN");
     throw app::Failure("GitHub answered " + http + " for " + url);
+}
+
+Release release(const std::string& repo, const std::string& version) {
+    if (version.empty()) {
+        if (auto r = release_at(repo, "latest")) return *r;
+        throw app::Failure(repo + " has no release yet");
+    }
+    std::string bare = version_of(version);
+    for (auto& tag : { "v" + bare, bare })
+        if (auto r = release_at(repo, "tags/" + tag)) return *r;
+    throw app::Failure(repo + " has no release " + bare);
 }
 
 std::optional<std::string> fetch(const std::string& url) {

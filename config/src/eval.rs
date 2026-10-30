@@ -9,7 +9,7 @@ use hcl_edit::visit::{visit_expr, Visit};
 use hcl_edit::Span;
 
 use crate::diag::Diag;
-use crate::source::{Loc, Source};
+use crate::source::Source;
 
 /// What an expression may reference: `param.*` in group files, and `path.*` everywhere.
 pub struct Scope<'a> {
@@ -20,52 +20,6 @@ pub struct Scope<'a> {
 }
 
 const PATH_NAMES: [&str; 3] = ["file", "package", "workspace"];
-
-/// The names a release file name reads, known once a release is picked.
-const RELEASE_NAMES: [&str; 2] = ["version", "platform"];
-
-/// The release a file name is evaluated for: version is its tag without the v, platform
-/// names a machine, such as win-x64.
-pub struct Target<'a> {
-    pub version: &'a str,
-    pub platform: &'a str,
-}
-
-/// The name of a file a package's releases carry, such as `archive`. Its names are checked
-/// when read, and it is evaluated once a release is picked.
-#[derive(Debug, Clone)]
-pub struct FileName {
-    key: String,
-    expr: hcl::Expression,
-    at: Loc,
-}
-
-impl FileName {
-    pub fn read(src: &Source, attr: &Attribute) -> Result<FileName, Diag> {
-        let mut check = RefCheck { src, names: Names::Release, err: None };
-        check.visit_expr(&attr.value);
-        if let Some(err) = check.err {
-            return Err(err);
-        }
-        Ok(FileName { key: attr.key.to_string(), expr: attr.value.clone().into(), at: Loc::of(src, &attr.value) })
-    }
-
-    /// The file's name in one release.
-    pub fn of(&self, target: &Target) -> Result<String, Diag> {
-        let mut ctx = Context::new();
-        ctx.declare_var("version", target.version);
-        ctx.declare_var("platform", target.platform);
-        let key = &self.key;
-        match self.expr.evaluate(&ctx) {
-            Ok(Value::String(s)) if s.is_empty() || s.contains(['/', '\\']) => {
-                Err(self.at.diag(format!("`{key}` must name a file of the release, found \"{s}\"")))
-            }
-            Ok(Value::String(s)) => Ok(s),
-            Ok(v) => Err(self.at.diag(format!("`{key}` must be a string, found {}", type_name(&v)))),
-            Err(e) => Err(self.at.diag(e.kind().to_string())),
-        }
-    }
-}
 
 impl Scope<'_> {
     fn context(&self) -> Context<'static> {
@@ -97,7 +51,7 @@ pub fn value(src: &Source, attr: &Attribute, scope: &Scope) -> Result<Value, Dia
 }
 
 pub fn expr(src: &Source, e: &Expression, scope: &Scope) -> Result<Value, Diag> {
-    let mut check = RefCheck { src, names: Names::Config(scope), err: None };
+    let mut check = RefCheck { src, scope, err: None };
     check.visit_expr(e);
     if let Some(err) = check.err {
         return Err(err);
@@ -171,16 +125,9 @@ pub fn type_name(v: &Value) -> &'static str {
     }
 }
 
-/// What an expression may name: a config file's scope, or only the release names.
-#[derive(Clone, Copy)]
-enum Names<'a> {
-    Config(&'a Scope<'a>),
-    Release,
-}
-
 struct RefCheck<'a> {
     src: &'a Source,
-    names: Names<'a>,
+    scope: &'a Scope<'a>,
     err: Option<Diag>,
 }
 
@@ -192,15 +139,7 @@ impl RefCheck<'_> {
     }
 
     fn check_root(&mut self, root: &str, attr: Option<&str>, span: Option<std::ops::Range<usize>>) {
-        let scope = match self.names {
-            Names::Config(scope) => scope,
-            Names::Release => {
-                if !RELEASE_NAMES.contains(&root) {
-                    self.fail(span, format!("unknown name `{root}`, a release file name reads only version and platform"));
-                }
-                return;
-            }
-        };
+        let scope = self.scope;
         match (root, attr) {
             ("param", None) | ("path", None) => self.fail(span, format!("`{root}` needs a name, such as `{root}.x`")),
             ("param", Some(name)) => match scope.params {
@@ -215,7 +154,6 @@ impl RefCheck<'_> {
                     self.fail(span, "`path.package` used outside a package".to_string());
                 }
             }
-            (r, _) if RELEASE_NAMES.contains(&r) => self.fail(span, format!("`{r}` is known only in `archive` and `vsix`")),
             _ => {}
         }
     }
@@ -292,36 +230,5 @@ mod tests {
     fn param_outside_group_files() {
         let err = eval_attr("\n  v = param.x\n", None, None).err().unwrap();
         assert!(err.message.contains("only in group files"));
-    }
-
-    fn file_name(text: &str) -> Result<FileName, Diag> {
-        let src = Source::parse(Path::new("/ws/package.rant"), text.to_string()).unwrap();
-        let fields = Fields::of_body(&src, &src.body, "test", &["archive"], &[]).unwrap();
-        FileName::read(&src, fields.attr("archive").unwrap())
-    }
-
-    #[test]
-    fn a_file_name_is_read_for_one_release() {
-        let f = file_name("archive = \"rant-x-${version}-${platform}.zip\"\n").unwrap();
-        assert_eq!(f.of(&Target { version: "1.2.0", platform: "win-x64" }).unwrap(), "rant-x-1.2.0-win-x64.zip");
-    }
-
-    #[test]
-    fn a_file_name_reads_only_version_and_platform() {
-        let err = file_name("archive = \"x-${path.package}\"\n").err().unwrap();
-        assert!(err.message.contains("only version and platform"), "{}", err.message);
-        assert_eq!((err.line, err.column), (1, 16));
-        assert!(file_name("archive = \"x-${verison}\"\n").err().unwrap().message.contains("`verison`"));
-        let err = eval_attr("\n  v = \"${version}\"\n", None, None).err().unwrap();
-        assert!(err.message.contains("only in `archive` and `vsix`"), "{}", err.message);
-    }
-
-    #[test]
-    fn a_file_name_names_one_file() {
-        let t = Target { version: "1", platform: "p" };
-        let err = file_name("\narchive = \"bin/${version}\"\n").unwrap().of(&t).err().unwrap();
-        assert_eq!(err.line, 2);
-        assert!(err.message.contains("must name a file of the release"), "{}", err.message);
-        assert!(file_name("archive = [version]\n").unwrap().of(&t).err().unwrap().message.contains("must be a string"));
     }
 }
