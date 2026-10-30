@@ -114,10 +114,17 @@ const std::vector<Sources::Found>& Sources::found(size_t i) {
     List& l = lists_[i];
     if (l.found) return *l.found;
     config::Database db = local_;
+    /* a database that cannot be read names nothing, so the other lists still count */
     if (i > 0) {
-        std::optional<std::string> text = net::fetch(net::raw_url(l.named_by, "HEAD", "packages.rant"));
-        if (!text) throw app::Failure(l.named_by + " holds no packages.rant, so it is no package database");
-        db = checked(config::read_database(l.named_by + "/packages.rant", *text, false));
+        try {
+            std::optional<std::string> text = net::fetch(net::raw_url(l.named_by, "HEAD", "packages.rant"));
+            if (!text) throw app::Failure(l.named_by + " holds no packages.rant, so it is no package database");
+            db = checked(config::read_database(l.named_by + "/packages.rant", *text, false));
+        } catch (const app::Failure& e) {
+            problems_.push_back(e.what());
+            l.found = std::vector<Found>{};
+            return *l.found;
+        }
     }
     std::vector<Found> out;
     auto add = [&](Found f) {
