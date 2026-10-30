@@ -39,7 +39,12 @@ std::string command_help(const Command& c) {
     std::string s = "Usage: rant " + std::string(c.name);
     if (!c.usage.empty()) s += " " + std::string(c.usage);
     s += "\n\n" + std::string(c.summary) + "\n";
-    if (!c.options.empty()) s += "\nOptions:\n" + option_lines(c.options);
+    /* the global options apply after every command, unless one of its own takes the name */
+    std::vector<OptionSpec> specs = c.options;
+    for (auto& g : global_options())
+        if (g.name != "version" && std::none_of(c.options.begin(), c.options.end(), [&](const OptionSpec& o) { return o.name == g.name; }))
+            specs.push_back(g);
+    s += "\nOptions:\n" + option_lines(specs);
     return s;
 }
 
