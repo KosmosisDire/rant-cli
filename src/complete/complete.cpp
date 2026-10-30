@@ -151,7 +151,16 @@ std::vector<std::string> narrow(const Candidates& c, const std::string& partial)
         }
         out.insert(w);
     }
-    return { out.begin(), out.end() };
+    if (c.paths) return { out.begin(), out.end() };
+    /* a group and a node of one name, such as Transcoder and transcoder, are offered once, in
+       the spelling typed so far, or the shell could never complete either */
+    std::vector<std::string> names;
+    for (auto& w : out) {
+        auto same = std::find_if(names.begin(), names.end(), [&](const std::string& n) { return config::same_name(n, w); });
+        if (same == names.end()) names.push_back(w);
+        else if (w.compare(0, partial.size(), partial) == 0 && same->compare(0, partial.size(), partial) != 0) *same = w;
+    }
+    return names;
 }
 
 static const app::OptionSpec* find_option(const std::vector<app::OptionSpec>& specs, const std::string& t) {

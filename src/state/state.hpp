@@ -55,6 +55,7 @@ struct State {
     std::vector<Root>     roots;
     std::vector<Instance> instances;    /* in start order */
 
+    /* The node of that name, matched as config::same_name does when no name is exact */
     Instance* instance(const std::string& name);
     Root*     root(const std::string& key);
 };

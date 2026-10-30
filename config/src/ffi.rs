@@ -19,6 +19,7 @@ use crate::package;
 use crate::param::{self, Param};
 use crate::paths;
 use crate::plan::{self, Plan};
+use crate::refs;
 use crate::scan::NodeKind;
 use crate::vsix;
 use crate::workspace::{self, WorkspaceConfig};
@@ -526,8 +527,8 @@ pub unsafe extern "C" fn rant_config_plan_node(start_dir: *const c_char, node_ty
     plan_handle(&loaded, planned)
 }
 
-/// Whether a name is a group or a node type: kind is 1 for a group, 2 for a node, 3 for both
-/// and 0 for neither, the last two with a diagnostic that says so.
+/// Whether a name is a group or a node type: kind is 1 for a group, which wins over a node of
+/// its name, 2 for a node and 0 for neither, with a diagnostic that says so.
 #[repr(C)]
 pub struct RantConfigNamedView {
     pub kind: u32,
@@ -555,10 +556,6 @@ pub unsafe extern "C" fn rant_config_named(start_dir: *const c_char, name: *cons
         Some(m) => match plan::named(m, &arg_str(name), &start) {
             plan::Named::Group => kind = 1,
             plan::Named::Node => kind = 2,
-            plan::Named::Both(e) => {
-                kind = 3;
-                diags.push(Diag::plain(e));
-            }
             plan::Named::Neither(e) => diags.push(Diag::plain(e)),
         },
         None => diags.push(no_workspace()),
@@ -1150,6 +1147,15 @@ pub unsafe extern "C" fn rant_config_database_free(d: *mut RantConfigDatabase) {
 #[no_mangle]
 pub unsafe extern "C" fn rant_config_is_package_name(name: *const c_char) -> bool {
     database::is_name(&arg_str(name))
+}
+
+/// Whether two names are one, matching without case or underscores.
+///
+/// # Safety
+/// Both arguments must be NULL or NUL terminated UTF-8 strings.
+#[no_mangle]
+pub unsafe extern "C" fn rant_config_same_name(a: *const c_char, b: *const c_char) -> bool {
+    refs::same_name(&arg_str(a), &arg_str(b))
 }
 
 /// The extension a .vsix file holds.

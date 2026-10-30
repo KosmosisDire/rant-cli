@@ -128,7 +128,7 @@ static std::vector<Loose> loose_here(app::Context& ctx, mesh::Client& mesh, std:
                                      const std::string& only = "") {
     std::map<uint32_t, std::string> names;
     for (auto& p : mesh.peers())
-        if (p.here && (only.empty() || p.name == only)) names[p.id] = p.name;
+        if (p.here && (only.empty() || config::same_name(p.name, only))) names[p.id] = p.name;
     std::vector<uint32_t> ids;
     for (auto& [id, name] : names) ids.push_back(id);
     auto pids = mesh.pids(ids);
@@ -236,7 +236,7 @@ int stop_node(app::Context& ctx, const std::string& name) {
     }
     if (!loose.empty()) return done(summary);
     for (auto& p : mesh.peers())
-        if (p.name == name && !p.here)
+        if (config::same_name(p.name, name) && !p.here)
             throw app::Failure("`" + name + "` is running on " + p.host() + ", rant only stops nodes on this machine");
     throw app::Failure("no node `" + name + "` on domain " + std::to_string(ctx.domain()) + ", see `rant ls nodes`");
 }
@@ -321,6 +321,10 @@ static int run(app::Context& ctx) {
         const config::Workspace* ws = ctx.workspace();
         return ws ? stop_workspace(ctx, *ws) : stop_everything(ctx);
     }
+    if (w[0] == "node") {
+        if (w.size() != 2) throw app::UsageError("stop node takes one node, such as `rant stop node talker`");
+        return stop_node(ctx, w[1]);
+    }
     if (names_group(ctx, w[0])) return stop_group(ctx, w[0], { w.begin() + 1, w.end() });
     if (w.size() != 1) throw app::UsageError("a node takes no key=value, only a group does");
     return stop_node(ctx, w[0]);
@@ -331,13 +335,15 @@ static complete::Candidates complete_words(complete::Request& r) {
     if (w.empty()) {
         std::vector<std::string> out = r.running_groups();
         for (auto& n : r.running_nodes()) out.push_back(n);
+        out.push_back("node");
         return { out };
     }
+    if (w[0] == "node") return { w.size() == 1 ? r.running_nodes() : std::vector<std::string>{} };
     return { complete::params(r.group(w[0]), r.partial, { w.begin() + 1, w.end() }) };
 }
 
 app::Command stop() {
-    app::Command c{ "stop", "[<group> [key=value...] | <node>]",
+    app::Command c{ "stop", "[<group> [key=value...] | [node] <node>]",
                     "stop any node on this machine, all this workspace started when nothing is named, a service only by name",
                     app::Section::Workspace,
                     { { "all", 'a', "", "stop every node on this machine but the services, whoever started it" } }, run };

@@ -231,6 +231,8 @@ Database read_database(const fs::path& file, const std::string& text, bool local
 
 bool is_package_name(const std::string& name) { return rant_config_is_package_name(name.c_str()); }
 
+bool same_name(const std::string& a, const std::string& b) { return rant_config_same_name(a.c_str(), b.c_str()); }
+
 Vsix read_vsix(const fs::path& file) {
     std::unique_ptr<RantConfigVsix, decltype(&rant_config_vsix_free)> h(rant_config_vsix(to_utf8(file).c_str()), &rant_config_vsix_free);
     const RantConfigVsixView* v = rant_config_vsix_view(h.get());

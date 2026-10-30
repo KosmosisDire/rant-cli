@@ -236,15 +236,25 @@ static int restart_nodes(app::Context& ctx, const std::vector<std::string>& name
     return built ? code : 1;
 }
 
+/* One node by name, started when it is not running. */
+static int restart_node(app::Context& ctx, const std::string& name) {
+    state::State st = run::snapshot(ctx);
+    if (const state::Instance* i = st.instance(name)) return restart_nodes(ctx, { i->name }, "");
+    ctx.out.note("`" + name + "` is not running, starting it");
+    return run_node(ctx, name);
+}
+
 static int run(app::Context& ctx) {
     auto& w = ctx.args.words;
     if (w.empty()) return restart_all(ctx);
+    if (w[0] == "node") {
+        if (w.size() != 2) throw app::UsageError("restart node takes one node, such as `rant restart node talker`");
+        return restart_node(ctx, w[1]);
+    }
     /* what is not running starts, looked up first without holding the state, which run takes */
     if (!names_group(ctx, w[0])) {
         if (w.size() != 1) throw app::UsageError("a node takes no key=value, only a group does");
-        if (run::snapshot(ctx).instance(w[0])) return restart_nodes(ctx, { w[0] }, "");
-        ctx.out.note("`" + w[0] + "` is not running, starting it");
-        return run_node(ctx, w[0]);
+        return restart_node(ctx, w[0]);
     }
     std::vector<std::string> params(w.begin() + 1, w.end());
     if (group_roots(ctx, run::snapshot(ctx), w[0], params).empty()) {
@@ -278,13 +288,20 @@ static complete::Candidates complete_words(complete::Request& r) {
         std::vector<std::string> out = r.groups();
         for (auto& n : r.running_nodes()) out.push_back(n);
         for (auto& n : r.node_types()) out.push_back(n);
+        out.push_back("node");
+        return { out };
+    }
+    if (w[0] == "node") {
+        if (w.size() != 1) return {};
+        std::vector<std::string> out = r.running_nodes();
+        for (auto& n : r.node_types()) out.push_back(n);
         return { out };
     }
     return { complete::params(r.group(w[0]), r.partial, { w.begin() + 1, w.end() }) };
 }
 
 app::Command restart() {
-    app::Command c{ "restart", "[<group> [key=value...] | <node>]",
+    app::Command c{ "restart", "[<group> [key=value...] | [node] <node>]",
                     "stop and start again as configured now, start what is not running, all of it when nothing is named",
                     app::Section::Workspace, { no_build_option(), wait_option(), watch_option() }, run };
     c.complete = complete_words;

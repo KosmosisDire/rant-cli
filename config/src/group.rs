@@ -184,18 +184,21 @@ impl<'m> Groups<'m> {
     /// groups outside any package, then in the one package that has it, as a bare node name is.
     pub fn find(&self, reference: &str, package: Option<&str>) -> Result<&'m GroupFile, String> {
         let groups = &self.model.groups;
+        // an exact name first, then one that matches without case or underscores
+        let named = |name: &str| groups.iter().find(|g| g.name == name).or_else(|| groups.iter().find(|g| refs::same_name(&g.name, name)));
         if reference.contains('/') {
-            return groups.iter().find(|g| g.name == reference).ok_or_else(|| self.unknown(reference));
+            return named(reference).ok_or_else(|| self.unknown(reference));
         }
         if let Some(p) = package {
-            if let Some(g) = groups.iter().find(|g| g.name == format!("{p}/{reference}")) {
+            if let Some(g) = named(&format!("{p}/{reference}")) {
                 return Ok(g);
             }
         }
-        if let Some(g) = groups.iter().find(|g| g.package.is_none() && g.name == reference) {
+        if let Some(g) = named(reference) {
             return Ok(g);
         }
-        let in_packages: Vec<&'m GroupFile> = groups.iter().filter(|g| g.package.is_some() && g.stem() == reference).collect();
+        let in_packages: Vec<&'m GroupFile> =
+            groups.iter().filter(|g| g.package.is_some() && refs::same_name(g.stem(), reference)).collect();
         match in_packages.as_slice() {
             [one] => Ok(one),
             [] => Err(format!("no group named `{reference}`")),
@@ -217,7 +220,7 @@ impl<'m> Groups<'m> {
 
     fn unknown(&self, reference: &str) -> String {
         let stem = reference.rsplit('/').next().unwrap_or(reference);
-        let near: Vec<&str> = self.model.groups.iter().filter(|g| g.stem() == stem).map(|g| g.name.as_str()).collect();
+        let near: Vec<&str> = self.model.groups.iter().filter(|g| refs::same_name(g.stem(), stem)).map(|g| g.name.as_str()).collect();
         if near.is_empty() {
             format!("no group named `{reference}`")
         } else {

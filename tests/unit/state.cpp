@@ -29,6 +29,16 @@ TEST(root_keys_name_the_params) {
     CHECK_EQ((state::Root{ "node", "talker", {} }).key(), std::string("node talker"));
 }
 
+TEST(instance_matches_a_name_without_case_or_underscores) {
+    state::State st;
+    st.instances = { instance("web_explorer", "group explorer/WebExplorer"), instance("Talker", "node Talker"),
+                     instance("talker", "node talker") };
+    CHECK(st.instance("WebExplorer") && st.instance("WebExplorer")->name == "web_explorer");
+    CHECK(st.instance("talker")->roots.front() == "node talker");
+    CHECK(st.instance("TALKER") && st.instance("TALKER")->name == "Talker");
+    CHECK(!st.instance("listener"));
+}
+
 TEST(save_and_load_round_trip) {
     auto dir = scratch("state-roundtrip");
     {

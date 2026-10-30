@@ -218,6 +218,10 @@ Database read_database(const fs::path& file, const std::string& text, bool local
 /* Whether a name can name a package, and so the folder it installs into. */
 bool is_package_name(const std::string& name);
 
+/* Whether two names are one: names match without case or underscores, so the group Nav and
+ * the node nav are one name. */
+bool same_name(const std::string& a, const std::string& b);
+
 /* The extension a .vsix file holds: its id as publisher.name in lowercase, and its version. */
 struct Vsix {
     std::string             id;

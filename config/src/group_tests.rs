@@ -285,15 +285,21 @@ fn semantic_errors_point_at_their_place() {
 }
 
 #[test]
-fn a_name_is_a_group_or_a_node_never_both() {
-    let t = workspace_with(&[("odom.run", "  node \"planner/odom\" {}\n")]);
+fn a_group_wins_over_a_node_of_its_name_and_names_match_without_case_or_underscores() {
+    let t = workspace_with(&[("odom.run", "  node \"planner/odom\" {}\n"), ("WebView.run", "  node \"drivers/camera\" {}\n")]);
     let m = model(&t);
     let at = |name: &str| plan::named(&m, name, t.root());
     assert_eq!(at("nav"), Named::Group);
+    assert_eq!(at("NAV"), Named::Group);
     assert_eq!(at("drivers/cameras"), Named::Group);
+    assert_eq!(at("Drivers/Cameras"), Named::Group);
+    assert_eq!(at("web_view"), Named::Group);
     assert_eq!(at("lidar"), Named::Node);
+    assert_eq!(at("LiDar"), Named::Node);
     assert_eq!(at("planner/odom"), Named::Node);
-    assert_eq!(at("odom"), Named::Both("`odom` is both the group in odom.run and a node, rename one".into()));
+    assert_eq!(at("Planner/O_dom"), Named::Node);
+    assert_eq!(at("odom"), Named::Group, "the group wins, `node odom` reaches the node");
+    assert_eq!(at("Odom"), Named::Group);
     assert_eq!(at("nowhere"), Named::Neither("no group or node named `nowhere`, see `rant ls groups` and `rant ls nodes`".into()));
     assert!(matches!(at("drivers/nothing"), Named::Neither(e) if e.contains("has no node `nothing`")));
 }

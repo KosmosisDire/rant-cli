@@ -13,6 +13,7 @@ use crate::manifest::{Manifest, ManifestKind};
 use crate::package::{self, PackageBlock, PACKAGE_FILE};
 use crate::paths;
 use crate::placement::Placement;
+use crate::refs;
 use crate::scan::{self, Cache, NodeKind};
 use crate::workspace::WorkspaceConfig;
 
@@ -82,7 +83,7 @@ impl Model {
     }
 
     pub fn package(&self, name: &str) -> Option<&Package> {
-        self.packages.iter().find(|p| p.name == name)
+        self.packages.iter().find(|p| p.name == name).or_else(|| self.packages.iter().find(|p| refs::same_name(&p.name, name)))
     }
 
     pub fn package_at(&self, dir: &Path) -> Option<&Package> {

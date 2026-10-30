@@ -15,6 +15,19 @@ TEST(narrow_ignores_case) {
     CHECK_EQ(complete::narrow(c, "TAL"), (Words{ "talker" }));
 }
 
+TEST(narrow_offers_a_group_and_a_node_of_one_name_once_as_typed) {
+    complete::Candidates c{ { "Transcoder", "transcoder", "WebExplorer", "web_explorer", "talker" } };
+    CHECK_EQ(complete::narrow(c, "transco"), (Words{ "transcoder" }));
+    CHECK_EQ(complete::narrow(c, "Transco"), (Words{ "Transcoder" }));
+    CHECK_EQ(complete::narrow(c, "web"), (Words{ "web_explorer" }));
+    CHECK_EQ(complete::narrow(c, ""), (Words{ "Transcoder", "WebExplorer", "talker" }));
+}
+
+TEST(narrow_keeps_paths_that_differ_in_case) {
+    complete::Candidates c{ { "/Cam", "/cam" }, true };
+    CHECK_EQ(complete::narrow(c, ""), (Words{ "/Cam", "/cam" }));
+}
+
 TEST(narrow_offers_paths_one_segment_at_a_time) {
     complete::Candidates c{ { "/camera/left", "/camera/right", "/odom", "/odom/rate" }, true };
     CHECK_EQ(complete::narrow(c, ""), (Words{ "/camera/", "/odom", "/odom/" }));

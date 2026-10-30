@@ -7,6 +7,7 @@
 #include <nlohmann/json.hpp>
 
 #include "app/failure.hpp"
+#include "config/config.hpp"
 #include "util/home.hpp"
 
 namespace state {
@@ -32,6 +33,8 @@ bool Instance::runs_from(const fs::path& folder) const {
 Instance* State::instance(const std::string& name) {
     for (auto& i : instances)
         if (i.name == name) return &i;
+    for (auto& i : instances)
+        if (config::same_name(i.name, name)) return &i;
     return nullptr;
 }
 

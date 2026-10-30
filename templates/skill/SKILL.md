@@ -63,9 +63,9 @@ database "someone/rant-packages" {}
 | new package or node | `rant new package [folder] --lang L`, `rant new node [name]`, `rant new group [name]` |
 | build | `rant build [package...]`, `--dry-run` shows order and commands, `--clean` removes the build output first. A CMake build folder made in another place, after the package moved or was renamed, is removed and configured again after a question |
 | run | `rant run <Group> key=value...`, one node alone with `rant run node <node>`, `--dry-run` first. It builds what it starts (`--no-build` skips that), waits up to 10 s for the nodes to come up (`--wait S`), watches them 2 s more (`--watch S`) and fails with the log of one that exited or never came up |
-| stop, restart | `rant stop [name]` (nothing named: all this workspace started), `rant stop --all` (every node on this machine), `rant restart [name]` (nothing named: all this workspace started), which stops, builds, then starts, the last build when the build fails. A stop or restart that names nothing leaves enabled groups and nodes running, only naming one stops it. An included group runs inside the group that includes it and `rant ls nodes` lists it there: stopping or restarting it by name acts on just its own nodes |
+| stop, restart | `rant stop [name]` (nothing named: all this workspace started), `rant stop --all` (every node on this machine), `rant restart [name]` (nothing named: all this workspace started), which stops, builds, then starts, the last build when the build fails. A stop or restart that names nothing leaves enabled groups and nodes running, only naming one stops it. An included group runs inside the group that includes it and `rant ls nodes` lists it there: stopping or restarting it by name acts on just its own nodes. A name is the group of it that runs, else the node of it, and `rant stop node <node>` or `rant restart node <node>` takes the node alone |
 | run at every boot | `rant enable <Group> key=value...` or `rant enable node <node>` runs it now and every time the computer starts, as the user. The first enable on a machine asks for admin once (sudo on Linux and macOS). `--login` starts it at login instead, for what needs the desktop. `rant disable` stops it and drops it, `rant ls services` shows what is enabled and whether it runs. The choices live in `~/.rant/services.json`. The start never builds, and keeps `--domain` and the shell's `RANT_DOMAIN`, `RANT_PREFIX` and `RANT_NODE_NAME_PREFIX`. `rant stop <Group>` stops an enabled group until the next start |
-| node output | `rant log [name...]`, `-f` to follow, `-n N` lines, a group shows all its nodes |
+| node output | `rant log [name...]`, `-f` to follow, `-n N` lines, a group shows all its nodes, `rant log node <node>` the node alone |
 | see the mesh | `rant ls <nodes\|entities\|topics\|variables\|functions\|tasks\|types\|packages\|groups\|sources\|services> [pattern]`, `rant ls` alone lists the kinds, `rant ls nodes --no-mesh` for only what this workspace started, without joining the mesh |
 | explain one thing | `rant info [kind] <name>`, a type shows its fields and who uses it, a node its source file |
 | read and write | `rant sub <topic\|var> -n 1`, `rant pub <topic\|var> <value>`, `rant call <fn> [value]`. On a terminal sub and a task's progress redraw in place, `--lines` (and any pipe) prints a record a line of `from`, `hz` and `value`, a call's result last. `--value-only` prints only the values. `--json` and `--csv` only change the format |
@@ -507,8 +507,9 @@ rant_queue_dispatch(q, 0, 100);              /* on the thread that runs them */
     `src/bin/arm_controller.rs`. Name a node for what it is (`lidar`, not `lidar_node`).
   - Entities and namespaces are PascalCase, `/` between levels: `FrontLidar/JointState`,
     `Line1/Conveyor`. So are types and enum options.
-  - Groups are PascalCase: `Nav.run`, run as `rant run Nav`. Names match case exactly, so
-    `rant stop Nav` stops the group and `rant stop nav` the node.
+  - Groups are PascalCase: `Nav.run`, run as `rant run Nav`. Names match without case or
+    underscores, so the group `Nav` and the node `nav` are one name and the group wins:
+    `rant stop nav` stops the group, `rant stop node nav` the node alone.
     A group is how a system starts, so give every system one, even of one node.
     `rant new group` names them so.
   - Fields are snake_case on the wire. Write them in the language's style (`frame_id` in

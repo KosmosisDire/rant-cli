@@ -20,13 +20,20 @@ namespace commands {
 using json = nlohmann::ordered_json;
 
 /* The nodes a name means: a group's nodes, the running ones or else those its plan names,
- * otherwise the node of that name. */
-static std::vector<std::string> nodes_of(app::Context& ctx, const std::string& name) {
-    if (!names_group(ctx, name)) return { name };
+ * otherwise the node of that name as its log is named. */
+static std::vector<std::string> nodes_of(app::Context& ctx, const std::string& name, bool node) {
+    if (node || !names_group(ctx, name)) {
+        std::vector<std::string> logged = run::logged_nodes(ctx.require_scope().logs);
+        if (std::count(logged.begin(), logged.end(), name)) return { name };
+        for (auto& n : logged)
+            if (config::same_name(n, name)) return { n };
+        return { name };
+    }
     std::vector<std::string> out;
+    std::string group = group_name(ctx, name);
     state::State st = run::snapshot(ctx);
     for (auto& r : st.roots)
-        if (r.kind == "group" && r.name == name)
+        if (r.kind == "group" && r.name == group)
             for (auto& i : st.instances)
                 if (std::count(i.roots.begin(), i.roots.end(), r.key()) && std::count(out.begin(), out.end(), i.name) == 0)
                     out.push_back(i.name);
@@ -48,9 +55,13 @@ static int run(app::Context& ctx) {
     }
     bool follow = ctx.args.has("follow");
 
+    std::vector<std::string> words = ctx.args.words;
+    bool node = !words.empty() && words[0] == "node";
+    if (node) words.erase(words.begin());
+    if (node && words.empty()) throw app::UsageError("log node takes a node, such as `rant log node talker`");
     std::vector<std::string> names;
-    for (auto& w : ctx.args.words)
-        for (auto& n : nodes_of(ctx, w))
+    for (auto& w : words)
+        for (auto& n : nodes_of(ctx, w, node))
             if (std::count(names.begin(), names.end(), n) == 0) names.push_back(n);
     if (ctx.args.words.empty()) {
         for (auto& i : run::snapshot(ctx).instances) names.push_back(i.name);
@@ -89,13 +100,15 @@ static int run(app::Context& ctx) {
 }
 
 static complete::Candidates complete_words(complete::Request& r) {
+    if (!r.words.empty() && r.words[0] == "node") return { r.logged_nodes() };
     std::vector<std::string> out = r.groups();
     for (auto& n : r.logged_nodes()) out.push_back(n);
+    if (r.words.empty()) out.push_back("node");
     return { out };
 }
 
 app::Command log() {
-    app::Command c{ "log", "[group | node...]", "show what nodes wrote, every running node when nothing is named",
+    app::Command c{ "log", "[group | [node] node...]", "show what nodes wrote, every running node when nothing is named",
                     app::Section::Workspace,
                     { { "follow", 'f', "", "keep printing new lines until Ctrl-C" },
                       { "lines", 'n', "N", "lines of each log to show first, 20 by default" } },

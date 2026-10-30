@@ -22,6 +22,13 @@ pub fn is_path(r: &str) -> bool {
         || (b.len() > 2 && b[0].is_ascii_alphabetic() && b[1] == b':' && (b[2] == b'/' || b[2] == b'\\'))
 }
 
+/// Names match without case or underscores, so the group `Nav` and the node `nav` are one
+/// name, as are `WebExplorer` and `web_explorer`.
+pub fn same_name(a: &str, b: &str) -> bool {
+    let key = |s: &str| s.chars().filter(|c| *c != '_').flat_map(char::to_lowercase).collect::<String>();
+    key(a) == key(b)
+}
+
 pub fn resolve(model: &Model, reference: &str, from_dir: &Path) -> Result<NodeType, String> {
     let reference = reference.trim(); // a space at either end never means anything
     if reference.is_empty() {
@@ -42,11 +49,11 @@ pub fn resolve(model: &Model, reference: &str, from_dir: &Path) -> Result<NodeTy
         return p
             .nodes
             .iter()
-            .find(|n| n.name == name)
+            .find(|n| same_name(&n.name, name))
             .cloned()
             .ok_or_else(|| format!("package `{pkg}` has no node `{name}`{}", known(&p.nodes)));
     }
-    let matches: Vec<&NodeType> = model.node_types().filter(|n| n.name == reference).collect();
+    let matches: Vec<&NodeType> = model.node_types().filter(|n| same_name(&n.name, reference)).collect();
     match matches.as_slice() {
         [one] => Ok((*one).clone()),
         [] => Err(format!("no node named `{reference}`, {}", unbuilt(model).unwrap_or_else(|| "see `rant ls nodes`".into()))),

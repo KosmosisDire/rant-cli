@@ -107,6 +107,24 @@ expect_match("${OUT}" "sensor +stopped")
 rant(ls nodes)
 expect_match("${OUT}" "NODES\n  [(]none[)]")
 
+# A group and a node of one name, as packages ship them, are one name without case or
+# underscores. The group wins, a stop takes what runs, and `node` picks the node.
+file(WRITE "${SCRATCH}/Sensor.run" "node \"demo/sensor\" {}\n")
+rant(run sensor)
+expect_match("${OUT}" "Sensor\n\n.*sensor +started")
+rant(log SENSOR)
+rant(stop SENSOR)
+expect_match("${OUT}" "Sensor\n\n.*sensor +stopped")
+rant(run node Sensor)
+expect_match("${OUT}" "sensor +started")
+rant(stop sensor)
+expect_match("${OUT}" "sensor +stopped")
+rant(run Sensor)
+rant(stop node sensor)
+expect_match("${ERR}" "`sensor` belongs to the running group Sensor. Stop it anyway[?]")
+expect_match("${OUT}" "sensor +stopped")
+rant(stop Sensor)
+
 # A bare stop lists everything rant started and stops it all after a question.
 rant(run nav)
 rant(run pick)

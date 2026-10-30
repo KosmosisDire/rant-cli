@@ -15,8 +15,8 @@ int run_group(app::Context& ctx, const std::string& group, const std::vector<std
  * when it names no group. */
 std::string group_name(app::Context& ctx, const std::string& group);
 
-/* Whether stop and restart take a name as a group: one the config defines or one running.
- * A name that is both a group and a node is a failure. */
+/* Whether stop, restart and log take a bare name as a group: a group of it that runs, else no
+ * node of it that runs and a group of it in the config, so the one running wins. */
 bool names_group(app::Context& ctx, const std::string& name);
 
 /* What `rant stop` does to a group, with params to pick one of its runs, and to one node by

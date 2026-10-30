@@ -154,11 +154,6 @@ int run_group(app::Context& ctx, const std::string& group, const std::vector<std
     return built ? code : 1;
 }
 
-static void fail_with(app::Context& ctx, const std::vector<config::Diagnostic>& diagnostics) {
-    for (auto& d : diagnostics) ctx.out.error(d.str());
-    throw app::Failure("");
-}
-
 std::string group_name(app::Context& ctx, const std::string& group) {
     config::GroupInfo info = config::describe_group(ctx.cwd(), group);
     return info.diagnostics.empty() ? info.name : group;
@@ -166,12 +161,12 @@ std::string group_name(app::Context& ctx, const std::string& group) {
 
 bool names_group(app::Context& ctx, const std::string& name) {
     if (!ctx.scope()) return false;
-    config::Named n = config::named(ctx.cwd(), name);
-    if (n.group && n.node) fail_with(ctx, n.diagnostics);
-    if (n.group) return true;
-    for (auto& r : run::snapshot(ctx).roots)
-        if (r.kind == "group" && r.name == name) return true;
-    return false;
+    state::State st = run::snapshot(ctx);
+    for (auto& r : st.roots)
+        if (r.kind == "group" && (config::same_name(r.name, name) || config::same_name(r.name.substr(r.name.rfind('/') + 1), name)))
+            return true;
+    if (st.instance(name)) return false;
+    return config::named(ctx.cwd(), name).group;
 }
 
 /* A group is what a system runs as, so a bare name is a group. One node alone is asked for
