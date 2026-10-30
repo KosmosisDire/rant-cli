@@ -38,7 +38,7 @@ public:
     std::vector<std::string> groups();         /* each by the shortest name that finds it from here */
     std::vector<std::string> packages(bool installed = true);
     config::GroupInfo        group(const std::string& name);
-    std::vector<std::string> running_nodes();  /* the instances rant started */
+    std::vector<std::string> running_nodes();  /* the instances rant started anywhere on this machine */
     std::vector<std::string> running_groups();
     std::vector<std::string> logged_nodes();   /* every node with a log, running or not */
     std::vector<std::string> mesh_nodes();

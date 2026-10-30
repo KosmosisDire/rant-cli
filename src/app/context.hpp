@@ -47,10 +47,15 @@ public:
      * any config error is a failure. */
     const config::Workspace& require_scope(bool packages = false);
 
+    /* Acts from dir from now on, as if rant ran there, so a run another workspace started is
+     * handled through that workspace's config and state. Paths are still shown from here. */
+    void enter(const std::filesystem::path& dir);
+
 private:
     void open(bool packages);
     static std::filesystem::path here();
     std::filesystem::path cwd_ = here();
+    std::filesystem::path shown_from_ = cwd_;
     std::optional<config::Opened> opened_;
     bool with_packages_ = false;
 };

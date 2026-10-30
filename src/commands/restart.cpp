@@ -244,26 +244,21 @@ static int restart_node(app::Context& ctx, const std::string& name) {
     return run_node(ctx, name);
 }
 
-static int run(app::Context& ctx) {
-    auto& w = ctx.args.words;
-    if (w.empty()) return restart_all(ctx);
-    if (w[0] == "node") {
-        if (w.size() != 2) throw app::UsageError("restart node takes one node, such as `rant restart node talker`");
-        return restart_node(ctx, w[1]);
-    }
+/* A bare name restarted in this workspace: a group of it, else the node, started when it is
+ * not running. */
+static int restart_named(app::Context& ctx, const std::string& name, const std::vector<std::string>& params) {
     /* what is not running starts, looked up first without holding the state, which run takes */
-    if (!names_group(ctx, w[0])) {
-        if (w.size() != 1) throw app::UsageError("a node takes no key=value, only a group does");
-        return restart_node(ctx, w[0]);
+    if (!names_group(ctx, name)) {
+        if (!params.empty()) throw app::UsageError("a node takes no key=value, only a group does");
+        return restart_node(ctx, name);
     }
-    std::vector<std::string> params(w.begin() + 1, w.end());
-    if (group_roots(ctx, run::snapshot(ctx), w[0], params).empty()) {
+    if (group_roots(ctx, run::snapshot(ctx), name, params).empty()) {
         /* a group that runs only inside others restarts its own nodes there */
-        std::string name = group_name(ctx, w[0]);
-        auto inside = run::made_by(run::snapshot(ctx), name);
-        if (params.empty() && !inside.empty()) return restart_nodes(ctx, inside, name);
-        ctx.out.note("group `" + w[0] + "` is not running, starting it");
-        return run_group(ctx, w[0], params);
+        std::string full = group_name(ctx, name);
+        auto inside = run::made_by(run::snapshot(ctx), full);
+        if (params.empty() && !inside.empty()) return restart_nodes(ctx, inside, full);
+        ctx.out.note("group `" + name + "` is not running, starting it");
+        return run_group(ctx, name, params);
     }
     std::vector<state::Instance> started;
     std::optional<Summary> summary;
@@ -271,7 +266,7 @@ static int run(app::Context& ctx) {
     bool built;
     {
         run::Session s(ctx.require_scope());
-        auto roots = group_roots(ctx, s.state(), w[0], params);
+        auto roots = group_roots(ctx, s.state(), name, params);
         group = roots.front().name;
         std::vector<Target> targets;
         for (auto& r : roots) targets.push_back({ r, replan(ctx, r, nullptr), "" });
@@ -280,6 +275,24 @@ static int run(app::Context& ctx) {
     }    /* the state unlocks before the wait, so other commands need not wait */
     int code = bring_up(ctx, *summary, ctx.require_scope(), started, group, "restarted");
     return built ? code : 1;
+}
+
+/* Restarts a name where it runs on this machine, as stop finds it, else starts it here. */
+static int run(app::Context& ctx) {
+    auto& w = ctx.args.words;
+    if (w.empty()) return restart_all(ctx);
+    bool node = w[0] == "node";
+    if (node && w.size() != 2) throw app::UsageError("restart node takes one node, such as `rant restart node talker`");
+    const std::string name = node ? w[1] : w[0];
+    auto where = where_running(ctx, name, node, "restart");
+    if (!where) return 1;
+    std::vector<std::string> params = node ? std::vector<std::string>{} : resolved_params(ctx, name, { w.begin() + 1, w.end() });
+    auto act = [&](const std::string& in) {
+        if (!in.empty()) ctx.out.note("`" + name + "` runs in " + in);
+        return node ? restart_node(ctx, name) : restart_named(ctx, name, params);
+    };
+    if (where->empty()) return act("");
+    return in_each(ctx, *where, act);
 }
 
 static complete::Candidates complete_words(complete::Request& r) {

@@ -45,7 +45,7 @@ static std::vector<std::string> nodes_of(app::Context& ctx, const std::string& n
 }
 
 static int run(app::Context& ctx) {
-    const config::Workspace& ws = ctx.require_scope();
+    ctx.require_scope();
     size_t count = 20;
     if (auto n = ctx.args.get("lines")) {
         char* end = nullptr;
@@ -59,19 +59,32 @@ static int run(app::Context& ctx) {
     bool node = !words.empty() && words[0] == "node";
     if (node) words.erase(words.begin());
     if (node && words.empty()) throw app::UsageError("log node takes a node, such as `rant log node talker`");
+    /* each name is read where it runs on this machine, as stop finds it, else here */
     std::vector<std::string> names;
-    for (auto& w : words)
-        for (auto& n : nodes_of(ctx, w, node))
-            if (std::count(names.begin(), names.end(), n) == 0) names.push_back(n);
-    if (ctx.args.words.empty()) {
-        for (auto& i : run::snapshot(ctx).instances) names.push_back(i.name);
-        if (names.empty()) throw app::Failure("nothing rant started is running here, name a node such as `rant log talker`");
-    }
     std::vector<config::fs::path> logs;
-    for (auto& n : names) {
-        logs.push_back(ws.logs / config::from_utf8(n + ".log"));
+    auto add = [&](const std::string& n) {
+        config::fs::path log = ctx.require_scope().logs / config::from_utf8(n + ".log");
+        if (std::count(logs.begin(), logs.end(), log)) return;
         std::error_code ec;
-        if (!config::fs::is_regular_file(logs.back(), ec)) throw app::Failure("`" + n + "` has no log, see `rant ls nodes`");
+        if (!config::fs::is_regular_file(log, ec)) throw app::Failure("`" + n + "` has no log, see `rant ls nodes`");
+        names.push_back(n);
+        logs.push_back(log);
+    };
+    const config::fs::path here = ctx.cwd();
+    for (auto& w : words) {
+        auto where = where_running(ctx, w, node, "log");
+        if (!where) return 1;
+        auto read = [&](const std::string&) {
+            for (auto& n : nodes_of(ctx, w, node)) add(n);
+            return 0;
+        };
+        if (where->empty()) read("");
+        else in_each(ctx, *where, read);
+        ctx.enter(here);
+    }
+    if (ctx.args.words.empty()) {
+        for (auto& i : run::snapshot(ctx).instances) add(i.name);
+        if (names.empty()) throw app::Failure("nothing rant started is running here, name a node such as `rant log talker`");
     }
 
     /* several logs interleave, each line led by its node's name */

@@ -192,40 +192,31 @@ static int stop_everything(app::Context& ctx) {
     return done(summary);
 }
 
-/* Stops one node wherever on this machine it was started: by this workspace first, then by
- * another workspace, then without rant. */
-int stop_node(app::Context& ctx, const std::string& name) {
-    auto held = started_anywhere(ctx);
-    const config::Workspace* ws = ctx.scope();
-    auto own = [&](const Held& h) { return ws && util::path_key(h.root) == util::path_key(ws->root); };
-    std::vector<std::pair<Held*, state::Instance*>> found;
-    for (auto& h : held)
-        if (auto* inst = h.state().instance(name)) found.push_back({ &h, inst });
-    /* this workspace's own node wins over a namesake elsewhere */
-    if (!found.empty() && own(*found[0].first)) found.resize(1);
-
-    if (found.size() > 1) {
-        std::vector<std::string> where;
-        for (auto& f : found) where.push_back(ctx.shown(f.first->root));
-        ctx.out.note("`" + name + "` was started in " + std::to_string(found.size()) + " workspaces: " + util::joined(where));
-        if (!ui::confirm("Stop all of them?", ctx.yes)) return 1;
-    }
-    for (auto& [h, inst] : found) {
-        auto groups = groups_of(*inst);
-        std::string in = own(*h) ? "" : " in " + ctx.shown(h->root);
-        if (!groups.empty() && !ui::confirm("`" + name + "` belongs to the running group " + util::joined(groups) + in + ". Stop it anyway?", ctx.yes))
-            return 1;
-    }
+/* Stops the node of that name this workspace's rant started, asking first when a running group
+ * holds it. in names the workspace when it is not the one rant runs in. */
+static int stop_here(app::Context& ctx, const std::string& name, const std::string& in) {
+    run::Session s(ctx.require_scope());
+    state::Instance* inst = s.state().instance(name);
+    if (!inst) throw app::Failure("`" + name + "` stopped already");
+    std::string node = inst->name;
+    auto groups = groups_of(*inst);
+    std::string where = in.empty() ? "" : " in " + in;
+    if (!groups.empty() && !ui::confirm("`" + node + "` belongs to the running group " + util::joined(groups) + where + ". Stop it anyway?", ctx.yes))
+        return 1;
     Summary summary(ctx, "");
-    for (auto& [h, inst] : found) {
-        Summary::Row row = stopped_row(name, run::halt(*inst));
-        if (!own(*h)) row.detail += (row.detail.empty() ? "" : ", ") + std::string("started in ") + ctx.shown(h->root);
-        run::forget(h->state(), name);
-        h->store->save();
-        summary.add(row);
-    }
-    if (!found.empty()) return done(summary);
+    Summary::Row row = stopped_row(node, run::halt(*inst));
+    if (!in.empty()) row.detail += (row.detail.empty() ? "" : ", ") + std::string("started in ") + in;
+    run::forget(s.state(), node);
+    s.save();
+    summary.add(row);
+    return done(summary);
+}
 
+/* Stops a node on this machine no workspace's rant started, found on the mesh, else says
+ * where it runs or that it runs nowhere. */
+static int stop_loose(app::Context& ctx, const std::string& name) {
+    auto held = started_anywhere(ctx);
+    Summary summary(ctx, "");
     mesh::Client mesh(ctx.domain());
     mesh.settle();
     auto loose = loose_here(ctx, mesh, held, name);
@@ -241,9 +232,17 @@ int stop_node(app::Context& ctx, const std::string& name) {
     throw app::Failure("no node `" + name + "` on domain " + std::to_string(ctx.domain()) + ", see `rant ls nodes`");
 }
 
-/* The group roots to stop: the one root params name, else every root of the group, which
- * takes a yes when there are several. The group's own name is looked up, so a bare name
- * finds a group in a package. */
+/* Stops one node wherever on this machine rant started it, picking when several workspaces
+ * did, else one rant did not start. */
+int stop_node(app::Context& ctx, const std::string& name) {
+    auto where = where_running(ctx, name, true, "stop");
+    if (!where) return 1;
+    if (where->empty()) return stop_loose(ctx, name);
+    return in_each(ctx, *where, [&](const std::string& in) { return stop_here(ctx, name, in); });
+}
+
+/* The group roots to stop: the one root params name, else every root of the group. The
+ * group's own name is looked up, so a bare name finds a group in a package. */
 static std::vector<state::Root> targets(app::Context& ctx, run::Session& s, const std::string& group,
                                         const std::vector<std::string>& params) {
     if (!params.empty()) {
@@ -258,12 +257,6 @@ static std::vector<state::Root> targets(app::Context& ctx, run::Session& s, cons
     for (auto& r : s.state().roots)
         if (r.kind == "group" && r.name == name) out.push_back(r);
     if (out.empty()) throw app::Failure("group `" + name + "` is not running, see `rant ls`");
-    if (out.size() > 1) {
-        std::vector<std::string> keys;
-        for (auto& r : out) keys.push_back(r.key().substr(6));
-        ctx.out.note("group `" + name + "` is running " + std::to_string(out.size()) + " times: " + util::joined(keys));
-        if (!ui::confirm("Stop all of them?", ctx.yes)) return {};
-    }
     return out;
 }
 
@@ -325,9 +318,25 @@ static int run(app::Context& ctx) {
         if (w.size() != 2) throw app::UsageError("stop node takes one node, such as `rant stop node talker`");
         return stop_node(ctx, w[1]);
     }
-    if (names_group(ctx, w[0])) return stop_group(ctx, w[0], { w.begin() + 1, w.end() });
-    if (w.size() != 1) throw app::UsageError("a node takes no key=value, only a group does");
-    return stop_node(ctx, w[0]);
+    const std::string name = w[0];
+    std::vector<std::string> params(w.begin() + 1, w.end());
+    auto where = where_running(ctx, name, false, "stop");
+    if (!where) return 1;
+    if (where->empty()) {
+        /* it runs nowhere rant started it: a group says so, a node may run without rant */
+        if (names_group(ctx, name)) return stop_group(ctx, name, params);
+        if (!params.empty()) throw app::UsageError("a node takes no key=value, only a group does");
+        return stop_loose(ctx, name);
+    }
+    params = resolved_params(ctx, name, params);
+    return in_each(ctx, *where, [&](const std::string& in) {
+        if (names_group(ctx, name)) {
+            if (!in.empty()) ctx.out.note("`" + name + "` runs in " + in);
+            return stop_group(ctx, name, params);
+        }
+        if (!params.empty()) throw app::UsageError("a node takes no key=value, only a group does");
+        return stop_here(ctx, name, in);
+    });
 }
 
 static complete::Candidates complete_words(complete::Request& r) {

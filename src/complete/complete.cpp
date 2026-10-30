@@ -16,7 +16,9 @@
 #include "commands/commands.hpp"
 #include "mesh/client.hpp"
 #include "run/logs.hpp"
+#include "commands/run.hpp"
 #include "run/nodes.hpp"
+#include "util/home.hpp"
 
 namespace complete {
 
@@ -62,7 +64,8 @@ config::GroupInfo Request::group(const std::string& name) { return config::descr
 
 std::vector<std::string> Request::running_nodes() {
     std::vector<std::string> out;
-    for (auto& i : run::snapshot(ctx_).instances) out.push_back(i.name);
+    for (auto& [root, st] : commands::states_anywhere(ctx_, false))
+        for (auto& i : st.instances) out.push_back(i.name);
     return out;
 }
 
@@ -74,14 +77,16 @@ std::vector<std::string> Request::logged_nodes() {
 std::vector<std::string> Request::running_groups() {
     std::vector<std::string> out;
     const config::Workspace* ws = workspace();
-    for (auto& r : run::snapshot(ctx_).roots) {
-        if (r.kind != "group") continue;
-        std::string name = r.name;
-        if (ws)
-            for (auto& g : ws->groups)
-                if (g.name == r.name) name = g.short_name;
-        out.push_back(name);
-    }
+    for (auto& [root, st] : commands::states_anywhere(ctx_, false))
+        for (auto& r : st.roots) {
+            if (r.kind != "group") continue;
+            /* the stem finds a group another workspace runs, as stop looks it up */
+            std::string name = r.name.substr(r.name.rfind('/') + 1);
+            if (ws && util::path_key(root) == util::path_key(ws->root))
+                for (auto& g : ws->groups)
+                    if (g.name == r.name) name = g.short_name;
+            out.push_back(name);
+        }
     return out;
 }
 

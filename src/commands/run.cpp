@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cctype>
 #include <optional>
 #include <set>
 
@@ -10,7 +11,12 @@
 #include "commands/summary.hpp"
 #include "complete/complete.hpp"
 #include "run/nodes.hpp"
+#include "services/services.hpp"
+#include "ui/checklist.hpp"
 #include "ui/prompt.hpp"
+#include "ui/terminal.hpp"
+#include "util/home.hpp"
+#include "util/text.hpp"
 
 namespace commands {
 
@@ -159,14 +165,107 @@ std::string group_name(app::Context& ctx, const std::string& group) {
     return info.diagnostics.empty() ? info.name : group;
 }
 
+/* A running group's root is the name, in full or by its stem. */
+static bool is_group_of(const state::Root& r, const std::string& name) {
+    return r.kind == "group" && (config::same_name(r.name, name) || config::same_name(r.name.substr(r.name.rfind('/') + 1), name));
+}
+
 bool names_group(app::Context& ctx, const std::string& name) {
     if (!ctx.scope()) return false;
     state::State st = run::snapshot(ctx);
     for (auto& r : st.roots)
-        if (r.kind == "group" && (config::same_name(r.name, name) || config::same_name(r.name.substr(r.name.rfind('/') + 1), name)))
-            return true;
+        if (is_group_of(r, name)) return true;
     if (st.instance(name)) return false;
     return config::named(ctx.cwd(), name).group;
+}
+
+std::vector<std::pair<config::fs::path, state::State>> states_anywhere(app::Context& ctx, bool prune) {
+    std::vector<config::fs::path> dirs = state::remembered();
+    std::sort(dirs.begin(), dirs.end());
+    if (const config::Workspace* here = ctx.scope()) dirs.insert(dirs.begin(), here->data);
+    std::vector<std::pair<config::fs::path, state::State>> out;
+    std::set<std::string> seen;
+    for (auto& d : dirs) {
+        if (!seen.insert(util::path_key(d)).second) continue;
+        /* read and let go at once, so no other command waits on it */
+        state::Store store(d, prune);
+        if (prune) {
+            state::prune(store.state(), services::running_in);
+            store.save();
+        }
+        out.push_back({ state::folder_of(d), store.state() });
+    }
+    return out;
+}
+
+std::optional<std::vector<config::fs::path>> where_running(app::Context& ctx, const std::string& name, bool node,
+                                                           const std::string& verb) {
+    const config::Workspace* here = ctx.scope();
+    struct Found {
+        config::fs::path         root;
+        std::vector<std::string> groups, nodes;
+    };
+    std::vector<Found> found;
+    for (auto& [root, st] : states_anywhere(ctx, true)) {
+        Found f{ root, {}, {} };
+        for (auto& r : st.roots)
+            if (!node && is_group_of(r, name)) f.groups.push_back(r.key().substr(6));
+        for (auto& i : st.instances)
+            if (config::same_name(i.name, name)) f.nodes.push_back(i.name);
+        if (!f.groups.empty() || !f.nodes.empty()) found.push_back(f);
+    }
+    /* a group of it running anywhere wins over a node of it */
+    bool groups = std::any_of(found.begin(), found.end(), [](const Found& f) { return !f.groups.empty(); });
+    std::vector<Found> runs;
+    for (auto& f : found)
+        if (groups ? !f.groups.empty() : !f.nodes.empty()) runs.push_back(f);
+    std::vector<config::fs::path> out;
+    if (runs.size() <= 1) {
+        for (auto& f : runs) out.push_back(f.root);
+        return out;
+    }
+    std::vector<std::string> where;
+    std::vector<ui::Choice> choices;
+    for (auto& f : runs) {
+        where.push_back(ctx.shown(f.root));
+        bool current = here && util::path_key(f.root) == util::path_key(here->root);
+        choices.push_back({ ctx.shown(f.root), util::joined(groups ? f.groups : f.nodes), current });
+    }
+    if (ctx.yes || !ui::is_terminal(stdin))
+        throw app::Failure("`" + name + "` runs in " + std::to_string(runs.size()) + " workspaces: " + util::joined(where) +
+                           ", pick one in a terminal");
+    std::string title = verb + " `" + name + "` in";
+    title[0] = (char)std::toupper((unsigned char)title[0]);
+    std::optional<std::vector<size_t>> ticked = ui::pick(ctx.out, title, choices);
+    if (!ticked) return std::nullopt;
+    for (size_t i : *ticked) out.push_back(runs[i].root);
+    return out;
+}
+
+int in_each(app::Context& ctx, const std::vector<config::fs::path>& roots, const std::function<int(const std::string&)>& act) {
+    const config::Workspace* here = ctx.scope();
+    std::string own = here ? util::path_key(here->root) : "";
+    int code = 0;
+    for (auto& root : roots) {
+        std::string in = util::path_key(root) == own ? "" : ctx.shown(root);
+        ctx.enter(root);
+        int c = act(in);
+        if (!code) code = c;
+    }
+    return code;
+}
+
+std::vector<std::string> resolved_params(app::Context& ctx, const std::string& group, std::vector<std::string> words) {
+    if (words.empty()) return words;
+    config::Plan plan = config::plan_group(ctx.cwd(), group, words);
+    if (!plan.diagnostics.empty()) return words;
+    config::GroupInfo g = config::describe_group(ctx.cwd(), group);
+    for (auto& word : words) {
+        std::string key = word.substr(0, word.find('='));
+        for (auto& p : g.params)
+            if (p.name == key && p.type == "path") word = key + "=" + plan.params[key];
+    }
+    return words;
 }
 
 /* A group is what a system runs as, so a bare name is a group. One node alone is asked for

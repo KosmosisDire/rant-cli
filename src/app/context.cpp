@@ -23,9 +23,15 @@ void Context::open(bool packages) {
     with_packages_ = packages;
 }
 
+void Context::enter(const std::filesystem::path& dir) {
+    cwd_ = dir;
+    opened_.reset();
+    with_packages_ = false;
+}
+
 std::string Context::shown(const std::filesystem::path& p) const {
     std::error_code ec;
-    std::filesystem::path rel = std::filesystem::relative(p, cwd_, ec);
+    std::filesystem::path rel = std::filesystem::relative(p, shown_from_, ec);
     std::string whole = config::to_utf8(p);
     if (ec || rel.empty()) return whole;
     /* a path far from here reads better whole than as a long climb */

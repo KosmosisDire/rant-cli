@@ -148,3 +148,36 @@ rant(ls nodes)
 expect_match("${OUT}" "cell:\n    left/lidar\n")
 rant(stop cell)
 expect_match("${OUT}" "left/lidar +stopped")
+
+# A name runs wherever rant started it on this machine. A group another workspace runs is
+# restarted, read and stopped from here, the runs of one group in a workspace stop together,
+# and a name two workspaces run needs a pick, so without a terminal it fails naming them.
+file(WRITE "${OTHER}/Plan.run" "node \"demo/planner\" {}\n")
+rant(run Plan IN "${OTHER}")
+rant(restart plan)
+expect_match("${ERR}" "`plan` runs in [^\n]*-other")
+expect_match("${OUT}" "planner +restarted")
+rant(log PLAN)
+rant(stop Plan)
+expect_match("${ERR}" "`Plan` runs in [^\n]*-other")
+expect_match("${OUT}" "planner +stopped")
+rant(ls nodes IN "${OTHER}")
+expect_match("${OUT}" "NODES\n  [(]none[)]")
+
+file(WRITE "${SCRATCH}/Cam.run"
+     "param \"side\" {}\nnode \"demo/sensor\" {\n  name = \"cam_\${param.side}\"\n}\n")
+rant(run Cam side=left)
+rant(run Cam side=right)
+rant(stop Cam)
+expect_match("${OUT}" "cam_right +stopped")
+expect_match("${OUT}" "cam_left +stopped")
+expect_no_match("${ERR}" "Stop all")
+
+file(WRITE "${SCRATCH}/Plan.run" "node \"demo/sensor\" {\n  name = \"plan_sensor\"\n}\n")
+rant(run Plan IN "${OTHER}")
+rant(run Plan)
+rant(stop Plan FAILS)
+expect_match("${ERR}" "`Plan` runs in 2 workspaces: [^\n]*, pick one in a terminal")
+rant(stop IN "${OTHER}")
+rant(stop Plan)
+expect_match("${OUT}" "plan_sensor +stopped")
