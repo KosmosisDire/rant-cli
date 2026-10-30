@@ -497,8 +497,9 @@ rant_queue_dispatch(q, 0, 100);              /* on the thread that runs them */
 ## Conventions
 
 - Use a standard type whenever one fits: `Pose`, `Pose2D`, `Transform`, `Twist`, `Wrench`,
-  `Double2/3`, `Quaternion`, `JointState`, `Image`, `Color`, `Timestamp`, `Duration`,
-  `Empty` and the rest at https://docs.rantlib.dev/llms.txt. Never define your own pose or vector.
+  `Double2/3`, `Quaternion`, `JointState`, `Odometry`, `Imu`, `LaserScan`, `PointCloud`,
+  `Mesh`, `Grid`, `Image`, `File`, `Color`, `Timestamp`, `Duration`, `Empty` and the rest at
+  https://docs.rantlib.dev/llms.txt. Never define your own pose, vector, cloud or map.
 - Pick the entity by shape: a topic for a stream, a variable for state or a setting with
   one owner, a function for a quick question, a task for a long job with progress or cancel.
 - Names are snake_case where they meet code and PascalCase everywhere else:
