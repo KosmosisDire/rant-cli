@@ -1132,6 +1132,12 @@ pub struct RantConfigReleaseView {
     /// Each NULL when the file says nothing.
     pub name: *const c_char,
     pub description: *const c_char,
+    /// Whether it is a library, and then its name for each language, NULL for one it leaves out.
+    pub library: bool,
+    pub cmake: *const c_char,
+    pub python: *const c_char,
+    pub csharp: *const c_char,
+    pub rust: *const c_char,
     pub diagnostics: *const RantConfigDiagnostic,
     pub diagnostic_count: usize,
 }
@@ -1151,12 +1157,26 @@ pub unsafe extern "C" fn rant_config_release(dir: *const c_char, text: *const c_
     let dir = arg_path(dir);
     let mut store = Store::default();
     let null = std::ptr::null();
-    let mut view = RantConfigReleaseView { name: null, description: null, diagnostics: std::ptr::null(), diagnostic_count: 0 };
+    let mut view = RantConfigReleaseView {
+        name: null,
+        description: null,
+        library: false,
+        cmake: null,
+        python: null,
+        csharp: null,
+        rust: null,
+        diagnostics: std::ptr::null(),
+        diagnostic_count: 0,
+    };
     match package::from_text(&dir, arg_str(text), &dir) {
         Ok(p) => {
             let mut opt = |s: Option<String>| s.map(|s| store.str(&s)).unwrap_or(null);
             view.name = opt(p.name);
             view.description = opt(p.description);
+            if let Some(l) = p.library {
+                view.library = true;
+                (view.cmake, view.python, view.csharp, view.rust) = (opt(l.cmake), opt(l.python), opt(l.csharp), opt(l.rust));
+            }
         }
         Err(d) => (view.diagnostics, view.diagnostic_count) = store.diags(&[d]),
     }

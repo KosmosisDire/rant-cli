@@ -225,7 +225,9 @@ PackageRelease read_release(const fs::path& dir, const std::string& text) {
     std::unique_ptr<RantConfigRelease, decltype(&rant_config_release_free)> h(
         rant_config_release(to_utf8(dir).c_str(), text.c_str()), &rant_config_release_free);
     const RantConfigReleaseView* v = rant_config_release_view(h.get());
-    return { str(v->name), str(v->description), diagnostics(v->diagnostics, v->diagnostic_count) };
+    PackageRelease out{ str(v->name), str(v->description), std::nullopt, diagnostics(v->diagnostics, v->diagnostic_count) };
+    if (v->library) out.library = LibraryBlock{ str(v->cmake), str(v->python), str(v->csharp), str(v->rust) };
+    return out;
 }
 
 Database read_database(const fs::path& file, const std::string& text, bool local) {

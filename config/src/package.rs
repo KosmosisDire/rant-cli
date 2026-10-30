@@ -24,7 +24,32 @@ pub struct PackageBlock {
     pub python: Option<PathBuf>,
     pub nodes: Vec<DeclaredNode>,
     pub placement: Placement,
+    /// Present when the package is a library, which `rant add` adds to other packages.
+    pub library: Option<Library>,
 }
+
+/// The names `rant add` writes into a package's build files, one per language the library
+/// supports. None leaves that language out.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Library {
+    /// The CMake target to link. CPM fetches the repo at the release tag.
+    pub cmake: Option<String>,
+    /// The Python project, its wheels attached to each release.
+    pub python: Option<String>,
+    /// The NuGet id, its <id>.<version>.nupkg attached to each release.
+    pub csharp: Option<String>,
+    /// The Rust crate, fetched from the repo at the tag crate-v<version>.
+    pub rust: Option<String>,
+}
+
+/// Each language's key and the characters its names take, so a name never escapes the line
+/// it is written into.
+const LIBRARY_KEYS: [(&str, &str); 4] = [
+    ("cmake", r"^[A-Za-z0-9_.+-]+(::[A-Za-z0-9_.+-]+)?$"),
+    ("python", r"^[A-Za-z0-9]([A-Za-z0-9._-]*[A-Za-z0-9])?$"),
+    ("csharp", r"^[A-Za-z0-9_][A-Za-z0-9_.-]*$"),
+    ("rust", r"^[A-Za-z][A-Za-z0-9_-]*$"),
+];
 
 #[derive(Debug, Clone)]
 pub struct DeclaredNode {
@@ -51,7 +76,7 @@ pub fn from_text(dir: &Path, text: String, workspace: &Path) -> Result<PackageBl
 fn from_source(src: Source, dir: &Path, workspace: &Path) -> Result<PackageBlock, Diag> {
     let scope = Scope { params: None, file_dir: dir, package_dir: Some(dir), workspace };
     let keys = [&["name", "description", "build", "depend", "ignore", "python"][..], &placement::KEYS[..]].concat();
-    let fields = Fields::of_body(&src, &src.body, PACKAGE_FILE, &keys, &["node"])?;
+    let fields = Fields::of_body(&src, &src.body, PACKAGE_FILE, &keys, &["node", "library"])?;
 
     let mut out = PackageBlock { file: src.path.clone(), placement: Placement::read(&src, &fields.attrs, &scope)?, ..Default::default() };
     if let Some(a) = fields.attr("name") {
@@ -95,6 +120,35 @@ fn from_source(src: Source, dir: &Path, workspace: &Path) -> Result<PackageBlock
         }
         let expect_mesh = nf.attr("expect_mesh").map(|a| eval::boolean(&src, a, &scope)).transpose()?.unwrap_or(true);
         out.nodes.push(DeclaredNode { name, run, expect_mesh });
+    }
+    let mut libraries = fields.blocks("library");
+    if let Some(block) = libraries.next() {
+        if let Some(again) = libraries.next() {
+            return Err(src.diag_at(again, "`library` is given twice"));
+        }
+        if !block.labels.is_empty() {
+            return Err(src.diag_at(block, "`library` takes no label"));
+        }
+        let keys: Vec<&str> = LIBRARY_KEYS.iter().map(|(k, _)| *k).collect();
+        let lf = Fields::of(&src, block, &keys, &[])?;
+        let mut names = Vec::new();
+        for (key, pattern) in LIBRARY_KEYS {
+            let Some(a) = lf.attr(key) else {
+                names.push(None);
+                continue;
+            };
+            let name = eval::string(&src, a, &scope)?;
+            if !regex::Regex::new(pattern).unwrap().is_match(&name) {
+                return Err(src.diag_at(&a.value, format!("`{key}` = \"{name}\" is no {key} name")));
+            }
+            names.push(Some(name));
+        }
+        let [cmake, python, csharp, rust]: [Option<String>; 4] = names.try_into().unwrap();
+        let library = Library { cmake, python, csharp, rust };
+        if library == Library::default() {
+            return Err(src.diag_at(block, format!("`library` names no language, give one of: {}", keys.join(", "))));
+        }
+        out.library = Some(library);
     }
     Ok(out)
 }
@@ -141,6 +195,27 @@ node "raw" {
         assert!(p.file.ends_with("bridge/package.rant"));
         let err = from_text(&t.path("x"), "archive = \"x.tar.gz\"\n".into(), t.root()).err().unwrap();
         assert!(err.message.contains("unknown attribute `archive`"), "{}", err.message);
+    }
+
+    #[test]
+    fn reads_a_library() {
+        let t = TestDir::new();
+        let text = "name = \"rant\"\nlibrary {\n  cmake = \"rant::rant_host\"\n  rust  = \"rant-middleware\"\n}\n";
+        let p = from_text(&t.path("rant"), text.into(), t.root()).unwrap();
+        let want = Library { cmake: Some("rant::rant_host".into()), rust: Some("rant-middleware".into()), ..Default::default() };
+        assert_eq!(p.library, Some(want));
+        assert_eq!(from_text(&t.path("x"), "name = \"x\"\n".into(), t.root()).unwrap().library, None);
+        for (text, want) in [
+            ("library {}\n", "names no language"),
+            ("library \"a\" {\n  cmake = \"a\"\n}\n", "takes no label"),
+            ("library {\n  cmake = \"a\"\n}\nlibrary {\n  cmake = \"b\"\n}\n", "given twice"),
+            ("library {\n  npm = \"a\"\n}\n", "unknown attribute `npm`"),
+            ("library {\n  cmake = \"a)\\nexecute_process(x\"\n}\n", "is no cmake name"),
+            ("library {\n  python = \"-a\"\n}\n", "is no python name"),
+        ] {
+            let err = from_text(&t.path("x"), text.into(), t.root()).err().unwrap();
+            assert!(err.message.contains(want), "{text}: {}", err.message);
+        }
     }
 
     #[test]

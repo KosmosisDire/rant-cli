@@ -198,11 +198,18 @@ struct Folders {
 
 Folders folders_under(const fs::path& start);
 
+/* The names `rant add` writes into build files for a library, empty for a language it leaves
+ * out: the CMake target to link, the Python project, the NuGet id and the Rust crate. */
+struct LibraryBlock {
+    std::string cmake, python, csharp, rust;
+};
+
 /* A package.rant as one release carries it, read before that release is installed. */
 struct PackageRelease {
-    std::string             name;
-    std::string             description;
-    std::vector<Diagnostic> diagnostics;
+    std::string                 name;
+    std::string                 description;
+    std::optional<LibraryBlock> library;    /* present for a library */
+    std::vector<Diagnostic>     diagnostics;
 };
 
 /* Reads package.rant text as if it were in dir, where the release installs. */
