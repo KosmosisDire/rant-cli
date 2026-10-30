@@ -9,16 +9,17 @@
 
 namespace commands {
 
-/* `rant enable` with these words, such as {"Bridge"} or {"node", "talker"}. */
+/* `rant enable` with these words: a group with its key=value params to add to the services
+ * first, such as {"Bridge"}, or none for the services as they are. */
 int enable_named(app::Context& ctx, const std::vector<std::string>& words);
 
-/* `rant ls services`: what rant enable named, whether it runs and how often its nodes were
- * started again. */
+/* `rant ls services`: the services of each enabled workspace, and of this one while it is not
+ * enabled, whether they run and how often their nodes were started again. */
 int list_services(app::Context& ctx, const std::string& pattern);
 
 /* What a stop or restart of everything leaves be in one workspace, since only naming a service
- * stops it: the roots its enabled groups and nodes run under, the nodes they hold, and the
- * running ones as rant ls services names them. */
+ * stops it: when the workspace is enabled, the roots its services run under, the nodes they
+ * hold, and the running ones as rant ls services names them. */
 struct Kept {
     std::set<std::string>    roots;
     std::set<std::string>    nodes;

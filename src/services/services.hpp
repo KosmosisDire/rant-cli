@@ -12,7 +12,8 @@
 /* The service process, `rant __services`, one per rant home. It starts every node whose
  * restart is set as its own child, so it learns how the node ended, and starts it again as
  * its restart says. rant run starts it when such a node starts, the boot and login entries
- * to start what rant enable named, and it ends once it has nothing left to watch. */
+ * to start the services of each workspace rant enable enabled, and it ends once it has
+ * nothing left to watch. */
 namespace services {
 
 namespace fs = std::filesystem;
@@ -42,22 +43,13 @@ std::optional<process::Stopped> stop_through(uint32_t session, const process::Tr
  * "login", or nothing when empty. */
 int serve(const std::string& start);
 
-/* A group or a node rant enable named, which the service process starts at every boot or
- * login with rant run in its folder. */
+/* A workspace rant enable enabled, or the rant home outside one, whose services the service
+ * process starts at every boot or login with a bare rant run in its folder. */
 struct Enabled {
-    fs::path                           folder;    /* the workspace, or the rant home outside one */
+    fs::path                           folder;
     std::string                        start = "boot";    /* or "login" */
-    std::string                        kind;      /* "group" or "node" */
-    std::string                        name;      /* the group or the node type, in full */
-    std::vector<std::string>           words;     /* a group's key=value words as given */
     std::optional<uint16_t>            domain;    /* --domain as given, which every node then takes */
     std::map<std::string, std::string> env;       /* the placement variables rant enable saw */
-
-    /* "Nav speed=2", or "node demo/talker". */
-    std::string shown() const;
-
-    /* The same folder, group or node and words, whenever it starts. */
-    bool same(const Enabled& o) const;
 };
 
 /* What is enabled, in the order it was. Throws app::Failure when the list is damaged. */

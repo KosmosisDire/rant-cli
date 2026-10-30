@@ -295,9 +295,6 @@ impl<'m> Groups<'m> {
         Ok(params)
     }
 
-    /// Binds values to a group's interface: defaults fill what is not given, a required
-    /// param left unset is an error, and every value matches its param. `at` places an
-    /// error, and `hint` follows the message of a param left unset.
     /// The flat plan for a group started with `given`. Instances come depth first in the
     /// order the files write them, and one name twice is merged when both are the same.
     pub fn plan(&self, def: &GroupDef, given: BTreeMap<String, Value>) -> Result<(Plan, BTreeMap<String, Value>), Diag> {

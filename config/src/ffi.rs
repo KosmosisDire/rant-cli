@@ -21,6 +21,7 @@ use crate::paths;
 use crate::plan::{self, Plan};
 use crate::refs;
 use crate::scan::NodeKind;
+use crate::service;
 use crate::vsix;
 use crate::workspace::{self, WorkspaceConfig};
 
@@ -89,9 +90,22 @@ pub struct RantConfigGroupFile {
     pub file: *const c_char,
 }
 
+/// A service block, checked against its group. full is NULL and words empty when problem
+/// says what is wrong with it.
+#[repr(C)]
+pub struct RantConfigService {
+    /// The group as the block names it.
+    pub group: *const c_char,
+    pub full: *const c_char,
+    /// Its params as key=value words, as `rant run` takes them in the folder of its file.
+    pub words: *const *const c_char,
+    pub word_count: usize,
+    pub problem: *const RantConfigDiagnostic,
+}
+
 /// What rant_config_open found. With no workspace around the directory, rant's home stands
 /// in when one was set, and root is NULL when none was. data holds the state and caches.
-/// packages and groups are filled only when RANT_CONFIG_PACKAGES was asked for.
+/// packages, groups and services are filled only when RANT_CONFIG_PACKAGES was asked for.
 #[repr(C)]
 pub struct RantConfigWorkspaceView {
     pub root: *const c_char,
@@ -108,6 +122,11 @@ pub struct RantConfigWorkspaceView {
     pub loose_count: usize,
     pub groups: *const RantConfigGroupFile,
     pub group_count: usize,
+    /// The file that lists its services, which may not be there yet: its workspace.rant, or
+    /// services.rant in rant's home. NULL with root.
+    pub services_file: *const c_char,
+    pub services: *const RantConfigService,
+    pub service_count: usize,
     pub diagnostics: *const RantConfigDiagnostic,
     pub diagnostic_count: usize,
 }
@@ -379,7 +398,13 @@ fn load(start: &Path, packages: bool) -> Loaded {
     let home = home();
     let config = match workspace::open(start) {
         Ok(Some(c)) => Some(c),
-        Ok(None) => home.as_deref().map(workspace::home),
+        Ok(None) => match home.as_deref().map(workspace::home).transpose() {
+            Ok(c) => c,
+            Err(d) => {
+                diags.push(d);
+                None
+            }
+        },
         Err(d) => {
             diags.push(d);
             None
@@ -404,6 +429,7 @@ fn workspace_handle(loaded: &Loaded, extra: Vec<Diag>) -> *mut RantConfigWorkspa
     let loose: Vec<RantConfigNodeType> = loaded.model.iter().flat_map(|m| m.loose.iter()).map(|n| store.node_type(n)).collect();
     let (loose, loose_count) = store.array(loose);
     let mut groups: Vec<RantConfigGroupFile> = Vec::new();
+    let mut services: Vec<RantConfigService> = Vec::new();
     if let Some(m) = &loaded.model {
         let here = m.package_holding(&paths::normalize(&loaded.start)).map(|p| p.name.clone());
         let lookup = Groups::new(m);
@@ -411,8 +437,22 @@ fn workspace_handle(loaded: &Loaded, extra: Vec<Diag>) -> *mut RantConfigWorkspa
             let short = lookup.short_name(g, here.as_deref());
             groups.push(RantConfigGroupFile { name: store.str(&g.name), short_name: store.str(&short), file: store.path(&g.path) });
         }
+        for s in &m.config.services {
+            use std::ptr::null;
+            let mut view = RantConfigService { group: store.str(&s.group), full: null(), words: null(), word_count: 0, problem: null() };
+            match s.check(m, &lookup) {
+                Ok(c) => {
+                    view.full = store.str(&c.full);
+                    (view.words, view.word_count) = store.strs(&c.words);
+                }
+                Err(d) => view.problem = store.diags(&[d]).0,
+            }
+            services.push(view);
+        }
     }
     let (groups, group_count) = store.array(groups);
+    let (services, service_count) = store.array(services);
+    let services_file = loaded.config.as_ref().map_or(std::ptr::null(), |c| store.path(&c.services_file));
     let diags: Vec<Diag> = loaded.diags.iter().cloned().chain(extra).collect();
     let (diagnostics, diagnostic_count) = store.diags(&diags);
     let [root, logs, data] = store.roots(loaded.config.as_ref());
@@ -428,6 +468,9 @@ fn workspace_handle(loaded: &Loaded, extra: Vec<Diag>) -> *mut RantConfigWorkspa
         loose_count,
         groups,
         group_count,
+        services_file,
+        services,
+        service_count,
         diagnostics,
         diagnostic_count,
     };
@@ -594,22 +637,8 @@ fn group_def(groups: &Groups, model: &Model, start: &Path, reference: &str) -> R
 fn plan_group(model: &Model, start: &Path, reference: &str, raw: &[String]) -> Result<Planned, Diag> {
     let groups = Groups::new(model);
     let (def, iface) = group_def(&groups, model, start, reference)?;
-    let mut given = BTreeMap::new();
-    for kv in raw {
-        let Some((k, v)) = kv.split_once('=') else {
-            return Err(Diag::plain(format!("params are key=value, not `{kv}`")));
-        };
-        let Some(p) = iface.iter().find(|p| p.name == k) else {
-            return Err(Diag::plain(format!(
-                "group `{}` has no param `{k}`, see `rant run {} --help`",
-                def.file.name, def.file.name
-            )));
-        };
-        if given.insert(k.to_string(), param::parse_value(p, v, start).map_err(Diag::plain)?).is_some() {
-            return Err(Diag::plain(format!("param `{k}` is given twice")));
-        }
-    }
-    let (plan, values) = groups.plan(&def, given)?;
+    let given = param::from_words(&iface, &def.file.name, raw, start)?;
+    let (plan, values) = groups.plan(&def, given.into_iter().collect())?;
     Ok(Planned { plan, group: Some((def.file.name.clone(), values)) })
 }
 
@@ -634,6 +663,89 @@ pub unsafe extern "C" fn rant_config_plan_group(
         None => Err(no_workspace()),
     };
     plan_handle(&loaded, planned)
+}
+
+/// What an edit of a config file did. changed is false when it had nothing to do.
+#[repr(C)]
+pub struct RantConfigEditView {
+    pub changed: bool,
+    pub diagnostics: *const RantConfigDiagnostic,
+    pub diagnostic_count: usize,
+}
+
+pub struct RantConfigEdit {
+    view: RantConfigEditView,
+    #[allow(dead_code)]
+    store: Store,
+}
+
+fn edit_handle(loaded: &Loaded, edit: impl FnOnce(&Model) -> Result<bool, Diag>) -> *mut RantConfigEdit {
+    let mut store = Store::default();
+    let mut diags = loaded.diags.clone();
+    let mut changed = false;
+    match &loaded.model {
+        Some(m) if diags.is_empty() => match edit(m) {
+            Ok(c) => changed = c,
+            Err(d) => diags.push(d),
+        },
+        Some(_) => {}
+        None => diags.push(no_workspace()),
+    }
+    let (diagnostics, diagnostic_count) = store.diags(&diags);
+    Box::into_raw(Box::new(RantConfigEdit { view: RantConfigEditView { changed, diagnostics, diagnostic_count }, store }))
+}
+
+/// Adds a service block for a group, by reference from start_dir with "key=value" params, to
+/// the file that lists the services there. Unchanged when one with the same params is there.
+/// Never NULL: failures are in the view's diagnostics.
+///
+/// # Safety
+/// start_dir and group must be NULL or NUL terminated UTF-8 strings, and params must point
+/// at param_count such strings.
+#[no_mangle]
+pub unsafe extern "C" fn rant_config_add_service(
+    start_dir: *const c_char,
+    group: *const c_char,
+    params: *const *const c_char,
+    param_count: usize,
+) -> *mut RantConfigEdit {
+    let start = arg_path(start_dir);
+    let raw: Vec<String> = (0..param_count).map(|i| arg_str(*params.add(i))).collect();
+    let reference = arg_str(group);
+    edit_handle(&load(&start, true), |m| {
+        let groups = Groups::new(m);
+        let (def, iface) = group_def(&groups, m, &start, &reference)?;
+        let given = param::from_words(&iface, &def.file.name, &raw, &start)?;
+        service::add(m, &groups, &def, given)
+    })
+}
+
+/// Removes the service blocks at these places among those the view of start_dir lists.
+/// Never NULL: failures are in the view's diagnostics.
+///
+/// # Safety
+/// start_dir must be NULL or a NUL terminated UTF-8 string, and indexes must point at count
+/// values.
+#[no_mangle]
+pub unsafe extern "C" fn rant_config_remove_services(start_dir: *const c_char, indexes: *const usize, count: usize) -> *mut RantConfigEdit {
+    let picked: Vec<usize> = (0..count).map(|i| *indexes.add(i)).collect();
+    edit_handle(&load(&arg_path(start_dir), true), |m| service::remove(&m.config.services_file, &picked).map(|()| true))
+}
+
+/// # Safety
+/// `e` must be a live handle from an edit.
+#[no_mangle]
+pub unsafe extern "C" fn rant_config_edit_view(e: *const RantConfigEdit) -> *const RantConfigEditView {
+    &(*e).view
+}
+
+/// # Safety
+/// `e` must be NULL or a live handle, and is invalid afterwards.
+#[no_mangle]
+pub unsafe extern "C" fn rant_config_edit_free(e: *mut RantConfigEdit) {
+    if !e.is_null() {
+        drop(Box::from_raw(e));
+    }
 }
 
 /// One param of a group or template. default_value is NULL for a required param.

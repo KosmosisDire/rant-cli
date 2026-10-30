@@ -133,16 +133,6 @@ using json = nlohmann::ordered_json;
 
 static fs::path list_file() { return util::rant_home() / "services.json"; }
 
-std::string Enabled::shown() const {
-    std::string s = kind == "node" ? "node " + name : name;
-    for (auto& w : words) s += " " + w;
-    return s;
-}
-
-bool Enabled::same(const Enabled& o) const {
-    return util::path_key(folder) == util::path_key(o.folder) && kind == o.kind && name == o.name && words == o.words;
-}
-
 std::vector<Enabled> enabled() {
     std::ifstream in(list_file(), std::ios::binary);
     if (!in) return {};
@@ -150,13 +140,11 @@ std::vector<Enabled> enabled() {
     try {
         json doc = json::parse(in);
         for (auto& j : doc.at("enabled")) {
+            if (j.contains("kind")) continue;    /* an older rant's entry for one group, which nothing starts now */
             Enabled e;
             e.folder = config::from_utf8(j.at("folder").get<std::string>());
             e.start = j.value("start", "boot");
             if (e.start != "boot" && e.start != "login") throw std::runtime_error("start");
-            e.kind = j.at("kind");
-            e.name = j.at("name");
-            e.words = j.value("words", std::vector<std::string>{});
             if (j.contains("domain")) e.domain = j.at("domain").get<uint16_t>();
             e.env = j.value("env", std::map<std::string, std::string>{});
             out.push_back(std::move(e));
@@ -170,7 +158,7 @@ std::vector<Enabled> enabled() {
 void save(const std::vector<Enabled>& list) {
     json all = json::array();
     for (auto& e : list) {
-        json j = { { "folder", config::to_utf8(e.folder) }, { "start", e.start }, { "kind", e.kind }, { "name", e.name }, { "words", e.words } };
+        json j = { { "folder", config::to_utf8(e.folder) }, { "start", e.start } };
         if (e.domain) j["domain"] = *e.domain;
         if (!e.env.empty()) j["env"] = e.env;
         all.push_back(j);
@@ -213,9 +201,9 @@ static seconds pause(int quick) { return seconds(std::min(60, 1 << std::min(std:
 /* A node is quick to fail when it ends this soon after starting. */
 constexpr seconds settled{ 10 };
 
-/* Runs each group or node enabled to start then with rant run in its folder, detached, its
- * output in the log. They hand their nodes with restart set to the service process, so none
- * waits for them. */
+/* Runs the services of each folder enabled to start then with a bare rant run there, detached,
+ * its output in the log. They hand their nodes with restart set to the service process, so
+ * none waits for them. */
 static void start_enabled(const std::string& start) {
     std::vector<Enabled> list;
     try {
@@ -225,22 +213,19 @@ static void start_enabled(const std::string& start) {
     }
     for (auto& e : list) {
         if (e.start != start) continue;
+        std::string folder = config::to_utf8(e.folder);
         if (!fs::is_directory(e.folder)) {
-            say("cannot start " + e.shown() + ", " + config::to_utf8(e.folder) + " is gone");
+            say("cannot start the services of " + folder + ", it is gone");
             continue;
         }
-        std::vector<std::string> argv = { config::to_utf8(process::self_path()), "run" };
-        if (e.kind == "node") argv.insert(argv.end(), { "node", e.name });
-        else argv.push_back(e.name);
-        argv.insert(argv.end(), e.words.begin(), e.words.end());
-        argv.insert(argv.end(), { "--no-build", "-y" });
+        std::vector<std::string> argv = { config::to_utf8(process::self_path()), "run", "--no-build", "-y" };
         if (e.domain) argv.insert(argv.end(), { "--domain", std::to_string(*e.domain) });
         std::string job = "Local\\rant-services-" + home_key() + "-start-" + std::to_string(clock::now().time_since_epoch().count());
-        say("at " + start + ", starting " + e.shown() + " in " + config::to_utf8(e.folder));
+        say("at " + start + ", starting the services of " + folder);
         try {
             process::start_detached({ argv, e.folder, e.env }, log_file(), job);
         } catch (const app::Failure& f) {
-            say("cannot start " + e.shown() + ": " + f.what());
+            say("cannot start the services of " + folder + ": " + f.what());
         }
     }
 }

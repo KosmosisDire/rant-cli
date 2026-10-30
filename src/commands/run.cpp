@@ -268,8 +268,28 @@ std::vector<std::string> resolved_params(app::Context& ctx, const std::string& g
     return words;
 }
 
+int run_services(app::Context& ctx) {
+    config::Workspace ws = ctx.require_scope(true);    /* a copy, since running enters its root */
+    if (ws.services.empty()) throw app::UsageError("say which group to run: `rant run <group>`, or one node with `rant run node <node>`");
+    ctx.enter(ws.root);
+    int code = 0;
+    for (size_t i = 0; i < ws.services.size(); i++) {
+        const config::Service& s = ws.services[i];
+        if (i && !ctx.json) ctx.out.line("");
+        try {
+            if (s.problem) throw app::Failure(s.problem->str());
+            int c = run_group(ctx, s.full, s.words);
+            if (!code) code = c;
+        } catch (const app::Failure& e) {
+            if (*e.what()) ctx.out.error(e.what());
+            if (!code) code = e.code();
+        }
+    }
+    return code;
+}
+
 /* A group is what a system runs as, so a bare name is a group. One node alone is asked for
- * with the word node, for trying it out. */
+ * with the word node, for trying it out. With no name it runs the services. */
 static int run(app::Context& ctx) {
     auto& w = ctx.args.words;
     bool node = !w.empty() && w[0] == "node";
@@ -279,7 +299,7 @@ static int run(app::Context& ctx) {
         ctx.out.line(app::command_help(run_()));
         return 0;
     }
-    if (w.empty()) throw app::UsageError("say which group to run: `rant run <group>`, or one node with `rant run node <node>`");
+    if (w.empty()) return run_services(ctx);
     if (node) {
         if (w.size() != 2) throw app::UsageError("run node takes one node, such as `rant run node talker`");
         return run_node(ctx, w[1]);
@@ -301,8 +321,9 @@ static complete::Candidates complete_words(complete::Request& r) {
 }
 
 app::Command run_() {
-    app::Command c{ "run", "<group> [key=value...] | node <node>",
-                    "start a group, or one node, detached, logging to the logs folder", app::Section::Workspace,
+    app::Command c{ "run", "[<group> [key=value...] | node <node>]",
+                    "start a group or one node, detached, logging to the logs folder, the services when none is named",
+                    app::Section::Workspace,
                     { { "dry-run", 0, "", "show what would run without starting it" }, no_build_option(), wait_option(),
                       watch_option() },
                     run };

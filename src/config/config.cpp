@@ -41,6 +41,12 @@ static std::vector<Diagnostic> diagnostics(const RantConfigDiagnostic* d, size_t
     return out;
 }
 
+std::string Service::shown() const {
+    std::string s = group;
+    for (auto& w : words) s += " " + w;
+    return s;
+}
+
 static NodeType node_type(const RantConfigNodeType& n) {
     NodeType t;
     t.package = str(n.package);
@@ -82,6 +88,13 @@ static Opened read(Handle h) {
     for (size_t i = 0; i < v->loose_count; i++) ws.loose.push_back(node_type(v->loose[i]));
     for (size_t i = 0; i < v->group_count; i++)
         ws.groups.push_back({ str(v->groups[i].name), str(v->groups[i].short_name), from_utf8(str(v->groups[i].file)) });
+    ws.services_file = from_utf8(str(v->services_file));
+    for (size_t i = 0; i < v->service_count; i++) {
+        const RantConfigService& sv = v->services[i];
+        Service svc{ str(sv.group), str(sv.full), strs(sv.words, sv.word_count), std::nullopt };
+        if (sv.problem) svc.problem = diagnostics(sv.problem, 1).front();
+        ws.services.push_back(std::move(svc));
+    }
     out.workspace = std::move(ws);
     return out;
 }
@@ -240,6 +253,23 @@ Vsix read_vsix(const fs::path& file) {
 }
 
 void set_home(const fs::path& home) { rant_config_set_home(to_utf8(home).c_str()); }
+
+using EditHandle = std::unique_ptr<RantConfigEdit, decltype(&rant_config_edit_free)>;
+
+static Edit read_edit(EditHandle h) {
+    const RantConfigEditView* v = rant_config_edit_view(h.get());
+    return { v->changed, diagnostics(v->diagnostics, v->diagnostic_count) };
+}
+
+Edit add_service(const fs::path& start, const std::string& group, const std::vector<std::string>& params) {
+    std::vector<const char*> ptrs;
+    for (auto& p : params) ptrs.push_back(p.c_str());
+    return read_edit(EditHandle(rant_config_add_service(to_utf8(start).c_str(), group.c_str(), ptrs.data(), ptrs.size()), &rant_config_edit_free));
+}
+
+Edit remove_services(const fs::path& start, const std::vector<size_t>& indexes) {
+    return read_edit(EditHandle(rant_config_remove_services(to_utf8(start).c_str(), indexes.data(), indexes.size()), &rant_config_edit_free));
+}
 
 Opened open(const fs::path& start, bool packages) {
     return read(Handle(rant_config_open(to_utf8(start).c_str(), packages ? RANT_CONFIG_PACKAGES : 0), &rant_config_free));

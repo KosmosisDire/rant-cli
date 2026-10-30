@@ -108,6 +108,26 @@ pub fn parse_value(p: &Param, raw: &str, base: &Path) -> Result<Value, String> {
     checked(p, v)
 }
 
+/// Command line `key=value` words read as the params of a group, a path counted from `base`,
+/// in the order given.
+pub fn from_words(iface: &[Param], group: &str, raw: &[String], base: &Path) -> Result<Vec<(String, Value)>, Diag> {
+    let mut out: Vec<(String, Value)> = Vec::new();
+    for kv in raw {
+        let Some((k, v)) = kv.split_once('=') else {
+            return Err(Diag::plain(format!("params are key=value, not `{kv}`")));
+        };
+        let Some(p) = iface.iter().find(|p| p.name == k) else {
+            return Err(Diag::plain(format!("group `{group}` has no param `{k}`, see `rant run {group} --help`")));
+        };
+        let v = parse_value(p, v, base).map_err(Diag::plain)?;
+        if out.iter().any(|(n, _)| n == k) {
+            return Err(Diag::plain(format!("param `{k}` is given twice")));
+        }
+        out.push((k.to_string(), v));
+    }
+    Ok(out)
+}
+
 /// The `param` blocks of a group or template, each checked as it is read.
 pub fn parse_all(src: &Source, fields: &Fields, scope: &Scope) -> Result<Vec<Param>, Diag> {
     let mut params: Vec<Param> = Vec::new();

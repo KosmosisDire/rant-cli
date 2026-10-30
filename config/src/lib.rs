@@ -19,6 +19,7 @@ mod placement;
 mod plan;
 mod refs;
 mod scan;
+mod service;
 mod source;
 mod vsix;
 mod workspace;

@@ -15,6 +15,10 @@ namespace commands {
 int run_node(app::Context& ctx, const std::string& node);
 int run_group(app::Context& ctx, const std::string& group, const std::vector<std::string>& params);
 
+/* A bare `rant run`: each service of the workspace, or of rant's home outside one, run as
+ * its group from the folder of its file, as every boot runs them once it is enabled. */
+int run_services(app::Context& ctx);
+
 /* A group as the workspace names it in full, such as drivers/Base, or the word itself
  * when it names no group. */
 std::string group_name(app::Context& ctx, const std::string& group);

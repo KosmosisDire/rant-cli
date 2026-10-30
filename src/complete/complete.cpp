@@ -52,6 +52,13 @@ std::vector<std::string> Request::groups() {
     return out;
 }
 
+std::vector<std::string> Request::services() {
+    std::vector<std::string> out;
+    if (const config::Workspace* ws = workspace())
+        for (auto& s : ws->services) out.push_back(s.group);
+    return out;
+}
+
 std::vector<std::string> Request::packages(bool installed) {
     std::vector<std::string> out;
     if (const config::Workspace* ws = workspace())

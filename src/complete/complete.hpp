@@ -36,6 +36,7 @@ public:
 
     std::vector<std::string> node_types();     /* the bare name, package/name where another package has it */
     std::vector<std::string> groups();         /* each by the shortest name that finds it from here */
+    std::vector<std::string> services();       /* the groups the services here name */
     std::vector<std::string> packages(bool installed = true);
     config::GroupInfo        group(const std::string& name);
     std::vector<std::string> running_nodes();  /* the instances rant started anywhere on this machine */

@@ -59,6 +59,17 @@ struct GroupFile {
     fs::path    file;
 };
 
+/* A service block: a group a bare rant run starts, and every boot once rant enable enabled
+ * the workspace. */
+struct Service {
+    std::string               group;    /* as the block names it */
+    std::string               full;     /* in full, empty when problem says what is wrong */
+    std::vector<std::string>  words;    /* key=value params as rant run takes them in the folder of its file */
+    std::optional<Diagnostic> problem;
+
+    std::string shown() const;    /* "Hmi project=hmi" */
+};
+
 struct Workspace {
     fs::path               root;
     fs::path               logs;
@@ -68,6 +79,8 @@ struct Workspace {
     std::vector<Package>   packages;    /* filled when opened with packages */
     std::vector<NodeType>  loose;       /* Python nodes outside every package, likewise */
     std::vector<GroupFile> groups;      /* filled when opened with packages */
+    fs::path               services_file;    /* workspace.rant, or services.rant in rant's home */
+    std::vector<Service>   services;    /* filled when opened with packages */
 };
 
 /* A workspace when one encloses the directory, and any errors met reading it. */
@@ -234,6 +247,19 @@ Vsix read_vsix(const fs::path& file);
 /* rant's home, which holds the installed packages and stands in for a workspace outside
  * every one. Set once before anything is opened. */
 void set_home(const fs::path& home);
+
+/* What an edit of a config file did. changed is false when it had nothing to do. */
+struct Edit {
+    bool                    changed = false;
+    std::vector<Diagnostic> diagnostics;
+};
+
+/* Adds a service block for a group by reference from start, with "key=value" params, to the
+ * file that lists the services there. Unchanged when one with the same params is there. */
+Edit add_service(const fs::path& start, const std::string& group, const std::vector<std::string>& params);
+
+/* Removes the service blocks at these places among the services opening start lists. */
+Edit remove_services(const fs::path& start, const std::vector<size_t>& indexes);
 
 /* Finds the enclosing workspace, else rant's home. With packages it also discovers every
  * package and scans it for node types, which reads the tree and is slower. */

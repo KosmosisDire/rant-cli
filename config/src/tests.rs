@@ -237,7 +237,7 @@ fn installed_packages_join_a_workspace_and_stand_alone_outside_one() {
     assert_eq!(steps, ["tools"], "an installed package came built");
     assert!(build_plan::plan(&m, &["bridge".into()]).unwrap_err().message.contains("`bridge` is installed"));
 
-    let (m, diags) = Model::load(workspace::home(&home), Some(&home));
+    let (m, diags) = Model::load(workspace::home(&home).unwrap(), Some(&home));
     assert!(diags.is_empty(), "{diags:?}");
     let packages: Vec<&str> = m.packages.iter().map(|p| p.name.as_str()).collect();
     assert_eq!(packages, ["bridge", "tools"]);
