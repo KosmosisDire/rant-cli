@@ -13,7 +13,8 @@
  * A package comes from a GitHub repo's releases or from a path on this machine. Its name is
  * the one its package.rant gives, looked up in sources.rant, the official database and the
  * databases sources.rant adds, in that order, or a repo is named by its link. Beside each
- * folder a record says where it came from. */
+ * folder a record says where it came from. A package's skill/ folder is linked into the skills
+ * folder of each AI coding agent found. */
 namespace packages {
 
 namespace fs = std::filesystem;
@@ -31,14 +32,15 @@ struct Source {
 
 /* What rant install recorded of a package it installed. */
 struct Record {
-    std::string name;
-    std::string repo;
-    fs::path    path;
-    std::string named_by;        /* its source's, so update looks where install did */
-    std::string version;         /* the release, empty from a path */
-    std::string extension;       /* the VS Code extension it installed, empty for none */
-    fs::path    editor;          /* and the editor and profile that took it */
-    std::string profile;
+    std::string           name;
+    std::string           repo;
+    fs::path              path;
+    std::string           named_by;     /* its source's, so update looks where install did */
+    std::string           version;      /* the release, empty from a path */
+    std::string           extension;    /* the VS Code extension it installed, empty for none */
+    fs::path              editor;       /* and the editor and profile that took it */
+    std::string           profile;
+    std::vector<fs::path> skills;       /* the links that give its skill to AI coding agents */
 };
 
 /* ~/.rant/packages. */
@@ -107,11 +109,13 @@ struct About {
 };
 
 /* What a release carries for a package on a platform, found by the names a release gives its
- * files: <name>-<version>-<platform>.tar.gz, unpacked into the package's folder, and
- * <name>-<version>.vsix, installed into an editor. */
+ * files: <name>-<version>-<platform>.tar.gz, unpacked into the package's folder,
+ * <name>-<version>.vsix, installed into an editor, and <name>-<version>-skill.zip, unpacked
+ * as the package's skill folder. */
 struct Carried {
     const net::Asset*        archive = nullptr;
     const net::Asset*        extension = nullptr;
+    const net::Asset*        skill = nullptr;
     std::vector<std::string> platforms;    /* those it has archives for */
 };
 
@@ -149,8 +153,8 @@ std::optional<config::NodeType> installed_node(const std::string& package, const
  * one it went into before. Throws app::Failure. */
 void install(app::Context& ctx, const Source& s, const std::string& version);
 
-/* Removes an installed package, and its extension from the editor that took it. Throws
- * app::Failure, also while one of its nodes runs. */
+/* Removes an installed package, its extension from the editor that took it and the links to
+ * its skill. Throws app::Failure, also while one of its nodes runs. */
 void remove(app::Context& ctx, const std::string& name);
 
 /* Drops each package that links a folder, so removing rant's home never reaches into it. */
@@ -158,5 +162,8 @@ void unlink_all();
 
 /* Whether p is a symbolic link or, on Windows, a junction. */
 bool is_link(const fs::path& p);
+
+/* Removes such a link, never what it points to. Throws app::Failure. */
+void unlink(const fs::path& p);
 
 }

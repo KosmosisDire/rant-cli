@@ -2,7 +2,6 @@
 #include <chrono>
 #include <fstream>
 
-#include "agents/skill.hpp"
 #include "app/failure.hpp"
 #include "commands/commands.hpp"
 #include "complete/shells.hpp"
@@ -148,13 +147,6 @@ static int run(app::Context& ctx) {
 #ifdef _WIN32
     user_path(steps, home / "bin");
 #endif
-    for (auto& folder : agents::skill_folders())
-        if (agents::installed(folder))
-            steps.push_back({ folder / "rant", "", [folder] {
-                                 std::error_code ec;
-                                 fs::remove_all(folder / "rant", ec);
-                                 if (ec) throw app::Failure("cannot remove " + (folder / "rant").u8string() + ": " + ec.message());
-                             } });
     if (library::nuget_feed_added())
         steps.push_back({ {}, "the NuGet source rant", [] {
                              if (!process::find_program("dotnet", fs::temp_directory_path()))
@@ -164,7 +156,10 @@ static int run(app::Context& ctx) {
                          } });
     for (auto& name : packages::installed()) {
         std::optional<packages::Record> r = packages::record(name);
-        if (!r || r->extension.empty() || !fs::is_regular_file(r->editor)) continue;
+        if (!r) continue;
+        for (auto& link : r->skills)
+            if (packages::is_link(link)) steps.push_back({ link, "the " + name + " skill", [link] { packages::unlink(link); } });
+        if (r->extension.empty() || !fs::is_regular_file(r->editor)) continue;
         packages::vsix::Target t{ r->editor, r->profile };
         if (!packages::vsix::installed_version(t, r->extension).empty())
             steps.push_back({ {}, "the VS Code extension " + r->extension + ", through " + packages::vsix::shown(t),

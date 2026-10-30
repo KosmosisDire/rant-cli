@@ -2,7 +2,6 @@
 #include <string>
 #include <vector>
 
-#include "agents/skill.hpp"
 #include "app/failure.hpp"
 #include "commands/commands.hpp"
 #include "complete/complete.hpp"
@@ -34,8 +33,7 @@ static std::string shown(const packages::Update& u) {
 }
 
 /* Replaces this binary with its newest release and moves each installed package, or only
- * those named, to what its source offers now, after one question, never to an older release.
- * The skill moves with the CLI. */
+ * those named, to what its source offers now, after one question, never to an older release. */
 static int update_programs(app::Context& ctx, const std::vector<std::string>& named) {
     bool all = named.empty();
     std::vector<std::string> current;
@@ -70,14 +68,9 @@ static int update_programs(app::Context& ctx, const std::vector<std::string>& na
     }
 
     config::fs::path self = process::self_path();
-    std::string names;
-    if (a)
-        for (auto& agent : agents::detected())
-            if (agents::installed(agent.skills)) names += (names.empty() ? "" : ", ") + agent.name;
     ctx.out.line("This updates:");
     if (a) ctx.out.line("  rant-cli " RANT_CLI_VERSION " to " + cli.version + ", over " + config::to_utf8(self));
     for (auto& m : moves) ctx.out.line("  " + shown(m));
-    if (!names.empty()) ctx.out.line("  the rant skill for " + names);
     if (!ui::confirm("Update?", ctx.yes)) return 1;
 
     for (auto& m : moves) {
@@ -103,10 +96,7 @@ static int update_programs(app::Context& ctx, const std::vector<std::string>& na
     if (!a) return code;
     net::download(a->url, self, true);
     ctx.out.line("updated to rant-cli " + cli.version);
-    /* the new binary holds the new skill */
-    if (!names.empty() && process::run({ { config::to_utf8(self), "setup", "skill" }, config::fs::temp_directory_path(), {} }) != 0)
-        ctx.out.warn("the rant skill was not updated, run `rant setup skill`");
-    /* and new shell hooks, written again where setup wrote them before */
+    /* the new binary holds new shell hooks, written again where setup wrote them before */
     config::fs::path hooks = util::rant_home() / "completions";
     for (auto [file, shell] : { std::pair<const char*, const char*>{ "rant.bash", "bash" }, { "rant.zsh", "zsh" }, { "rant.ps1", "powershell" } })
         if (config::fs::exists(hooks / file) &&

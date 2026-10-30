@@ -22,6 +22,7 @@ use crate::refs;
 use crate::scan::NodeKind;
 use crate::service;
 use crate::vsix;
+use crate::zip;
 use crate::workspace::{self, WorkspaceConfig};
 
 /// rant_config_open flag: also find every package and scan it for node types.
@@ -664,7 +665,7 @@ pub unsafe extern "C" fn rant_config_plan_group(
     plan_handle(&loaded, planned)
 }
 
-/// What an edit of a config file did. changed is false when it had nothing to do.
+/// What an edit of files did. changed is false when it had nothing to do.
 #[repr(C)]
 pub struct RantConfigEditView {
     pub changed: bool,
@@ -729,6 +730,22 @@ pub unsafe extern "C" fn rant_config_add_service(
 pub unsafe extern "C" fn rant_config_remove_services(start_dir: *const c_char, indexes: *const usize, count: usize) -> *mut RantConfigEdit {
     let picked: Vec<usize> = (0..count).map(|i| *indexes.add(i)).collect();
     edit_handle(&load(&arg_path(start_dir), true), |m| service::remove(&m.config.services_file, &picked).map(|()| true))
+}
+
+/// Unpacks every file of the zip at path into dest. Never NULL: failures are in the view's
+/// diagnostics.
+///
+/// # Safety
+/// Both arguments must be NULL or NUL terminated UTF-8 strings.
+#[no_mangle]
+pub unsafe extern "C" fn rant_config_unzip(path: *const c_char, dest: *const c_char) -> *mut RantConfigEdit {
+    let mut store = Store::default();
+    let (changed, diags) = match zip::extract(&arg_path(path), &arg_path(dest)) {
+        Ok(()) => (true, vec![]),
+        Err(d) => (false, vec![d]),
+    };
+    let (diagnostics, diagnostic_count) = store.diags(&diags);
+    Box::into_raw(Box::new(RantConfigEdit { view: RantConfigEditView { changed, diagnostics, diagnostic_count }, store }))
 }
 
 /// # Safety

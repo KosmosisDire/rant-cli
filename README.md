@@ -41,10 +41,10 @@ rant explore                   # open the explorer
 
 ## AI coding agents
 
-`rant setup skill` installs a skill that teaches Claude Code, Codex, Cursor, Gemini CLI,
-GitHub Copilot and OpenCode to use Rant and the CLI: `~/.claude/skills/rant` for Claude Code,
-`~/.agents/skills/rant` for the others. `rant update` keeps it current. Delete that folder
-to remove it.
+`rant install rant` installs a skill that teaches Claude Code, Codex, Cursor, Gemini CLI,
+GitHub Copilot and OpenCode to use Rant and the CLI, linked as `~/.claude/skills/rant` for
+Claude Code and `~/.agents/skills/rant` for the others. `rant update` keeps it current and
+`rant remove rant` removes it.
 
 ## Build
 

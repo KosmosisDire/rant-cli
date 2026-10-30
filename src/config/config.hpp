@@ -244,7 +244,7 @@ Vsix read_vsix(const fs::path& file);
  * every one. Set once before anything is opened. */
 void set_home(const fs::path& home);
 
-/* What an edit of a config file did. changed is false when it had nothing to do. */
+/* What an edit of files did. changed is false when it had nothing to do. */
 struct Edit {
     bool                    changed = false;
     std::vector<Diagnostic> diagnostics;
@@ -256,6 +256,9 @@ Edit add_service(const fs::path& start, const std::string& group, const std::vec
 
 /* Removes the service blocks at these places among the services opening start lists. */
 Edit remove_services(const fs::path& start, const std::vector<size_t>& indexes);
+
+/* Unpacks every file of a zip into dest, refusing one whose name would land outside it. */
+Edit unzip(const fs::path& zip, const fs::path& dest);
 
 /* Finds the enclosing workspace, else rant's home. With packages it also discovers every
  * package and scans it for node types, which reads the tree and is slower. */

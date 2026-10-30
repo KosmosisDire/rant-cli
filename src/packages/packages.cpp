@@ -9,6 +9,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include "agents/agents.hpp"
 #include "app/failure.hpp"
 #include "net/github.hpp"
 #include "packages/vsix.hpp"
@@ -188,6 +189,7 @@ Carried carried(const net::Release& r, const std::string& name, const std::strin
     std::string prefix = name + "-" + r.version;
     c.archive = r.asset(prefix + "-" + platform + ".tar.gz");
     c.extension = r.asset(prefix + ".vsix");
+    c.skill = r.asset(prefix + "-skill.zip");
     for (auto& a : r.assets)
         if (a.name.rfind(prefix + "-", 0) == 0 && ends_with(a.name, ".tar.gz"))
             c.platforms.push_back(a.name.substr(prefix.size() + 1, a.name.size() - prefix.size() - 8));
@@ -204,7 +206,7 @@ About about(const Source& s) {
     net::Release r = net::release(s.repo);
     a.version = r.version;
     Carried c = carried(r, s.name, net::platform());
-    for (const net::Asset* f : { c.archive, c.extension })
+    for (const net::Asset* f : { c.archive, c.extension, c.skill })
         if (f) a.files.push_back(f->name);
     std::string where = s.repo + " at " + r.tag;
     a.description = named(config::from_utf8(s.repo), where, net::fetch(net::raw_url(s.repo, r.tag, package_file))).description;
@@ -238,7 +240,7 @@ bool is_link(const fs::path& p) {
 #endif
 }
 
-static void unlink(const fs::path& p) {
+void unlink(const fs::path& p) {
 #ifdef _WIN32
     bool ok = RemoveDirectoryW(p.c_str()) || DeleteFileW(p.c_str());
 #else
@@ -312,6 +314,9 @@ std::optional<Record> record(const std::string& name) {
         r.editor = config::from_utf8(e.value("editor", ""));
         r.profile = e.value("profile", "");
     }
+    json skills = j.value("skills", json::array());
+    for (auto& l : skills)
+        if (l.is_string()) r.skills.push_back(config::from_utf8(l.get<std::string>()));
     return r;
 }
 
@@ -322,6 +327,7 @@ static void save(const Record& r) {
     if (!r.named_by.empty()) j["named_by"] = r.named_by;
     if (!r.version.empty()) j["version"] = r.version;
     if (!r.extension.empty()) j["extension"] = { { "id", r.extension }, { "editor", u8(r.editor) }, { "profile", r.profile } };
+    for (auto& l : r.skills) j["skills"].push_back(u8(l));
     std::ofstream(record_file(r.name), std::ios::binary) << j.dump(2) << "\n";
 }
 
@@ -406,21 +412,28 @@ static void refuse_other_name(const config::PackageRelease& rel, const std::stri
 }
 
 /* Fills a new folder for the package, an archive unpacked or only the package.rant text of a
- * release without one, then puts it in place of the old. */
-static void place(const std::string& name, const fs::path& archive, const std::string& text = "") {
+ * release without one, with a skill zip unpacked as its skill folder, then puts it in place of
+ * the old. */
+static void place(const std::string& name, const fs::path& archive, const std::string& text = "", const fs::path& skill = {}) {
     fs::path staging = dir() / ("." + name + ".new");
     std::error_code ec;
     fs::remove_all(staging, ec);
     fs::create_directories(staging, ec);
+    auto fail = [&](const std::string& why) {
+        fs::remove_all(staging, ec);
+        throw app::Failure(why);
+    };
     if (archive.empty()) {
         std::ofstream(staging / package_file, std::ios::binary) << text;
     } else if (process::run({ { u8(tar_program()), "-xzf", u8(archive), "-C", u8(staging) }, fs::temp_directory_path(), {} }) != 0) {
-        fs::remove_all(staging, ec);
-        throw app::Failure("cannot unpack " + u8(archive));
+        fail("cannot unpack " + u8(archive));
     }
-    if (!fs::is_regular_file(staging / package_file)) {
-        fs::remove_all(staging, ec);
-        throw app::Failure(u8(archive) + " holds no package.rant at its top, so it is no package archive");
+    if (!fs::is_regular_file(staging / package_file)) fail(u8(archive) + " holds no package.rant at its top, so it is no package archive");
+    if (!skill.empty()) {
+        fs::remove_all(staging / "skill", ec);
+        config::Edit e = config::unzip(skill, staging / "skill");
+        if (!e.diagnostics.empty()) fail(e.diagnostics[0].str());
+        if (!fs::is_regular_file(staging / "skill" / "SKILL.md")) fail(u8(skill) + " holds no SKILL.md at its top, so it is no skill");
     }
     if (!archive.empty()) {
         try {
@@ -459,12 +472,26 @@ static void install_extension(app::Context& ctx, const vsix::Target& t, const fs
         ctx.out.note("it stays in " + vsix::shown({ had->editor, had->profile }) + " as well, where rant no longer updates it");
 }
 
-/* A file the downloads put in rant's cache, gone with this. */
+/* A release file downloaded into rant's cache, gone with this. Empty for no file. */
 struct Download {
     fs::path path;
-    ~Download() {
+    Download(app::Context& ctx, const net::Asset* a) {
+        if (!a) return;
+        ctx.out.note("downloading " + a->name);
+        path = util::rant_home() / "cache" / (stamp() + "-" + a->name);
+        try {
+            net::download(a->url, path);
+        } catch (...) {
+            drop();
+            throw;
+        }
+    }
+    Download(const Download&) = delete;
+    Download& operator=(const Download&) = delete;
+    ~Download() { drop(); }
+    void drop() {
         std::error_code ec;
-        fs::remove(path, ec);
+        if (!path.empty()) fs::remove(path, ec);
     }
 };
 
@@ -487,28 +514,22 @@ static void install_release(app::Context& ctx, const Source& s, const std::strin
     refuse_other_name(named(config::from_utf8(s.repo), where, text), s.name, where);
     Carried c = carried(r, s.name, net::platform());
     const net::Asset *archive = c.archive, *extension = c.extension;
-    std::string release = "the " + s.name + " " + r.version + " release";
+    std::string release = "the " + s.name + " " + r.version + " release", prefix = s.name + "-" + r.version;
     if (!archive && !c.platforms.empty()) {
         std::string built;
         for (auto& p : c.platforms) built += (built.empty() ? "" : ", ") + p;
         throw app::Failure(release + " is built for " + built + ", not for " + net::platform());
     }
-    if (!archive && !extension)
-        throw app::Failure(release + " carries no " + s.name + "-" + r.version + "-" + net::platform() + ".tar.gz or " + s.name + "-" +
-                           r.version + ".vsix, so it has nothing to install");
+    if (!archive && !extension && !c.skill)
+        throw app::Failure(release + " carries no " + prefix + "-" + net::platform() + ".tar.gz, " + prefix + ".vsix or " + prefix +
+                           "-skill.zip, so it has nothing to install");
     if (!extension && retarget) throw app::Failure(s.name + " is no VS Code extension, so --editor and --profile do not apply");
     /* the editor and profile first, since picking one may ask */
     std::optional<vsix::Target> t;
     if (extension) t = extension_target(ctx, s.name);
-    std::vector<Download> files;
-    for (auto* a : { archive, extension }) {
-        if (!a) continue;
-        ctx.out.note("downloading " + a->name);
-        files.push_back({ util::rant_home() / "cache" / (stamp() + "-" + a->name) });
-        net::download(a->url, files.back().path);
-    }
-    if (extension) install_extension(ctx, *t, files.back().path, rec);
-    place(s.name, archive ? files.front().path : fs::path(), *text);
+    Download archive_file(ctx, archive), extension_file(ctx, extension), skill_file(ctx, c.skill);
+    if (extension) install_extension(ctx, *t, extension_file.path, rec);
+    place(s.name, archive_file.path, *text, skill_file.path);
     rec.version = r.version;
     ctx.out.note("installed " + s.name + " " + r.version + " from " + s.repo);
 }
@@ -553,6 +574,44 @@ static void install_path(app::Context& ctx, const Source& s, Record& rec) {
     throw app::Failure(u8(s.path) + " is no package folder or .tar.gz archive");
 }
 
+/* Links the package's skill folder as <skills>/<name> into each folder of skills an AI coding
+ * agent found reads, replacing what is there, and drops the links had made when it has none. */
+static void link_skills(app::Context& ctx, Record& rec, const std::vector<fs::path>& had) {
+    fs::path skill = fs::absolute(dir() / rec.name / "skill").lexically_normal();
+    std::error_code ec;
+    rec.skills.clear();
+    if (!fs::is_regular_file(skill / "SKILL.md", ec)) {
+        for (auto& l : had)
+            if (is_link(l)) unlink(l);
+        return;
+    }
+    std::vector<std::pair<fs::path, std::string>> readers;
+    for (auto& a : agents::detected()) {
+        auto r = std::find_if(readers.begin(), readers.end(), [&](auto& x) { return x.first == a.skills; });
+        if (r == readers.end()) readers.push_back({ a.skills, a.name });
+        else r->second += ", " + a.name;
+    }
+    if (readers.empty()) ctx.out.note("found no AI coding agent here to give the " + rec.name + " skill to");
+    for (auto& [folder, names] : readers) {
+        fs::path link = folder / rec.name;
+        try {
+            if (!is_link(link) || std::find(had.begin(), had.end(), link) == had.end()) {
+                if (is_link(link)) unlink(link);
+                fs::remove_all(link, ec);
+                fs::create_directories(folder, ec);
+                make_link(link, skill);
+                ctx.out.note("linked the " + rec.name + " skill for " + names + " as " + u8(link));
+            }
+            rec.skills.push_back(link);
+        } catch (const app::Failure& e) {
+            ctx.out.warn(names + ": " + e.what());
+        }
+    }
+    /* a link in a folder no agent found reads now stays recorded, so remove still drops it */
+    for (auto& l : had)
+        if (is_link(l) && std::find(rec.skills.begin(), rec.skills.end(), l) == rec.skills.end()) rec.skills.push_back(l);
+}
+
 void install(app::Context& ctx, const Source& s, const std::string& version) {
     std::error_code ec;
     fs::create_directories(dir(), ec);
@@ -571,6 +630,7 @@ void install(app::Context& ctx, const Source& s, const std::string& version) {
     } else {
         install_release(ctx, s, version, rec);
     }
+    link_skills(ctx, rec, had ? had->skills : std::vector<fs::path>{});
     save(rec);
 }
 
@@ -588,6 +648,9 @@ void remove(app::Context& ctx, const std::string& name) {
         else if (!vsix::installed_version(t, rec->extension).empty())
             vsix::remove(t, rec->extension);
     }
+    if (rec)
+        for (auto& l : rec->skills)
+            if (is_link(l)) unlink(l);
     sweep(name);
     retire(name);
     fs::remove(record_file(name), ec);

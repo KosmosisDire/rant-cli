@@ -1,5 +1,5 @@
 # Builds rant on every platform. Run by hand on main it builds main, and when VERSION has no
-# tag yet it also releases it: a GitHub Release with the binaries attached.
+# tag yet it also releases it: a GitHub Release with the binaries and the skill attached.
 name: release
 
 on:
@@ -97,6 +97,15 @@ jobs:
         with:
           path: release
           merge-multiple: true
+
+      - uses: actions/checkout@v7
+        with:
+          path: source
+
+      # the package rant carries its skill folder, the files at the zip's top
+      - name: Skill
+        working-directory: source/skill
+        run: zip -r "$GITHUB_WORKSPACE/release/rant-${{ needs.plan.outputs.version }}-skill.zip" .
 
       - uses: softprops/action-gh-release@v3
         with:

@@ -265,6 +265,10 @@ static Edit read_edit(EditHandle h) {
     return { v->changed, diagnostics(v->diagnostics, v->diagnostic_count) };
 }
 
+Edit unzip(const fs::path& zip, const fs::path& dest) {
+    return read_edit(EditHandle(rant_config_unzip(to_utf8(zip).c_str(), to_utf8(dest).c_str()), &rant_config_edit_free));
+}
+
 Edit add_service(const fs::path& start, const std::string& group, const std::vector<std::string>& params) {
     std::vector<const char*> ptrs;
     for (auto& p : params) ptrs.push_back(p.c_str());

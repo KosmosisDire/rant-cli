@@ -23,6 +23,7 @@ mod service;
 mod source;
 mod vsix;
 mod workspace;
+mod zip;
 
 #[cfg(test)]
 mod testdir;
