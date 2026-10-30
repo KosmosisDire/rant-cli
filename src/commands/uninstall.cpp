@@ -165,6 +165,9 @@ static int run(app::Context& ctx) {
             steps.push_back({ {}, "the VS Code extension " + r->extension + ", through " + packages::vsix::shown(t),
                               [t, id = r->extension] { packages::vsix::remove(t, id); } });
     }
+    for (auto& s : packages::skills())
+        for (auto& link : s.links)
+            if (packages::is_link(link)) steps.push_back({ link, "the skill of " + s.name, [link] { packages::unlink(link); } });
     if (services::entry::present(services::entry::When::Login))
         steps.push_back({ {}, "the login entry that starts what rant enable named", [] { services::entry::remove(services::entry::When::Login); } });
     if (services::entry::present(services::entry::When::Boot))

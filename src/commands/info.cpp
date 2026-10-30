@@ -4,7 +4,7 @@
 #include "commands/commands.hpp"
 #include "commands/kinds.hpp"
 #include "complete/complete.hpp"
-#include "library/uses.hpp"
+#include "library/library.hpp"
 #include "mesh/access.hpp"
 #include "mesh/schema_text.hpp"
 #include "packages/packages.hpp"
@@ -174,10 +174,10 @@ static Answer package_answer(app::Context& ctx, const state::State& st, const co
         if (!rec->extension.empty()) j["extension"] = rec->extension + " in " + config::to_utf8(rec->editor) + (rec->profile.empty() ? "" : ", profile " + rec->profile);
     }
     j["kind"] = p.kinds;
-    json rant = json::array();
-    for (auto& u : library::in_folder(p.dir))
-        rant.push_back((u.version ? *u.version : "none") + " through " + u.how + " in " + ctx.shown(u.file));
-    j["rant"] = rant;
+    json libraries = json::array();
+    for (auto& u : library::in_folder(p.dir, library::known()))
+        libraries.push_back(u.library + " " + (u.version ? *u.version : "none") + " through " + u.how + " in " + ctx.shown(u.file));
+    j["libraries"] = libraries;
     config::Build b = config::plan_build(ctx.cwd(), { p.name });
     json depends = json::array(), build = json::array();
     for (auto& e : b.edges)

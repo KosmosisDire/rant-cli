@@ -9,12 +9,8 @@
 #include "config/config.hpp"
 #include "net/github.hpp"
 
-/* The packages rant install puts in ~/.rant/packages, a folder each that every workspace sees.
- * A package comes from a GitHub repo's releases or from a path on this machine. Its name is
- * the one its package.rant gives, looked up in sources.rant, the official database and the
- * databases sources.rant adds, in that order, or a repo is named by its link. Beside each
- * folder a record says where it came from. A package's skill/ folder is linked into the skills
- * folder of each AI coding agent found. */
+/* The packages rant install puts in ~/.rant/packages, each from a repo's releases or a path, named
+ * by its package.rant as sources.rant or a package database finds it, with a record beside it. */
 namespace packages {
 
 namespace fs = std::filesystem;
@@ -24,10 +20,11 @@ extern const char* const official;
 
 /* Where one package comes from, and what named it. */
 struct Source {
-    std::string name;
-    std::string repo;        /* owner/name, empty for a path */
-    fs::path    path;        /* a local build folder or a .tar.gz archive */
-    std::string named_by;    /* "sources.rant", a database's repo, "link" or "--from" */
+    std::string                         name;
+    std::string                         repo;        /* owner/name, empty for a path */
+    fs::path                            path;        /* a local build folder or a .tar.gz archive */
+    std::string                         named_by;    /* "sources.rant", a database's repo, "link" or "--from" */
+    std::optional<config::LibraryBlock> library;     /* set for a library, which rant add takes instead */
 };
 
 /* What rant install recorded of a package it installed. */
@@ -124,8 +121,9 @@ Carried carried(const net::Release& r, const std::string& name, const std::strin
 /* Reads a source's package.rant, a repo's at its newest release. Throws app::Failure. */
 About about(const Source& s);
 
-/* The names the sources gave when last read, from the cache, for completion. */
-std::vector<std::string> cached_names();
+/* What the sources named when last read, from the cache, so completion needs no network. With
+ * read, the sources are read first when the official database never was. */
+std::vector<Source> cached(bool read = false);
 
 /* The installed packages by name: folders in dir() and records. */
 std::vector<std::string> installed();
@@ -154,8 +152,23 @@ std::optional<config::NodeType> installed_node(const std::string& package, const
 void install(app::Context& ctx, const Source& s, const std::string& version);
 
 /* Removes an installed package, its extension from the editor that took it and the links to
- * its skill. Throws app::Failure, also while one of its nodes runs. */
+ * its skill, or a library's skill. Throws app::Failure, also while one of its nodes runs. */
 void remove(app::Context& ctx, const std::string& name);
+
+/* The skill of a library, installed in ~/.rant/skills/<name> from the library's release. */
+struct Skill {
+    std::string           name;
+    std::string           repo;
+    std::string           version;
+    std::vector<fs::path> links;    /* those that give it to AI coding agents */
+};
+
+std::optional<Skill> skill(const std::string& name);
+std::vector<Skill>   skills();
+
+/* Installs the <name>-<version>-skill.zip a library's release carries for the agents found, asking
+ * first while none has it, only when may_ask. A given skill only moves forward. Throws app::Failure. */
+void give_skill(const app::Context& ctx, const std::string& name, const std::string& repo, const net::Release& r, bool may_ask);
 
 /* Drops each package that links a folder, so removing rant's home never reaches into it. */
 void unlink_all();

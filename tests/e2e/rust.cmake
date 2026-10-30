@@ -33,6 +33,7 @@ expect_match("${OUT}" "motor +stopped\n")
 file(READ "${SCRATCH}/logs/motor.log" log)
 expect_match("${log}" "ready motor")
 
-# rant lib lists the use, and leaves a path one to its checkout.
-rant(lib)
-expect_match("${OUT}" "motor +rust +none +Cargo path")
+# rant ls libraries lists the use, and leaves a path one to its checkout.
+cache_database("${RANT_LIBRARY}")
+rant(ls libraries)
+expect_match("${OUT}" "motor +rant +rust +none +Cargo path")

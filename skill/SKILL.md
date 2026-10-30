@@ -66,9 +66,9 @@ databases = ["someone/rant-packages"]
 | see the mesh | `rant ls <nodes\|entities\|topics\|variables\|functions\|tasks\|types\|packages\|groups\|sources\|services> [pattern]`, `rant ls` alone lists the kinds, `rant ls nodes --no-mesh` for only what this workspace started, without joining the mesh |
 | explain one thing | `rant info [kind] <name>`, a type shows its fields and who uses it, a node its source file |
 | read and write | `rant sub <topic\|var> -n 1`, `rant pub <topic\|var> <value>`, `rant call <fn> [value]`. On a terminal sub and a task's progress redraw in place, `--lines` (and any pipe) prints a record a line of `from`, `hz` and `value`, a call's result last. `--value-only` prints only the values. `--json` and `--csv` only change the format |
-| Rant version in packages | `rant lib [folder]` shows it, `rant lib install [folder]` adds it, `rant lib update [folder]` moves it, both take `--version V` |
-| packages | `rant install <package\|repo>...` (`--version V` for one release, `--from PATH` for a local build folder, linked, or a .tar.gz). A package installed from a repo's link is never replaced by one of the same name from elsewhere, `rant remove` it first. `rant install` alone on a terminal is a checklist for a person, then one of their groups to run at every boot, so an agent names the packages. `rant remove <package>...`, `rant ls packages --available` for what there is, `rant ls sources` for where it looks, `rant info package <name>` before installing. A package that carries a skill gives it to each AI coding agent found, as this skill is the package `rant_skill`. `rant install` and `rant remove` need a package's nodes stopped, `rant update` stops them and starts them again |
-| update | `rant update`: the CLI and the installed packages with their skills, then the workspace's packages. `rant update <package>...` updates only those. A package from `--from` stays until `rant install` replaces it |
+| libraries in packages | `rant add [library [folder]]` adds a library to the package here or in folder, or moves it to the latest release, Rant when none is named (`rant add`, `rant add math cam`). `--version V` picks a release, also an older one. `rant ls libraries` shows what each package uses, `rant ls libraries --available` what there is. A library's skill is offered as it is added |
+| packages | `rant install <package\|repo>...` (`--version V` for one release, `--from PATH` for a local build folder, linked, or a .tar.gz). A package installed from a repo's link is never replaced by one of the same name from elsewhere, `rant remove` it first. `rant install` alone on a terminal is a checklist for a person, then one of their groups to run at every boot, so an agent names the packages. `rant remove <package>...`, `rant ls packages --available` for what there is, `rant ls sources` for where it looks, `rant info package <name>` before installing. A package that carries a skill gives it to each AI coding agent found, as this skill is the package `rant_skill`, and asks first when it carries more than the skill. `rant install` refuses a library, which `rant add` takes. `rant install` and `rant remove` need a package's nodes stopped, `rant update` stops them and starts them again |
+| update | `rant update`: the CLI and the installed packages with their skills, then every library the workspace's packages use. `rant update <package\|library>...` updates only those. A package from `--from` stays until `rant install` replaces it |
 | visual debugger | `rant explore`, after `rant install explorer` |
 | web frontends | `rant install bridge`, then `rant run Bridge`, see Bridge |
 | explorer in a browser | `rant install explorer`, then `rant run WebExplorer`, see Web explorer |
@@ -255,7 +255,7 @@ node.Subscriber<Pose2D>("Pose", p => Console.WriteLine(p.Angle));
 ```
 
 ```rust
-use rant::types::{Double2, Pose2D};   // a program in src/bin, Rant added with rant lib install
+use rant::types::{Double2, Pose2D};   // a program in src/bin, Rant added with rant add
 let node = rant::Node::new("talker", rant::NodeOptions::new())?;
 let pose = node.publisher::<Pose2D>("Pose", rant::Qos::new())?;
 pose.send(&Pose2D { position: Double2 { x: 1.0, y: 2.0 }, angle: 0.5 })?;
@@ -371,7 +371,7 @@ rant_queue_dispatch(q, 0, 100);              /* on the thread that runs them */
     Raw image rows start at the top.
 - One program per node. Keep domain, prefixes and node names out of the code: the config
   files and groups place them, and the name in the code is only a default.
-- Add Rant with `rant lib install`, never by hand, and keep packages current with `rant lib update`.
+- Add Rant and other libraries with `rant add`, never by hand, and keep packages current with `rant update`.
 
 ## Debugging
 

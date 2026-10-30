@@ -1,4 +1,6 @@
 include("${CMAKE_CURRENT_LIST_DIR}/lib.cmake")
+# Rant is known as a library, as it is once the package database was read.
+cache_database("${RANT_LIBRARY}")
 
 rant(init)
 
@@ -81,7 +83,7 @@ created demo/Demo[.]run
 rant(run Demo --dry-run IN "${SCRATCH}/demo" FAILS)
 expect_match("${ERR}" "no node named `talker`, `demo` is not built yet, run `rant build` first")
 
-# A package gets Rant through the same routine as rant lib install, which asks GitHub.
+# A package gets Rant through the same routine as rant add, which asks GitHub for the release.
 rant(new package cam --lang cpp MAY_FAIL)
 expect_match("${OUT}" "created cam/CMakeLists[.]txt\ncreated cam/cam[.]cpp\n")
 if(NOT CODE EQUAL 0 AND ERR MATCHES "cannot reach|rate limit")
@@ -93,5 +95,5 @@ endif()
 file(READ "${SCRATCH}/cam/CMakeLists.txt" cam)
 expect_match("${cam}" "FetchContent_MakeAvailable[(]rant[)]")
 expect_match("${cam}" "add_executable[(]cam cam[.]cpp[)]\ntarget_link_libraries[(]cam PRIVATE rant::rant_host[)]\n")
-rant(lib cam)
-expect_match("${OUT}" "cam +cmake +[0-9]+[.][0-9]+[.][0-9]+ +FetchContent")
+rant(ls libraries)
+expect_match("${OUT}" "cam +rant +cmake +[0-9]+[.][0-9]+[.][0-9]+ +FetchContent")

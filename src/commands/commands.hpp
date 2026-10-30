@@ -27,7 +27,7 @@ app::Command sub();
 app::Command pub();
 app::Command call();
 app::Command setup();
-app::Command lib();
+app::Command add();
 app::Command install();
 app::Command remove();
 app::Command explore();

@@ -21,7 +21,7 @@ const std::vector<app::Command>& all() {
         pub(),
         call(),
         setup(),
-        lib(),
+        add(),
         install(),
         remove(),
         update(),

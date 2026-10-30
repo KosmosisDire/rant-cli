@@ -21,10 +21,15 @@ static int run(app::Context& ctx) {
     return code;
 }
 
-static complete::Candidates complete_words(complete::Request&) { return { packages::installed() }; }
+static complete::Candidates complete_words(complete::Request&) {
+    std::vector<std::string> names = packages::installed();
+    for (auto& s : packages::skills()) names.push_back(s.name);
+    return { names };
+}
 
 app::Command remove() {
-    app::Command c{ "remove", "<package>...", "remove installed packages, a linked build folder stays as it is", app::Section::Setup, {}, run };
+    app::Command c{ "remove", "<package>...", "remove installed packages, or the skill rant add gave a library, a linked build folder stays as it is",
+                    app::Section::Setup, {}, run };
     c.complete = complete_words;
     return c;
 }

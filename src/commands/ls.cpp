@@ -9,7 +9,7 @@
 #include "commands/enable.hpp"
 #include "commands/kinds.hpp"
 #include "complete/complete.hpp"
-#include "library/uses.hpp"
+#include "library/library.hpp"
 #include "mesh/client.hpp"
 #include "mesh/schema_text.hpp"
 #include "mesh/values.hpp"
@@ -260,11 +260,15 @@ static int list_mesh(app::Context& ctx, Kind kind, const std::string& pattern) {
     return 0;
 }
 
-/* The Rant version a package uses, the installed one for Python. */
-static std::string rant_version(const config::Package& p) {
-    std::string out;
-    for (auto& u : library::in_folder(p.dir))
-        if (u.version && (out.empty() || u.how != "pyproject")) out = *u.version;
+/* The version of each library a package uses, the installed one for Python. */
+static std::vector<std::pair<std::string, std::string>> library_versions(const config::Package& p, const std::vector<library::Library>& libs) {
+    std::vector<std::pair<std::string, std::string>> out;
+    for (auto& u : library::in_folder(p.dir, libs)) {
+        if (!u.version) continue;
+        auto it = std::find_if(out.begin(), out.end(), [&](auto& o) { return o.first == u.library; });
+        if (it == out.end()) out.push_back({ u.library, *u.version });
+        else if (u.how != "pyproject") it->second = *u.version;
+    }
     return out;
 }
 
@@ -284,20 +288,26 @@ static int list_workspace(app::Context& ctx, Kind kind, const std::string& patte
     const char* title = "";
     if (kind == Kind::Package) {
         title = "PACKAGES";
+        std::vector<library::Library> libs = library::known();
         for (auto& p : ws.packages) {
             if (!util::name_matches(pattern, p.name)) continue;
-            std::string version = rant_version(p);
+            json versions = json::object();
+            std::vector<std::string> used;
+            for (auto& [name, v] : library_versions(p, libs)) {
+                versions[name] = v;
+                used.push_back(name + " " + v);
+            }
             json files = json::array();
             for (auto& f : p.files) files.push_back(config::to_utf8(f));
             std::optional<packages::Record> rec = p.installed ? packages::record(p.name) : std::nullopt;
             bool linked = p.installed && packages::is_link(packages::dir() / p.name);
             json item = { { "name", p.name }, { "kinds", p.kinds }, { "folder", config::to_utf8(p.dir) }, { "files", files },
-                          { "rant", version.empty() ? json(nullptr) : json(version) }, { "installed", p.installed } };
+                          { "libraries", versions }, { "installed", p.installed } };
             if (rec && !rec->version.empty()) item["version"] = rec->version;
             if (rec) item["source"] = rec->repo.empty() ? config::to_utf8(rec->path) : rec->repo;
             out.push_back(item);
             std::string state = linked ? "linked" : rec && !rec->version.empty() ? "installed " + rec->version : "installed";
-            std::string uses = p.installed ? dim(state) : version.empty() ? dim("no Rant") : "Rant " + version;
+            std::string uses = p.installed ? dim(state) : used.empty() ? dim("no library") : util::joined(used, ", ");
             t.row({ p.name, dim(util::joined(p.kinds)), uses, dim(ctx.shown(p.dir)) });
         }
     } else {
@@ -323,9 +333,9 @@ static int list_workspace(app::Context& ctx, Kind kind, const std::string& patte
     return 0;
 }
 
-/* What rant install can install, each from the first source that names it, with what its
- * package.rant says at the repo's default branch. */
-static int list_available(app::Context& ctx, const std::string& pattern) {
+/* What rant install can install, or rant add can add, each from the first source that names
+ * it, with what its package.rant says at the repo's default branch. */
+static int list_available(app::Context& ctx, Kind kind, const std::string& pattern) {
     packages::Sources sources;
     auto dim = [&](const std::string& s) { return ctx.out.paint(ui::Style::Dim, s); };
     json out = json::array();
@@ -334,6 +344,17 @@ static int list_available(app::Context& ctx, const std::string& pattern) {
     for (auto& p : sources.problems()) ctx.out.warn(p);
     for (auto& o : offers) {
         const packages::Source& s = o.source;
+        if (s.library.has_value() != (kind == Kind::Library)) continue;
+        if (s.library) {
+            json languages = json::array();
+            for (auto [k, name] : { std::pair<const char*, const std::string*>{ "cmake", &s.library->cmake }, { "python", &s.library->python },
+                                    { "csharp", &s.library->csharp }, { "rust", &s.library->rust } })
+                if (!name->empty()) languages.push_back(k);
+            std::vector<std::string> words = languages;
+            out.push_back({ { "name", s.name }, { "repo", s.repo }, { "description", o.description }, { "languages", languages } });
+            t.row({ s.name, dim(s.repo.empty() ? config::to_utf8(s.path) : s.repo), dim(util::joined(words, " ")), o.description });
+            continue;
+        }
         std::string from = s.repo.empty() ? config::to_utf8(s.path) : s.repo;
         const std::optional<packages::Record>& rec = o.record;
         std::string installed = !rec ? "" : rec->version.empty() ? "installed" : "installed " + rec->version;
@@ -343,6 +364,40 @@ static int list_available(app::Context& ctx, const std::string& pattern) {
     }
     if (ctx.json) ctx.out.line(out.dump(2));
     else section(ctx, "AVAILABLE", t.lines());
+    return 0;
+}
+
+/* Every use of a library the sources name under the workspace, else under here. */
+static int list_libraries(app::Context& ctx, const std::string& pattern) {
+    const config::Workspace* ws = ctx.workspace();
+    std::vector<library::Library> libs;
+    for (auto& l : library::known())
+        if (util::name_matches(pattern, l.name)) libs.push_back(l);
+    std::vector<library::Use> uses = library::under(ws ? ws->root : ctx.cwd(), libs);
+    if (ctx.json) {
+        json out = json::array();
+        for (auto& u : uses)
+            out.push_back({ { "library", u.library },
+                            { "folder", config::to_utf8(u.dir) },
+                            { "kind", library::kind_name(u.kind) },
+                            { "how", u.how },
+                            { "version", u.version ? json(*u.version) : json(nullptr) },
+                            { "file", config::to_utf8(u.file) } });
+        ctx.out.line(out.dump(2));
+        return 0;
+    }
+    if (uses.empty()) {
+        ctx.out.note("nothing here uses a library yet, `rant add` adds Rant to the package here");
+        return 0;
+    }
+    auto dim = [&](const std::string& s) { return ctx.out.paint(ui::Style::Dim, s); };
+    ui::Table t;
+    for (auto& u : uses) {
+        std::string where = u.how + " " + ctx.shown(u.file);
+        if (u.how == "venv" && !u.venv_exists) where = "no venv yet";
+        t.row({ ctx.shown(u.dir), u.library, library::kind_name(u.kind), u.version ? *u.version : dim("none"), dim(where) });
+    }
+    section(ctx, "LIBRARIES", t.lines());
     return 0;
 }
 
@@ -393,12 +448,14 @@ static int run(app::Context& ctx) {
     if (!kind) throw app::UsageError("`" + w[0] + "` is not a kind ls lists, see `rant ls`");
     if (w.size() > 2) throw app::UsageError("ls takes a kind and one pattern at most, such as `rant ls types cam`");
     std::string pattern = w.size() == 2 ? w[1] : "";
-    if (ctx.args.has("available") && *kind != Kind::Package) throw app::UsageError("--available goes with `rant ls packages`");
+    if (ctx.args.has("available") && *kind != Kind::Package && *kind != Kind::Library)
+        throw app::UsageError("--available goes with `rant ls packages` or `rant ls libraries`");
     if (*kind == Kind::Source) {
         if (!pattern.empty()) throw app::UsageError("ls sources takes no pattern");
         return list_sources(ctx);
     }
-    if (*kind == Kind::Package && ctx.args.has("available")) return list_available(ctx, pattern);
+    if (ctx.args.has("available")) return list_available(ctx, *kind, pattern);
+    if (*kind == Kind::Library) return list_libraries(ctx, pattern);
     if (*kind == Kind::Service) return list_services(ctx, pattern);
     if (!on_mesh(*kind)) return list_workspace(ctx, *kind, pattern);
     return list_mesh(ctx, *kind, pattern);
@@ -411,10 +468,10 @@ static complete::Candidates complete_words(complete::Request& r) {
 
 app::Command ls() {
     app::Command c{ "ls", "<kind> [pattern]",
-                    "list nodes, entities, types, packages, groups, sources or services",
+                    "list nodes, entities, types, packages, libraries, groups, sources or services",
                     app::Section::Mesh,
                     { { "no-mesh", 0, "", "with nodes: only what this workspace declares and started, without joining the mesh" },
-                      { "available", 0, "", "with packages: what `rant install` can install, from sources.rant and the package databases" } },
+                      { "available", 0, "", "with packages or libraries: what `rant install` or `rant add` can take, from sources.rant and the package databases" } },
                     run };
     c.own_help = true;
     c.complete = complete_words;

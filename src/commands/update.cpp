@@ -34,7 +34,7 @@ static std::string shown(const packages::Update& u) {
 
 /* Replaces this binary with its newest release and moves each installed package, or only
  * those named, to what its source offers now, after one question, never to an older release. */
-static int update_programs(app::Context& ctx, const std::vector<std::string>& named) {
+static int update_programs(app::Context& ctx, packages::Sources& sources, const std::vector<std::string>& named) {
     bool all = named.empty();
     std::vector<std::string> current;
     net::Release cli;
@@ -49,8 +49,19 @@ static int update_programs(app::Context& ctx, const std::vector<std::string>& na
             current.push_back("rant-cli " RANT_CLI_VERSION);
         }
     }
-    packages::Sources sources;
     std::vector<packages::Update> moves;
+    /* a library's skill is installed as a package is, and moves with the packages */
+    std::vector<std::pair<packages::Skill, net::Release>> skills;
+    if (all) {
+        std::vector<packages::Skill> had = packages::skills();
+        std::vector<std::string> repos;
+        for (auto& s : had) repos.push_back(s.repo);
+        std::vector<std::optional<net::Release>> latest = net::latest(repos);
+        for (size_t k = 0; k < had.size(); k++) {
+            if (latest[k] && net::newer(latest[k]->version, had[k].version)) skills.push_back({ had[k], *latest[k] });
+            else current.push_back("the skill of " + had[k].name + " " + had[k].version);
+        }
+    }
     int code = 0;
     for (auto& name : all ? packages::installed() : named) {
         try {
@@ -62,7 +73,7 @@ static int update_programs(app::Context& ctx, const std::vector<std::string>& na
             code = 1;
         }
     }
-    if (!a && moves.empty()) {
+    if (!a && moves.empty() && skills.empty()) {
         if (!current.empty()) ctx.out.line(joined(current) + (current.size() > 1 ? " are" : " is") + " up to date");
         return code;
     }
@@ -71,7 +82,16 @@ static int update_programs(app::Context& ctx, const std::vector<std::string>& na
     ctx.out.line("This updates:");
     if (a) ctx.out.line("  rant-cli " RANT_CLI_VERSION " to " + cli.version + ", over " + config::to_utf8(self));
     for (auto& m : moves) ctx.out.line("  " + shown(m));
+    for (auto& [s, r] : skills) ctx.out.line("  the skill of " + s.name + " " + s.version + " to " + r.version + ", from " + s.repo);
     if (!ui::confirm("Update?", ctx.yes)) return 1;
+    for (auto& [s, r] : skills) {
+        try {
+            packages::give_skill(ctx, s.name, s.repo, r, false);
+        } catch (const app::Failure& e) {
+            ctx.out.error(e.what());
+            code = 1;
+        }
+    }
 
     for (auto& m : moves) {
         /* Windows will not replace a folder a node runs from, so its nodes stop meanwhile */
@@ -105,23 +125,46 @@ static int update_programs(app::Context& ctx, const std::vector<std::string>& na
     return code;
 }
 
-/* The CLI and the installed packages first, then every package of the workspace
- * here that uses Rant, each after its own question. Named packages alone go without the rest. */
+/* The CLI and the installed packages first, then the libraries the packages of the workspace
+ * here use, each after its own question. Named packages and libraries alone go without the rest. */
 static int run(app::Context& ctx) {
-    int code = update_programs(ctx, ctx.args.words);
-    if (!ctx.args.words.empty()) return code;
+    packages::Sources sources;
+    std::vector<std::string> programs;
+    std::vector<library::Library> libs;
+    for (auto& word : ctx.args.words) {
+        std::optional<packages::Source> s = packages::record(word) ? std::nullopt : sources.find(word);
+        if (s && s->library) libs.push_back(library::find(ctx, sources, word));
+        else programs.push_back(word);
+    }
+    bool all = ctx.args.words.empty();
+    int code = all || !programs.empty() ? update_programs(ctx, sources, programs) : 0;
+    if (!all && libs.empty()) return code;
     const config::Workspace* ws = ctx.workspace();
-    if (!ws || library::under(ws->root).empty()) return code;
-    ctx.out.line();
-    return library::update(ctx, ws->root, library::release("")) ? code : 1;
+    if (!ws) {
+        if (!all) throw app::Failure("rant update moves a library through a workspace, and none is here");
+        return code;
+    }
+    if (all) libs = library::all(sources);
+    std::vector<library::Use> uses = library::under(ws->root, libs);
+    if (uses.empty()) {
+        if (!all) ctx.out.note("nothing in this workspace uses " + libs[0].name + (libs.size() > 1 ? " or the others named" : ""));
+        return code;
+    }
+    if (all || !programs.empty()) ctx.out.line();
+    return library::update(ctx, uses, libs) ? code : 1;
 }
 
-static complete::Candidates complete_words(complete::Request&) { return { packages::installed() }; }
+static complete::Candidates complete_words(complete::Request&) {
+    std::vector<std::string> names = packages::installed();
+    for (auto& s : packages::cached())
+        if (s.library) names.push_back(s.name);
+    return { names };
+}
 
 app::Command update() {
-    app::Command c{ "update", "[package...]",
-                    "update rant-cli and the installed packages, then the Rant library of this workspace's packages. "
-                    "With packages named, only those",
+    app::Command c{ "update", "[package|library...]",
+                    "update rant-cli and the installed packages, then the libraries this workspace's packages use. "
+                    "With names, only those",
                     app::Section::Setup, {}, run };
     c.complete = complete_words;
     return c;

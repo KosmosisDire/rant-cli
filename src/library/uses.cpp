@@ -11,12 +11,6 @@
 
 namespace library {
 
-static const char* rant_git = "https://github.com/KosmosisDire/Rant.git";
-static const char* python_package = "rant-middleware";
-static const char* dist_info_prefix = "rant_middleware-";
-static const char* dotnet_package = "Rant";
-static const char* rust_crate = "rant-middleware";
-
 const char* kind_name(Kind k) {
     switch (k) {
     case Kind::CMake:  return "cmake";
@@ -27,6 +21,16 @@ const char* kind_name(Kind k) {
     return "?";
 }
 
+bool supports(const Library& lib, Kind k) {
+    switch (k) {
+    case Kind::CMake:  return !lib.names.cmake.empty();
+    case Kind::Python: return !lib.names.python.empty();
+    case Kind::CSharp: return !lib.names.csharp.empty();
+    case Kind::Rust:   return !lib.names.rust.empty();
+    }
+    return false;
+}
+
 static std::string lower(std::string s) {
     for (auto& c : s) c = (char)std::tolower((unsigned char)c);
     return s;
@@ -34,7 +38,19 @@ static std::string lower(std::string s) {
 
 static bool iequals(const std::string& a, const std::string& b) { return lower(a) == lower(b); }
 
-static std::regex icase(const char* pattern) { return std::regex(pattern, std::regex::ECMAScript | std::regex::icase); }
+static std::regex icase(const std::string& pattern) { return std::regex(pattern, std::regex::ECMAScript | std::regex::icase); }
+
+/* s in a pattern, matched as written. */
+static std::string escaped(const std::string& s) {
+    std::string out;
+    for (char c : s) {
+        if (std::string(R"(\^$.|?*+()[]{})").find(c) != std::string::npos) out += '\\';
+        out += c;
+    }
+    return out;
+}
+
+static std::string git_url(const Library& lib) { return "https://github.com/" + lib.repo + ".git"; }
 
 /* Every match of re in text with its third group, the version, made version. Built by hand,
  * since a format string would read "$2" followed by a digit as a group of two digits. */
@@ -49,8 +65,9 @@ static std::string with_version(const std::string& text, const std::regex& re, c
     return out + text.substr(last);
 }
 
-static Use use_of(Kind kind, const std::string& how, const fs::path& dir, const fs::path& file) {
+static Use use_of(const Library& lib, Kind kind, const std::string& how, const fs::path& dir, const fs::path& file) {
     Use u;
+    u.library = lib.name;
     u.kind = kind;
     u.how = how;
     u.dir = dir;
@@ -146,13 +163,21 @@ static std::string first_arg(const std::string& args) {
     return a;
 }
 
-/* A fetch of Rant: named rant, or pointing at the Rant repository. */
-static bool fetches_rant(const std::string& text, const Call& c) {
+/* A fetch of the library: named after it, or pointing at its repo. */
+static bool fetches(const std::string& text, const Call& c, const Library& lib) {
     if (!named(c, { "CPMAddPackage", "CPMFindPackage", "CPMDeclarePackage", "FetchContent_Declare" })) return false;
     std::string args = c.args(text);
-    static const std::regex name = icase(R"(\bNAME\s+rant\b)");
-    return lower(args).find("kosmosisdire/rant") != std::string::npos || iequals(first_arg(args), "rant") ||
-           std::regex_search(args, name);
+    std::regex name = icase(R"(\bNAME\s+)" + escaped(lib.name) + R"((?![\w-]))");
+    std::regex repo = icase(R"((^|[/:"\s]))" + escaped(lib.repo) + R"((\.git)?(?![\w.-]))");
+    return std::regex_search(args, repo) || iequals(first_arg(args), lib.name) || std::regex_search(args, name);
+}
+
+/* Whether a link names the library's target, or another of its namespace such as rant::rant. */
+static bool links(const std::string& args, const Library& lib) {
+    const std::string& t = lib.names.cmake;
+    size_t ns = t.find("::");
+    std::string target = ns == std::string::npos ? escaped(t) + R"((?![\w:]))" : escaped(t.substr(0, ns + 2));
+    return std::regex_search(args, std::regex(R"((^|[^\w:]))" + target));
 }
 
 /* Where a version sits in a fetch: after GIT_TAG or VERSION, after @ in the CPM short form,
@@ -162,15 +187,15 @@ static const std::regex& version_pattern() {
     return v;
 }
 
-std::optional<Use> cmake_use(const std::string& text) {
+std::optional<Use> cmake_use(const std::string& text, const Library& lib) {
     for (auto& c : cmake_calls(text)) {
         std::string args = c.args(text);
-        Use u = use_of(Kind::CMake, "", {}, {});
-        if (fetches_rant(text, c)) {
+        Use u = use_of(lib, Kind::CMake, "", {}, {});
+        if (fetches(text, c, lib)) {
             u.how = lower(c.name).rfind("cpm", 0) == 0 ? "CPM" : "FetchContent";
             std::smatch m;
             if (std::regex_search(args, m, version_pattern())) u.version = m[3].str();
-        } else if (named(c, { "find_package" }) && iequals(first_arg(args), "rant")) {
+        } else if (named(c, { "find_package" }) && iequals(first_arg(args), lib.name)) {
             u.how = "find_package";
             static const std::regex v(R"(^\s*\S+\s+(\d[^\s)]*))");
             std::smatch m;
@@ -183,19 +208,19 @@ std::optional<Use> cmake_use(const std::string& text) {
     return std::nullopt;
 }
 
-std::string cmake_set(const std::string& text, const std::string& version) {
+std::string cmake_set(const std::string& text, const Library& lib, const std::string& version) {
     for (auto& c : cmake_calls(text)) {
-        if (!fetches_rant(text, c)) continue;
+        if (!fetches(text, c, lib)) continue;
         std::string args = c.args(text);
         if (!std::regex_search(args, version_pattern()))
-            throw app::Failure("its Rant fetch names no version to move, set GIT_TAG v" + version + " by hand");
+            throw app::Failure("its " + lib.name + " fetch names no version to move, set GIT_TAG v" + version + " by hand");
         std::string moved = with_version(args, version_pattern(), version);
         return text.substr(0, c.args_begin) + moved + text.substr(c.args_end);
     }
-    throw app::Failure("it uses an installed Rant through find_package, update that install instead");
+    throw app::Failure("it uses an installed " + lib.name + " through find_package, update that install instead");
 }
 
-std::string cmake_add(const std::string& text, const std::string& version, std::string* hint) {
+std::string cmake_add(const std::string& text, const Library& lib, const std::string& tag, std::string* hint) {
     std::vector<Call> calls = cmake_calls(text);
     auto cpm_setup = [&](const Call& c) {
         return (named(c, { "include" }) && lower(c.args(text)).find("cpm") != std::string::npos) || named(c, { "CPMAddPackage" });
@@ -205,13 +230,13 @@ std::string cmake_add(const std::string& text, const std::string& version, std::
     for (auto& c : calls)
         if (named(c, { "project", "FetchContent_MakeAvailable" }) || cpm_setup(c)) anchor = std::max(anchor.value_or(0), c.end);
 
-    std::string block;
+    std::string block, url = git_url(lib);
     if (cpm) {
-        block = "CPMAddPackage(NAME rant\n              GIT_REPOSITORY " + std::string(rant_git) + "\n              GIT_TAG v" + version + ")\n";
+        block = "CPMAddPackage(NAME " + lib.name + "\n              GIT_REPOSITORY " + url + "\n              GIT_TAG " + tag + ")\n";
     } else {
         bool included = std::any_of(calls.begin(), calls.end(), [&](const Call& c) { return named(c, { "include" }) && first_arg(c.args(text)) == "FetchContent"; });
-        block = std::string(included ? "" : "include(FetchContent)\n") + "FetchContent_Declare(rant\n  GIT_REPOSITORY " + rant_git +
-                "\n  GIT_TAG v" + version + "\n  GIT_SHALLOW TRUE)\nFetchContent_MakeAvailable(rant)\n";
+        block = std::string(included ? "" : "include(FetchContent)\n") + "FetchContent_Declare(" + lib.name + "\n  GIT_REPOSITORY " + url +
+                "\n  GIT_TAG " + tag + "\n  GIT_SHALLOW TRUE)\nFetchContent_MakeAvailable(" + lib.name + ")\n";
     }
 
     std::vector<const Call*> targets;
@@ -222,7 +247,7 @@ std::string cmake_add(const std::string& text, const std::string& version, std::
         if (args.find(" IMPORTED") == std::string::npos && args.find(" ALIAS") == std::string::npos && args.find(" INTERFACE") == std::string::npos)
             targets.push_back(&c);
     }
-    bool linked = std::any_of(calls.begin(), calls.end(), [&](const Call& c) { return named(c, { "target_link_libraries" }) && c.args(text).find("rant::") != std::string::npos; });
+    bool linked = std::any_of(calls.begin(), calls.end(), [&](const Call& c) { return named(c, { "target_link_libraries" }) && links(c.args(text), lib); });
     std::optional<std::pair<size_t, std::string>> link;
     if (targets.size() == 1 && !linked) {
         std::string name = first_arg(targets[0]->args(text));
@@ -233,7 +258,7 @@ std::string cmake_add(const std::string& text, const std::string& version, std::
             static const std::regex keyword(R"(\b(PRIVATE|PUBLIC|INTERFACE)\b)");
             plain = !std::regex_search(c.args(text), keyword);
         }
-        link = { { targets[0]->end, "target_link_libraries(" + name + (plain ? " " : " PRIVATE ") + "rant::rant_host)\n" } };
+        link = { { targets[0]->end, "target_link_libraries(" + name + (plain ? " " : " PRIVATE ") + lib.names.cmake + ")\n" } };
     }
 
     auto line_end = [&](size_t at) {
@@ -249,7 +274,7 @@ std::string cmake_add(const std::string& text, const std::string& version, std::
         std::string piece = at == out.size() && !out.empty() && out.back() != '\n' ? "\n" + insert : insert;
         out.insert(at, piece);
     }
-    if (hint) *hint = link || linked ? "" : "target_link_libraries(<your target> PRIVATE rant::rant_host)";
+    if (hint) *hint = link || linked ? "" : "target_link_libraries(<your target> PRIVATE " + lib.names.cmake + ")";
     return out;
 }
 
@@ -376,25 +401,40 @@ std::optional<fs::path> node_source(const config::NodeType& n) {
 
 // ---- Python ----
 
-static const std::regex& pin_pattern() {
-    static const std::regex p = icase(R"((["']\s*rant[-_.]middleware\s*(?:\[[^\]]*\])?\s*(?:===|==|~=|>=|<=|!=|>|<)\s*)(v?)(\d+(?:\.\d+)*(?:[-.]?[0-9A-Za-z]+)*))");
-    return p;
+/* A Python project's name in a pattern, as pip compares names: any case, and -, _ and . alike. */
+static std::string python_name(const std::string& project) {
+    std::string out;
+    for (char c : project) out += c == '-' || c == '_' || c == '.' ? std::string("[-_.]+") : escaped(std::string(1, c));
+    return out;
 }
 
-std::string pyproject_set(const std::string& text, const std::string& version) {
-    if (!std::regex_search(text, pin_pattern())) throw app::Failure(std::string("its ") + python_package + " dependency names no version");
-    return with_version(text, pin_pattern(), version);
+static std::regex pin_pattern(const Library& lib) {
+    return icase(R"((["']\s*)" + python_name(lib.names.python) +
+                 R"(\s*(?:\[[^\]]*\])?\s*(?:===|==|~=|>=|<=|!=|>|<)\s*)(v?)(\d+(?:\.\d+)*(?:[-.]?[0-9A-Za-z]+)*))");
 }
 
-/* The version installed in a venv, from its dist-info folder. */
-static std::optional<std::string> venv_version(const fs::path& venv) {
+std::string pyproject_set(const std::string& text, const Library& lib, const std::string& version) {
+    if (!std::regex_search(text, pin_pattern(lib))) throw app::Failure("its " + lib.names.python + " dependency names no version");
+    return with_version(text, pin_pattern(lib), version);
+}
+
+std::string dist_name(const Library& lib) {
+    std::string out;
+    for (char c : lower(lib.names.python))
+        if (c != '-' && c != '_' && c != '.') out += c;
+        else if (out.empty() || out.back() != '_') out += '_';
+    return out;
+}
+
+/* The version of the library installed in a venv, from the dist-info folder its wheel left. */
+static std::optional<std::string> venv_version(const fs::path& venv, const Library& lib) {
     std::vector<fs::path> sites = { venv / "Lib" / "site-packages" };
     std::error_code ec;
     for (auto& e : fs::directory_iterator(venv / "lib", ec)) sites.push_back(e.path() / "site-packages");
-    std::string prefix = dist_info_prefix;
+    std::string prefix = dist_name(lib) + "-";
     for (auto& site : sites)
         for (auto& e : fs::directory_iterator(site, ec)) {
-            std::string name = e.path().filename().u8string();
+            std::string name = lower(e.path().filename().u8string());
             const std::string tail = ".dist-info";
             if (name.rfind(prefix, 0) == 0 && name.size() > prefix.size() + tail.size() && name.compare(name.size() - tail.size(), tail.size(), tail) == 0)
                 return name.substr(prefix.size(), name.size() - prefix.size() - tail.size());
@@ -423,42 +463,45 @@ static bool has_python(const fs::path& dir) {
     return false;
 }
 
-/* The pyproject pin and the venv of a folder of Python. A folder named explicitly counts for
- * any Python file, else only for Python that imports rant. */
-static void python_uses(const fs::path& dir, bool explicit_folder, std::vector<Use>& out) {
+/* The pyproject pin and venv of a folder for each library it lists or holds. Python that imports
+ * rant is a node, so it counts for the default library, and adding counts any Python. */
+static void python_uses(const fs::path& dir, const std::vector<const Library*>& libs, bool adding, std::vector<Use>& out) {
+    if (libs.empty()) return;
     fs::path pyproject = dir / "pyproject.toml";
     std::string text = read_file(pyproject);
-    static const std::regex dependency = icase(R"(["']\s*rant[-_.]middleware\b)");
-    bool listed = std::regex_search(text, dependency);
-    if (listed) {
-        Use u = use_of(Kind::Python, "pyproject", dir, pyproject);
-        std::smatch m;
-        if (std::regex_search(text, m, pin_pattern())) u.version = m[3].str();
+    config::PythonInfo py = config::python_of(dir);
+    for (const Library* lib : libs) {
+        std::regex dependency = icase(R"(["']\s*)" + python_name(lib->names.python) + R"((?![\w.-]))");
+        bool listed = std::regex_search(text, dependency);
+        if (listed) {
+            Use u = use_of(*lib, Kind::Python, "pyproject", dir, pyproject);
+            std::smatch m;
+            if (std::regex_search(text, m, pin_pattern(*lib))) u.version = m[3].str();
+            out.push_back(u);
+        }
+        std::optional<std::string> held = py.venv ? venv_version(*py.venv, *lib) : std::nullopt;
+        bool node = lib->name == default_library && py.imports_rant;
+        if (!(listed || held || node || (adding && (fs::exists(pyproject) || has_python(dir))))) continue;
+        Use u = use_of(*lib, Kind::Python, "venv", dir, {});
+        if (py.venv) {
+            u.file = *py.venv;
+            u.venv_exists = true;
+            u.venv_python = py.venv_python;
+            u.version = held;
+        } else {
+            /* a new venv goes beside the pyproject, else at the workspace root, else here */
+            u.file = (fs::exists(pyproject) || !py.root ? dir : *py.root) / ".venv";
+            u.venv_python = python_in(u.file);
+            u.python = py.interpreter;
+        }
         out.push_back(u);
     }
-    config::PythonInfo py = config::python_of(dir);
-    bool counts = listed || py.imports_rant || (explicit_folder && (fs::exists(pyproject) || has_python(dir)));
-    if (!counts) return;
-    Use u = use_of(Kind::Python, "venv", dir, {});
-    if (py.venv) {
-        u.file = *py.venv;
-        u.venv_exists = true;
-        u.venv_python = py.venv_python;
-        u.version = venv_version(*py.venv);
-    } else {
-        /* a new venv goes beside the pyproject, else at the workspace root, else here */
-        u.file = (fs::exists(pyproject) || !py.root ? dir : *py.root) / ".venv";
-        u.venv_python = python_in(u.file);
-        u.python = py.interpreter;
-    }
-    out.push_back(u);
 }
 
 // ---- C# ----
 
-static const std::regex& reference_pattern() {
-    static const std::regex r = icase(R"(<PackageReference\b[^>]*?\bInclude\s*=\s*"Rant"[^>]*?(?:/>|>[\s\S]*?</PackageReference\s*>))");
-    return r;
+static std::regex reference_pattern(const Library& lib) {
+    return icase(R"(<PackageReference\b[^>]*?\bInclude\s*=\s*")" + escaped(lib.names.csharp) + R"("[^>]*?(?:/>|>[\s\S]*?</PackageReference\s*>))");
 }
 
 /* A NuGet version as an attribute or a child element, whole: 0.0.16, [0.0.16] or a range. */
@@ -475,39 +518,40 @@ static std::optional<std::string> nuget_version(std::string v) {
     return v.empty() ? std::nullopt : std::optional<std::string>(v);
 }
 
-/* An exact pin. A plain version means that version or later, and nuget.org has an unrelated
- * package named Rant at 1.0, so a missing feed would quietly build against it. */
+/* An exact pin. A plain version means that or later, and nuget.org may hold an unrelated package
+ * of the id, as it does Rant 1.0, so a missing feed would quietly build against it. */
 static std::string exact(const std::string& version) { return "[" + version + "]"; }
 
-std::optional<Use> csharp_use(const std::string& text) {
+std::optional<Use> csharp_use(const std::string& text, const Library& lib) {
     std::smatch m;
-    if (std::regex_search(text, m, reference_pattern())) {
-        Use u = use_of(Kind::CSharp, "PackageReference", {}, {});
+    if (std::regex_search(text, m, reference_pattern(lib))) {
+        Use u = use_of(lib, Kind::CSharp, "PackageReference", {}, {});
         std::string element = m.str();
         std::smatch v;
         if (std::regex_search(element, v, element_version())) u.version = nuget_version(v[2].str());
         return u;
     }
-    static const std::regex project = icase(R"(<ProjectReference\s+Include\s*=\s*"[^"]*[/\\]Rant\.csproj")");
-    if (std::regex_search(text, project)) return use_of(Kind::CSharp, "ProjectReference", {}, {});
+    std::regex project = icase(R"(<ProjectReference\s+Include\s*=\s*"[^"]*[/\\])" + escaped(lib.names.csharp) + R"(\.csproj")");
+    if (std::regex_search(text, project)) return use_of(lib, Kind::CSharp, "ProjectReference", {}, {});
     return std::nullopt;
 }
 
-std::string csharp_set(const std::string& text, const std::string& version) {
+std::string csharp_set(const std::string& text, const Library& lib, const std::string& version) {
     std::smatch m;
-    if (!std::regex_search(text, m, reference_pattern()))
-        throw app::Failure("it references the Rant project from source, update that checkout instead");
+    if (!std::regex_search(text, m, reference_pattern(lib)))
+        throw app::Failure("it references the " + lib.names.csharp + " project from source, update that checkout instead");
     std::string element = m.str(), moved;
     std::smatch v;
     if (std::regex_search(element, v, element_version()))
         moved = v.prefix().str() + v[1].str() + exact(version) + v[3].str() + v.suffix().str();
     else
-        moved = std::regex_replace(element, icase(R"("Rant")"), "\"Rant\" Version=\"" + exact(version) + "\"", std::regex_constants::format_first_only);
+        moved = std::regex_replace(element, icase("\"" + escaped(lib.names.csharp) + "\""), "\"" + lib.names.csharp + "\" Version=\"" + exact(version) + "\"",
+                                   std::regex_constants::format_first_only);
     return m.prefix().str() + moved + m.suffix().str();
 }
 
-std::string csharp_add(const std::string& text, const std::string& version) {
-    std::string reference = std::string("<PackageReference Include=\"") + dotnet_package + "\" Version=\"" + exact(version) + "\" />";
+std::string csharp_add(const std::string& text, const Library& lib, const std::string& version) {
+    std::string reference = "<PackageReference Include=\"" + lib.names.csharp + "\" Version=\"" + exact(version) + "\" />";
     static const std::regex last = icase(R"(\n([ \t]*)<PackageReference\b[^>]*?(?:/>|>[\s\S]*?</PackageReference\s*>))");
     std::smatch found;
     for (auto it = std::sregex_iterator(text.begin(), text.end(), last); it != std::sregex_iterator(); ++it) found = *it;
@@ -529,10 +573,11 @@ static bool ends_with(const std::string& s, const std::string& tail) {
 /* [dependencies], [workspace.dependencies] or [target.'cfg(unix)'.dependencies] */
 static bool dependency_table(const std::string& section) { return section == "dependencies" || ends_with(section, ".dependencies"); }
 
-/* The Rant dependency of a Cargo.toml as the text it spans: a `rant-middleware = ...` line, or
- * a [dependencies.rant-middleware] table, also renamed with `package`. */
-static std::optional<std::pair<size_t, size_t>> cargo_entry(const std::string& text) {
-    static const std::regex renamed = icase(R"(\bpackage\s*=\s*"rant-middleware")");
+/* The library's dependency in a Cargo.toml as the text it spans: a `<crate> = ...` line, or a
+ * [dependencies.<crate>] table, also renamed with `package`. */
+static std::optional<std::pair<size_t, size_t>> cargo_entry(const std::string& text, const Library& lib) {
+    const std::string& crate = lib.names.rust;
+    std::regex renamed = icase(R"(\bpackage\s*=\s*")" + escaped(crate) + "\"");
     static const std::regex key = icase(R"re(^\s*"?([A-Za-z0-9_-]+)"?\s*=)re");
     std::string section;
     std::optional<size_t> table;    /* the start of an open [*.dependencies.<name>] table */
@@ -545,7 +590,7 @@ static std::optional<std::pair<size_t, size_t>> cargo_entry(const std::string& t
         bool header = first != std::string::npos && line[first] == '[';
         if (header && table) {
             std::string body = text.substr(*table, at - *table);
-            if (table_name == rust_crate || std::regex_search(body, renamed)) return std::make_pair(*table, at);
+            if (table_name == crate || std::regex_search(body, renamed)) return std::make_pair(*table, at);
             table.reset();
         }
         if (header) {
@@ -558,43 +603,42 @@ static std::optional<std::pair<size_t, size_t>> cargo_entry(const std::string& t
             }
         } else if (!table && dependency_table(section)) {
             std::smatch m;
-            if (std::regex_search(line, m, key) && (m[1].str() == rust_crate || std::regex_search(line, renamed)))
+            if (std::regex_search(line, m, key) && (m[1].str() == crate || std::regex_search(line, renamed)))
                 return std::make_pair(at, end);
         }
         if (end == text.size()) break;
         at = end + 1;
     }
-    if (table && (table_name == rust_crate || std::regex_search(text.substr(*table), renamed))) return std::make_pair(*table, text.size());
+    if (table && (table_name == crate || std::regex_search(text.substr(*table), renamed))) return std::make_pair(*table, text.size());
     return std::nullopt;
 }
 
 /* Where a version sits in a Cargo entry: a git tag, crate-v as rant writes it or a plain v, a
  * version key, or the entry's own string. */
-static const std::vector<std::regex>& cargo_versions() {
-    static const std::vector<std::regex> v = {
+static std::vector<std::regex> cargo_versions(const Library& lib) {
+    return {
         icase(R"((\btag\s*=\s*")((?:crate-)?v?)(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?))"),
         icase(R"((\bversion\s*=\s*"[=^~]?)()(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?))"),
-        icase(R"((^\s*"?rant-middleware"?\s*=\s*"[=^~]?)()(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?))"),
+        icase(R"((^\s*"?)" + escaped(lib.names.rust) + R"("?\s*=\s*"[=^~]?)()(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?))"),
     };
-    return v;
 }
 
-std::optional<Use> cargo_use(const std::string& text) {
-    auto entry = cargo_entry(text);
+std::optional<Use> cargo_use(const std::string& text, const Library& lib) {
+    auto entry = cargo_entry(text, lib);
     if (!entry) return std::nullopt;
     std::string body = text.substr(entry->first, entry->second - entry->first);
     if (std::regex_search(body, icase(R"(\bworkspace\s*=\s*true\b)"))) {
-        Use u = use_of(Kind::Rust, "Cargo workspace", {}, {});
+        Use u = use_of(lib, Kind::Rust, "Cargo workspace", {}, {});
         u.wanted = false;    /* its version is the Cargo workspace's to move */
         return u;
     }
     if (std::regex_search(body, icase(R"(\bpath\s*=)"))) {
-        Use u = use_of(Kind::Rust, "Cargo path", {}, {});
+        Use u = use_of(lib, Kind::Rust, "Cargo path", {}, {});
         u.wanted = false;
         return u;
     }
-    Use u = use_of(Kind::Rust, "Cargo", {}, {});
-    for (auto& re : cargo_versions()) {
+    Use u = use_of(lib, Kind::Rust, "Cargo", {}, {});
+    for (auto& re : cargo_versions(lib)) {
         std::smatch m;
         if (std::regex_search(body, m, re)) {
             u.version = m[3].str();
@@ -604,24 +648,24 @@ std::optional<Use> cargo_use(const std::string& text) {
     return u;
 }
 
-std::string cargo_set(const std::string& text, const std::string& version) {
-    auto entry = cargo_entry(text);
-    if (!entry) throw app::Failure(std::string("it has no ") + rust_crate + " dependency to move");
+std::string cargo_set(const std::string& text, const Library& lib, const std::string& version) {
+    auto entry = cargo_entry(text, lib);
+    if (!entry) throw app::Failure("it has no " + lib.names.rust + " dependency to move");
     std::string body = text.substr(entry->first, entry->second - entry->first);
     if (std::regex_search(body, icase(R"(\bworkspace\s*=\s*true\b)")))
-        throw app::Failure("it takes Rant from its Cargo workspace, move the version in the workspace Cargo.toml");
-    if (std::regex_search(body, icase(R"(\bpath\s*=)"))) throw app::Failure("it uses a Rant checkout by path, update that checkout instead");
-    for (auto& re : cargo_versions())
+        throw app::Failure("it takes " + lib.name + " from its Cargo workspace, move the version in the workspace Cargo.toml");
+    if (std::regex_search(body, icase(R"(\bpath\s*=)"))) throw app::Failure("it uses a " + lib.name + " checkout by path, update that checkout instead");
+    for (auto& re : cargo_versions(lib))
         if (std::regex_search(body, re))
             return text.substr(0, entry->first) + with_version(body, re, version) + text.substr(entry->second);
-    throw app::Failure(std::string("its ") + rust_crate + " dependency names no version to move, set tag = \"crate-v" + version + "\" by hand");
+    throw app::Failure("its " + lib.names.rust + " dependency names no version to move, set tag = \"crate-v" + version + "\" by hand");
 }
 
-std::string cargo_add(const std::string& text, const std::string& version) {
+std::string cargo_add(const std::string& text, const Library& lib, const std::string& version) {
     static const std::regex package = icase(R"((^|\n)\s*\[package\])");
-    if (!std::regex_search(text, package)) throw app::Failure("it is a Cargo workspace with no package, add Rant to a member");
-    /* the crate-v tag carries the packed C, so a build needs no cmake */
-    std::string line = std::string(rust_crate) + " = { git = \"" + rant_git + "\", tag = \"crate-v" + version + "\" }\n";
+    if (!std::regex_search(text, package)) throw app::Failure("it is a Cargo workspace with no package, add " + lib.name + " to a member");
+    /* a library's crate-v tag carries what its crate needs packed in, such as Rant's C, so a build needs only cargo */
+    std::string line = lib.names.rust + " = { git = \"" + git_url(lib) + "\", tag = \"crate-v" + version + "\" }\n";
     static const std::regex dependencies = icase(R"((^|\n)[ \t]*\[dependencies\][ \t]*(\r?\n|$))");
     std::smatch m;
     if (std::regex_search(text, m, dependencies)) {
@@ -637,62 +681,57 @@ std::string cargo_add(const std::string& text, const std::string& version) {
 
 // ---- finding and editing ----
 
-static std::vector<Use> folder_uses(const fs::path& dir, bool explicit_folder) {
+std::vector<Use> in_folder(const fs::path& dir, const std::vector<Library>& libs, bool adding) {
     std::vector<Use> out;
-    fs::path cmake = dir / "CMakeLists.txt";
-    if (fs::is_regular_file(cmake))
-        if (auto u = cmake_use(read_file(cmake))) {
-            u->dir = dir;
-            u->file = cmake;
-            out.push_back(*u);
-        }
+    auto found = [&](std::optional<Use> u, const fs::path& file) {
+        if (!u) return;
+        u->dir = dir;
+        u->file = file;
+        out.push_back(*u);
+    };
+    fs::path cmake = dir / "CMakeLists.txt", cargo = dir / "Cargo.toml";
     std::vector<fs::path> projects;
     std::error_code ec;
     for (auto& e : fs::directory_iterator(dir, ec))
         if (lower(e.path().extension().u8string()) == ".csproj") projects.push_back(e.path());
     std::sort(projects.begin(), projects.end());
-    for (auto& p : projects)
-        if (auto u = csharp_use(read_file(p))) {
-            u->dir = dir;
-            u->file = p;
-            out.push_back(*u);
-        }
-    fs::path cargo = dir / "Cargo.toml";
-    if (fs::is_regular_file(cargo))
-        if (auto u = cargo_use(read_file(cargo))) {
-            u->dir = dir;
-            u->file = cargo;
-            out.push_back(*u);
-        }
-    python_uses(dir, explicit_folder, out);
+    std::vector<const Library*> python;
+    for (auto& lib : libs) {
+        if (supports(lib, Kind::CMake) && fs::is_regular_file(cmake)) found(cmake_use(read_file(cmake), lib), cmake);
+        if (supports(lib, Kind::CSharp))
+            for (auto& p : projects) found(csharp_use(read_file(p), lib), p);
+        if (supports(lib, Kind::Rust) && fs::is_regular_file(cargo)) found(cargo_use(read_file(cargo), lib), cargo);
+        if (supports(lib, Kind::Python)) python.push_back(&lib);
+    }
+    python_uses(dir, python, adding, out);
     return out;
 }
 
-std::vector<Use> in_folder(const fs::path& dir) { return folder_uses(dir, true); }
-
-std::vector<Use> under(const fs::path& start) {
+std::vector<Use> under(const fs::path& start, const std::vector<Library>& libs) {
     config::Folders walk = config::folders_under(start);
     std::vector<Use> out;
-    auto listed = [&](const fs::path& venv) {
-        return std::any_of(out.begin(), out.end(), [&](const Use& o) { return o.how == "venv" && o.file == venv; });
+    auto listed = [&](const fs::path& venv, const std::string& lib) {
+        return std::any_of(out.begin(), out.end(), [&](const Use& o) { return o.how == "venv" && o.file == venv && o.library == lib; });
     };
     for (auto& d : walk.folders)
-        for (auto& u : folder_uses(d, false)) {
+        for (auto& u : in_folder(d, libs)) {
             if (u.how == "venv" && u.venv_exists) {
-                if (listed(u.file)) continue;
+                if (listed(u.file, u.library)) continue;
                 u.dir = u.file.parent_path();
             }
             out.push_back(u);
         }
-    for (auto& venv : walk.venvs) {
-        if (listed(venv)) continue;
-        Use u = use_of(Kind::Python, "venv", venv.parent_path(), venv);
-        u.venv_exists = true;
-        u.version = venv_version(venv);
-        u.wanted = u.version.has_value();
-        u.venv_python = python_in(venv);
-        out.push_back(u);
-    }
+    for (auto& venv : walk.venvs)
+        for (auto& lib : libs) {
+            if (!supports(lib, Kind::Python) || listed(venv, lib.name)) continue;
+            std::optional<std::string> held = venv_version(venv, lib);
+            if (!held) continue;
+            Use u = use_of(lib, Kind::Python, "venv", venv.parent_path(), venv);
+            u.venv_exists = true;
+            u.version = held;
+            u.venv_python = python_in(venv);
+            out.push_back(u);
+        }
     std::stable_sort(out.begin(), out.end(), [](const Use& a, const Use& b) { return a.dir < b.dir; });
     return out;
 }
@@ -704,22 +743,22 @@ static void edit(const fs::path& file, const std::string& changed, const std::st
     if (!out) throw app::Failure("cannot write " + file.u8string());
 }
 
-void set_version(const fs::path& file, const std::string& version) {
+void set_version(const fs::path& file, const Library& lib, const std::string& version) {
     std::string text = read_file(file);
     std::string name = lower(file.filename().u8string());
-    if (name == "cmakelists.txt") edit(file, cmake_set(text, version), text);
-    else if (name == "pyproject.toml") edit(file, pyproject_set(text, version), text);
-    else if (lower(file.extension().u8string()) == ".csproj") edit(file, csharp_set(text, version), text);
-    else if (name == "cargo.toml") edit(file, cargo_set(text, version), text);
-    else throw app::Failure(file.u8string() + " names no Rant version rant can move");
+    if (name == "cmakelists.txt") edit(file, cmake_set(text, lib, version), text);
+    else if (name == "pyproject.toml") edit(file, pyproject_set(text, lib, version), text);
+    else if (lower(file.extension().u8string()) == ".csproj") edit(file, csharp_set(text, lib, version), text);
+    else if (name == "cargo.toml") edit(file, cargo_set(text, lib, version), text);
+    else throw app::Failure(file.u8string() + " names no " + lib.name + " version rant can move");
 }
 
-std::string add(Kind kind, const fs::path& file, const std::string& version) {
+std::string add(Kind kind, const fs::path& file, const Library& lib, const std::string& version, const std::string& tag) {
     std::string text = read_file(file), hint;
-    if (kind == Kind::CMake) edit(file, cmake_add(text, version, &hint), text);
-    else if (kind == Kind::CSharp) edit(file, csharp_add(text, version), text);
-    else if (kind == Kind::Rust) edit(file, cargo_add(text, version), text);
-    else throw app::Failure("Python gets Rant in its venv, not its files");
+    if (kind == Kind::CMake) edit(file, cmake_add(text, lib, tag, &hint), text);
+    else if (kind == Kind::CSharp) edit(file, csharp_add(text, lib, version), text);
+    else if (kind == Kind::Rust) edit(file, cargo_add(text, lib, version), text);
+    else throw app::Failure("Python gets " + lib.name + " in its venv, not its files");
     return hint;
 }
 

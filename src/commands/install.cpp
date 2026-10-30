@@ -113,6 +113,7 @@ static int pick(app::Context& ctx) {
     ctx.out.note("looking up the packages");
     packages::Sources sources;
     std::vector<packages::Offer> offers = sources.offers();
+    offers.erase(std::remove_if(offers.begin(), offers.end(), [](const packages::Offer& o) { return o.source.library.has_value(); }), offers.end());
     for (auto& p : sources.problems()) ctx.out.warn(p);
     std::vector<bool> skipped = packages::vsix::editor_found(ctx) ? std::vector<bool>(offers.size(), false) : extensions(ctx, offers);
     std::vector<ui::Choice> choices;
@@ -140,7 +141,12 @@ static int run(app::Context& ctx) {
     return code;
 }
 
-static complete::Candidates complete_words(complete::Request&) { return { packages::cached_names() }; }
+static complete::Candidates complete_words(complete::Request&) {
+    std::vector<std::string> names;
+    for (auto& s : packages::cached())
+        if (!s.library) names.push_back(s.name);
+    return { names };
+}
 
 app::Command install() {
     app::Command c{ "install", "[package|repo...]",

@@ -139,7 +139,8 @@ expect_match("${ERR}" "sources[.]rant:1:[0-9]+: a path must name a folder or an 
 rant(ls sources FAILS)
 expect_match("${ERR}" "a path must name a folder or an archive")
 
-# A package's skill folder is linked for each AI coding agent found, and goes with it.
+# A package's skill folder is linked for each AI coding agent found, and goes with it. A
+# package that is more than a skill asks first, until its skill is given.
 set(ENV{HOME} "${SCRATCH}/home")
 set(ENV{XDG_CONFIG_HOME} "${SCRATCH}/home/.config")
 file(REMOVE "${home}/sources.rant")
@@ -148,6 +149,7 @@ rant(install tool --from tool-build)
 expect_match("${ERR}" "found no AI coding agent here to give the skill of tool to")
 file(MAKE_DIRECTORY "${SCRATCH}/home/.claude" "${SCRATCH}/home/.cursor")
 rant(install tool --from tool-build)
+expect_match("${ERR}" "Also give the skill of tool to Claude Code, Cursor[?] [[]y/N[]] y")
 expect_match("${ERR}" "linked the skill of tool for Claude Code as [^\n]*[.]claude.skills.tool\n")
 expect_match("${ERR}" "linked the skill of tool for Cursor as [^\n]*[.]agents.skills.tool\n")
 file(READ "${SCRATCH}/home/.claude/skills/tool/SKILL.md" skill)
@@ -155,8 +157,8 @@ expect_match("${skill}" "^---\nname: tool\n")
 file(READ "${home}/packages/tool.json" record)
 expect_match("${record}" "\"skills\": [[]")
 rant(install tool --from tool-build)
-if(ERR MATCHES "linked the skill of tool")
-  message(FATAL_ERROR "a skill already linked was linked again:\n${ERR}")
+if(ERR MATCHES "linked the skill of tool|Also give")
+  message(FATAL_ERROR "a skill already linked was asked for or linked again:\n${ERR}")
 endif()
 rant(remove tool)
 foreach(gone "${SCRATCH}/home/.claude/skills/tool" "${SCRATCH}/home/.agents/skills/tool")
@@ -167,6 +169,25 @@ endforeach()
 if(NOT EXISTS "${build}/skill/SKILL.md")
   message(FATAL_ERROR "remove reached into the skill's folder")
 endif()
+
+# A package that is only a skill gives it without asking, linked with each _ as -.
+file(WRITE "${SCRATCH}/lore/package.rant" "name = \"lore_skill\"\n")
+file(WRITE "${SCRATCH}/lore/skill/SKILL.md" "---\nname: lore-skill\ndescription: Lore\n---\n")
+rant(install lore_skill --from lore)
+expect_no_match("${ERR}" "Also give")
+expect_match("${ERR}" "linked the skill of lore_skill for Claude Code as [^\n]*[.]claude.skills.lore-skill\n")
+rant(remove lore_skill)
+
+# remove takes the skill rant add gave a library as well.
+file(WRITE "${home}/skills/geometry/SKILL.md" "---\nname: geometry\n---\n")
+file(WRITE "${home}/skills/geometry.json" "{\"repo\": \"someone/geometry\", \"version\": \"1.0.0\", \"links\": []}\n")
+rant(remove geometry)
+expect_match("${ERR}" "removed the skill of geometry")
+foreach(gone "${home}/skills/geometry" "${home}/skills/geometry.json")
+  if(EXISTS "${gone}")
+    message(FATAL_ERROR "remove left ${gone}")
+  endif()
+endforeach()
 
 # Uninstall drops a linked package without reaching into its folder.
 rant(install tool --from tool-build)

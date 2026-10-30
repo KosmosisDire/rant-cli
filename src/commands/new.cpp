@@ -166,28 +166,33 @@ static int run(app::Context& ctx) {
     if (project) ctx.out.line("added " + name + " to " + ctx.shown(*project));
 
     /* every folder given a build file, or a CMake project or Cargo package that lacks it, takes
-     * the newest Rant the same way `rant lib install` adds it, since the presets name no version */
+     * the newest Rant the same way `rant add` adds it, since the presets name no version */
     std::set<fs::path> needs;
     for (auto& [f, _] : files)
         if (f.filename() == "CMakeLists.txt" || f.filename() == "pyproject.toml" || f.filename() == "Cargo.toml" ||
             f.extension() == ".csproj")
             needs.insert(f.parent_path());
-    auto lacks = [&](const fs::path& dir, library::Kind kind) {
-        auto uses = library::in_folder(dir);
-        if (!std::any_of(uses.begin(), uses.end(), [&](const library::Use& u) { return u.kind == kind; })) needs.insert(dir);
-    };
-    if (project) lacks(project->parent_path(), library::Kind::CMake);
-    if (crate) lacks(*crate, library::Kind::Rust);
-    if (needs.empty()) return 0;
+    if (needs.empty() && !project && !crate) return 0;
     bool ok = true;
     try {
-        net::Release r = library::release("");
-        for (auto& dir : needs) ok &= library::install(ctx, dir, r);
+        std::vector<library::Library> known = library::known();
+        auto it = std::find_if(known.begin(), known.end(), [](const library::Library& l) { return l.name == library::default_library; });
+        packages::Sources sources;
+        library::Library lib = it != known.end() ? *it : library::find(ctx, sources, library::default_library);
+        auto lacks = [&](const fs::path& dir, library::Kind kind) {
+            auto uses = library::in_folder(dir, { lib });
+            if (!std::any_of(uses.begin(), uses.end(), [&](const library::Use& u) { return u.kind == kind; })) needs.insert(dir);
+        };
+        if (project) lacks(project->parent_path(), library::Kind::CMake);
+        if (crate) lacks(*crate, library::Kind::Rust);
+        if (needs.empty()) return 0;
+        net::Release r = library::release(lib, "");
+        for (auto& dir : needs) ok &= library::add(ctx, dir, lib, r, false);
     } catch (const app::Failure& e) {
         ctx.out.warn(std::string("Rant was not added: ") + e.what());
         ok = false;
     }
-    if (!ok) ctx.out.note("add it later with `rant lib install " + ctx.shown(dest) + "`");
+    if (!ok) ctx.out.note("add it later with `rant add rant " + ctx.shown(dest) + "`");
     return ok ? 0 : 1;
 }
 

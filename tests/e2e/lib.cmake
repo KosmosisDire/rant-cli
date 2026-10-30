@@ -45,6 +45,15 @@ endforeach()
 # Mesh snapshots and shell hooks go there too, never to the real home.
 file(REMOVE_RECURSE "${SCRATCH}" "${OTHER}")
 file(MAKE_DIRECTORY "${SCRATCH}")
+
+# cache_database(<entry>...) writes what the cache keeps of the package database once read,
+# so showing and adding a library reads no database. By default the database names nothing.
+set(RANT_LIBRARY [[{"name": "rant", "repo": "KosmosisDire/Rant", "library": {"cmake": "rant::rant_host", "python": "rant-middleware", "csharp": "Rant", "rust": "rant-middleware"}}]])
+function(cache_database)
+  string(JOIN ", " entries ${ARGN})
+  file(WRITE "$ENV{RANT_HOME}/cache/sources/KosmosisDire+rant-packages.json" "[${entries}]\n")
+endfunction()
+cache_database()
 set(CWD "${SCRATCH}")
 file(WRITE "${SCRATCH}/.empty-stdin" "")
 

@@ -8,7 +8,7 @@ file(WRITE "${SCRATCH}/sensor.run" "node \"demo/sensor\" {\n  name = \"one\"\n}\
 # Every kind word works singular, plural or short.
 foreach(word package packages pkg pkgs)
   rant(ls ${word})
-  expect_match("${OUT}" "^PACKAGES\n  demo +package[.]rant +no Rant +demo\n$")
+  expect_match("${OUT}" "^PACKAGES\n  demo +package[.]rant +no library +demo\n$")
 endforeach()
 rant(ls nodes)
 expect_match("${OUT}" "NOT RUNNING\n  demo/sensor +declared +")
@@ -32,7 +32,7 @@ expect_match("${ERR}" "ls takes a kind and one pattern at most")
 
 # info explains workspace things, and says when a name means more than one.
 rant(info package demo)
-expect_match("${OUT}" "^package: demo\n")
+expect_match("${OUT}" "^package: +demo\n")
 expect_match("${OUT}" "nodes: +[[]demo/sensor, demo/test_node[]]")
 rant(info group nav)
 expect_match("${OUT}" "params:\n  speed: float, default 1\n  range: int, default 30\n")

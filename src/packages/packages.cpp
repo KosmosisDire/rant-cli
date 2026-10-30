@@ -16,6 +16,7 @@
 #include "process/command.hpp"
 #include "services/services.hpp"
 #include "state/state.hpp"
+#include "ui/prompt.hpp"
 #include "util/files.hpp"
 #include "util/home.hpp"
 #include "util/match.hpp"
@@ -45,12 +46,11 @@ static std::string read_file(const fs::path& p) {
 fs::path dir() { return util::rant_home() / "packages"; }
 fs::path sources_file() { return util::rant_home() / "sources.rant"; }
 
-/* The names a list of sources gave when last read, kept for completion, in a file its key
- * cannot clash in. */
-static fs::path names_file(const std::string& named_by) {
+/* What a list of sources named when last read, in a file its key cannot clash in. */
+static fs::path cache_file(const std::string& named_by) {
     std::string file = named_by;
     std::replace(file.begin(), file.end(), '/', '+');
-    return util::rant_home() / "cache" / "names" / (file + ".json");
+    return util::rant_home() / "cache" / "sources" / (file + ".json");
 }
 
 static config::Database checked(config::Database db) {
@@ -138,7 +138,7 @@ const std::vector<Sources::Found>& Sources::found(size_t i) {
         try {
             if (fs::is_directory(p, ec)) {
                 config::PackageRelease rel = named(p, u8(p), read_text(p / package_file));
-                add({ { rel.name, "", p, l.named_by }, rel.description });
+                add({ { rel.name, "", p, l.named_by, rel.library }, rel.description });
             } else if (is_archive(p) && fs::is_regular_file(p, ec)) {
                 std::string name = archive_package(p);
                 if (!config::is_package_name(name)) throw app::Failure(u8(p) + " is no archive named <name>-<version>-<platform>.tar.gz");
@@ -156,15 +156,21 @@ const std::vector<Sources::Found>& Sources::found(size_t i) {
     for (size_t k = 0; k < db.repos.size(); k++) {
         try {
             config::PackageRelease rel = named(config::from_utf8(db.repos[k]), db.repos[k], texts[k]);
-            add({ { rel.name, db.repos[k], {}, l.named_by }, rel.description });
+            add({ { rel.name, db.repos[k], {}, l.named_by, rel.library }, rel.description });
         } catch (const app::Failure& e) {
             problems_.push_back(e.what());
         }
     }
-    json names = json::array();
-    for (auto& f : out) names.push_back(f.source.name);
-    fs::create_directories(names_file(l.named_by).parent_path(), ec);
-    std::ofstream(names_file(l.named_by), std::ios::binary) << names.dump() << "\n";
+    json cache = json::array();
+    for (auto& f : out) {
+        json j = { { "name", f.source.name } };
+        if (!f.source.repo.empty()) j["repo"] = f.source.repo;
+        if (!f.source.path.empty()) j["path"] = u8(f.source.path);
+        if (auto& b = f.source.library) j["library"] = { { "cmake", b->cmake }, { "python", b->python }, { "csharp", b->csharp }, { "rust", b->rust } };
+        cache.push_back(j);
+    }
+    fs::create_directories(cache_file(l.named_by).parent_path(), ec);
+    std::ofstream(cache_file(l.named_by), std::ios::binary) << cache.dump() << "\n";
     l.found = std::move(out);
     return *l.found;
 }
@@ -188,7 +194,7 @@ std::vector<Offer> Sources::offers(const std::string& pattern) {
 
 Source from_repo(const std::string& repo) {
     config::PackageRelease rel = named(config::from_utf8(repo), repo, net::fetch(net::raw_url(repo, "HEAD", package_file)));
-    return { rel.name, repo, {}, "link" };
+    return { rel.name, repo, {}, "link", rel.library };
 }
 
 Carried carried(const net::Release& r, const std::string& name, const std::string& platform) {
@@ -220,16 +226,30 @@ About about(const Source& s) {
     return a;
 }
 
-std::vector<std::string> cached_names() {
-    std::vector<std::string> lists = { "sources.rant", official }, out;
+std::vector<Source> cached(bool read) {
+    if (read && !fs::exists(cache_file(official))) {
+        /* a broken sources.rant or no network leaves the cache as it is */
+        try {
+            Sources().offers();
+        } catch (const app::Failure&) {
+        }
+    }
+    std::vector<std::string> lists = { "sources.rant", official };
+    std::vector<Source> out;
     std::error_code ec;
     if (fs::is_regular_file(sources_file(), ec))
         for (auto& d : config::read_database(sources_file(), read_file(sources_file()), true).databases) lists.push_back(d);
     for (auto& l : lists) {
-        json j = json::parse(read_file(names_file(l)), nullptr, false);
+        json j = json::parse(read_file(cache_file(l)), nullptr, false);
         if (!j.is_array()) continue;
-        for (auto& n : j)
-            if (n.is_string() && std::find(out.begin(), out.end(), n.get<std::string>()) == out.end()) out.push_back(n.get<std::string>());
+        for (auto& e : j) {
+            if (!e.is_object() || !e.value("name", json()).is_string()) continue;
+            Source s{ e["name"].get<std::string>(), e.value("repo", ""), config::from_utf8(e.value("path", "")), l };
+            if (std::any_of(out.begin(), out.end(), [&](const Source& o) { return o.name == s.name; })) continue;
+            if (json b = e.value("library", json()); b.is_object())
+                s.library = config::LibraryBlock{ b.value("cmake", ""), b.value("python", ""), b.value("csharp", ""), b.value("rust", "") };
+            out.push_back(s);
+        }
     }
     return out;
 }
@@ -482,7 +502,7 @@ static void install_extension(app::Context& ctx, const vsix::Target& t, const fs
 /* A release file downloaded into rant's cache, gone with this. Empty for no file. */
 struct Download {
     fs::path path;
-    Download(app::Context& ctx, const net::Asset* a) {
+    Download(const app::Context& ctx, const net::Asset* a) {
         if (!a) return;
         ctx.out.note("downloading " + a->name);
         path = util::rant_home() / "cache" / (stamp() + "-" + a->name);
@@ -581,28 +601,46 @@ static void install_path(app::Context& ctx, const Source& s, Record& rec) {
     throw app::Failure(u8(s.path) + " is no package folder or .tar.gz archive");
 }
 
-/* Links the package's skill folder as <skills>/<name> into each folder of skills an AI coding
- * agent found reads, each _ written as -, since a skill's name takes no _. It replaces what is
- * there, and drops the links had made when the package has no skill. */
-static void link_skills(app::Context& ctx, Record& rec, const std::vector<fs::path>& had) {
-    fs::path skill = fs::absolute(dir() / rec.name / "skill").lexically_normal();
+/* The folders of skills the AI coding agents found read, each with the agents that read it. */
+static std::vector<std::pair<fs::path, std::string>> readers() {
+    std::vector<std::pair<fs::path, std::string>> out;
+    for (auto& a : agents::detected()) {
+        auto r = std::find_if(out.begin(), out.end(), [&](auto& x) { return x.first == a.skills; });
+        if (r == out.end()) out.push_back({ a.skills, a.name });
+        else r->second += ", " + a.name;
+    }
+    return out;
+}
+
+static bool any_link(const std::vector<fs::path>& links) { return std::any_of(links.begin(), links.end(), [](const fs::path& l) { return is_link(l); }); }
+
+/* Whether to give the skill of name to the agents found, which the user answers. False with
+ * none found, after a note saying so. */
+static bool ask_skill(const app::Context& ctx, const std::string& name) {
+    std::string names;
+    for (auto& [_, n] : readers()) names += (names.empty() ? "" : ", ") + n;
+    if (names.empty()) {
+        ctx.out.note("found no AI coding agent here to give the skill of " + name + " to");
+        return false;
+    }
+    return ui::confirm("Also give the skill of " + name + " to " + names + "?", ctx.yes);
+}
+
+/* Links skill as <skills>/<name>, each _ as - since a skill's name takes no _, in each agent's
+ * folder, replacing what is there. Returns the links, none and had dropped without SKILL.md. */
+static std::vector<fs::path> link_skill(const app::Context& ctx, const std::string& name, const fs::path& skill, const std::vector<fs::path>& had) {
+    std::vector<fs::path> out;
     std::error_code ec;
-    rec.skills.clear();
     if (!fs::is_regular_file(skill / "SKILL.md", ec)) {
         for (auto& l : had)
             if (is_link(l)) unlink(l);
-        return;
+        return out;
     }
-    std::vector<std::pair<fs::path, std::string>> readers;
-    for (auto& a : agents::detected()) {
-        auto r = std::find_if(readers.begin(), readers.end(), [&](auto& x) { return x.first == a.skills; });
-        if (r == readers.end()) readers.push_back({ a.skills, a.name });
-        else r->second += ", " + a.name;
-    }
-    if (readers.empty()) ctx.out.note("found no AI coding agent here to give the skill of " + rec.name + " to");
-    std::string folder_name = rec.name;
+    std::vector<std::pair<fs::path, std::string>> found = readers();
+    if (found.empty()) ctx.out.note("found no AI coding agent here to give the skill of " + name + " to");
+    std::string folder_name = name;
     std::replace(folder_name.begin(), folder_name.end(), '_', '-');
-    for (auto& [folder, names] : readers) {
+    for (auto& [folder, names] : found) {
         fs::path link = folder / folder_name;
         try {
             if (!is_link(link) || std::find(had.begin(), had.end(), link) == had.end()) {
@@ -610,19 +648,44 @@ static void link_skills(app::Context& ctx, Record& rec, const std::vector<fs::pa
                 fs::remove_all(link, ec);
                 fs::create_directories(folder, ec);
                 make_link(link, skill);
-                ctx.out.note("linked the skill of " + rec.name + " for " + names + " as " + u8(link));
+                ctx.out.note("linked the skill of " + name + " for " + names + " as " + u8(link));
             }
-            rec.skills.push_back(link);
+            out.push_back(link);
         } catch (const app::Failure& e) {
             ctx.out.warn(names + ": " + e.what());
         }
     }
     /* a link in a folder no agent found reads now stays recorded, so remove still drops it */
     for (auto& l : had)
-        if (is_link(l) && std::find(rec.skills.begin(), rec.skills.end(), l) == rec.skills.end()) rec.skills.push_back(l);
+        if (is_link(l) && std::find(out.begin(), out.end(), l) == out.end()) out.push_back(l);
+    return out;
+}
+
+/* Whether a package is more than a skill: an extension or other files beside its skill. */
+static bool more_than_skill(const Record& rec) {
+    if (!rec.extension.empty()) return true;
+    std::error_code ec;
+    for (fs::directory_iterator it(dir() / rec.name, ec), end; !ec && it != end; it.increment(ec)) {
+        std::string file = u8(it->path().filename());
+        if (file != package_file && file != "skill" && file[0] != '.') return true;
+    }
+    return false;
+}
+
+/* Gives a package's skill folder to the agents found. A package that is more than a skill asks
+ * first, until its skill is given. */
+static void link_skills(app::Context& ctx, Record& rec, const std::vector<fs::path>& had) {
+    fs::path skill = fs::absolute(dir() / rec.name / "skill").lexically_normal();
+    std::error_code ec;
+    if (fs::is_regular_file(skill / "SKILL.md", ec) && !any_link(had) && more_than_skill(rec) && !ask_skill(ctx, rec.name)) {
+        rec.skills.clear();
+        return;
+    }
+    rec.skills = link_skill(ctx, rec.name, skill, had);
 }
 
 void install(app::Context& ctx, const Source& s, const std::string& version) {
+    if (s.library) throw app::Failure(s.name + " is a library, add it to a package with `rant add " + s.name + "`");
     std::error_code ec;
     fs::create_directories(dir(), ec);
     /* a link names a package by its own word, so it never quietly takes the place of another */
@@ -644,11 +707,78 @@ void install(app::Context& ctx, const Source& s, const std::string& version) {
     save(rec);
 }
 
+/* The skills of libraries, each a folder in skills_dir() with a record beside it. */
+
+static fs::path skills_dir() { return util::rant_home() / "skills"; }
+
+std::optional<Skill> skill(const std::string& name) {
+    json j = json::parse(read_file(skills_dir() / (name + ".json")), nullptr, false);
+    if (!j.is_object()) return std::nullopt;
+    Skill s{ name, j.value("repo", ""), j.value("version", "") };
+    for (auto& l : j.value("links", json::array()))
+        if (l.is_string()) s.links.push_back(config::from_utf8(l.get<std::string>()));
+    return s;
+}
+
+std::vector<Skill> skills() {
+    std::vector<Skill> out;
+    std::error_code ec;
+    for (fs::directory_iterator it(skills_dir(), ec), end; !ec && it != end; it.increment(ec))
+        if (it->path().extension() == ".json")
+            if (auto s = skill(u8(it->path().stem()))) out.push_back(*s);
+    std::sort(out.begin(), out.end(), [](const Skill& a, const Skill& b) { return a.name < b.name; });
+    return out;
+}
+
+static void save(const Skill& s) {
+    json j = { { "repo", s.repo }, { "version", s.version }, { "links", json::array() } };
+    for (auto& l : s.links) j["links"].push_back(u8(l));
+    std::ofstream(skills_dir() / (s.name + ".json"), std::ios::binary) << j.dump(2) << "\n";
+}
+
+void give_skill(const app::Context& ctx, const std::string& name, const std::string& repo, const net::Release& r, bool may_ask) {
+    const net::Asset* a = r.asset(name + "-" + r.version + "-skill.zip");
+    std::optional<Skill> had = skill(name);
+    std::vector<fs::path> links = had ? had->links : std::vector<fs::path>{};
+    bool given = any_link(links);
+    if (!a || (given && (had->version == r.version || net::newer(had->version, r.version)))) return;
+    if (!given && !(may_ask && ask_skill(ctx, name))) return;
+    fs::path folder = skills_dir() / name, staging = skills_dir() / ("." + name + ".new");
+    std::error_code ec;
+    fs::remove_all(staging, ec);
+    fs::create_directories(skills_dir(), ec);
+    {
+        Download zip(ctx, a);
+        config::Edit e = config::unzip(zip.path, staging);
+        if (!e.diagnostics.empty() || !fs::is_regular_file(staging / "SKILL.md")) {
+            fs::remove_all(staging, ec);
+            throw app::Failure(e.diagnostics.empty() ? a->name + " holds no SKILL.md at its top, so it is no skill" : e.diagnostics[0].str());
+        }
+    }
+    fs::remove_all(folder, ec);
+    util::rename(staging, folder, ec);
+    if (ec) throw app::Failure("cannot place " + u8(folder) + ": " + ec.message());
+    ctx.out.note("installed the skill of " + name + " " + r.version);
+    save({ name, repo, r.version, link_skill(ctx, name, fs::absolute(folder).lexically_normal(), links) });
+}
+
+static void remove_skill(app::Context& ctx, const Skill& s) {
+    for (auto& l : s.links)
+        if (is_link(l)) unlink(l);
+    std::error_code ec;
+    fs::remove_all(skills_dir() / s.name, ec);
+    fs::remove(skills_dir() / (s.name + ".json"), ec);
+    ctx.out.note("removed the skill of " + s.name);
+}
+
 void remove(app::Context& ctx, const std::string& name) {
     fs::path target = dir() / name;
     std::error_code ec;
     bool there = is_link(target) || fs::exists(target, ec);
-    if (!there && !fs::exists(record_file(name), ec)) throw app::Failure(name + " is not installed, see `rant ls packages`");
+    if (!there && !fs::exists(record_file(name), ec)) {
+        if (std::optional<Skill> s = skill(name)) return remove_skill(ctx, *s);
+        throw app::Failure(name + " is not installed, see `rant ls packages`");
+    }
     refuse_running(name);
     std::optional<Record> rec = record(name);
     if (rec && !rec->extension.empty()) {

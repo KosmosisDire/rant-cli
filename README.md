@@ -31,7 +31,7 @@ rant sub Odom                  # print a topic
 rant log Nav -f                # follow what its nodes print
 rant stop Nav
 rant enable Nav                # run it now and every time this computer starts
-rant lib update                # move every package here to the newest Rant
+rant add                       # add Rant to the package here, or rant add math cam
 rant setup                     # tab completion for your shells
 rant install explorer          # a package, all of them at https://pack.rantlib.dev
 rant explore                   # open the explorer
