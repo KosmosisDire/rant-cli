@@ -150,8 +150,8 @@ rant(stop cell)
 expect_match("${OUT}" "left/lidar +stopped")
 
 # A name runs wherever rant started it on this machine. A group another workspace runs is
-# restarted, read and stopped from here, the runs of one group in a workspace stop together,
-# and a name two workspaces run needs a pick, so without a terminal it fails naming them.
+# restarted, read and stopped from here, the runs of one group in a workspace restart and stop
+# together, and a name two workspaces run needs a pick, so without a terminal it fails.
 file(WRITE "${OTHER}/Plan.run" "node \"demo/planner\" {}\n")
 rant(run Plan IN "${OTHER}")
 rant(restart plan)
@@ -168,6 +168,10 @@ file(WRITE "${SCRATCH}/Cam.run"
      "param \"side\" {}\nnode \"demo/sensor\" {\n  name = \"cam_\${param.side}\"\n}\n")
 rant(run Cam side=left)
 rant(run Cam side=right)
+rant(restart cam)
+expect_match("${OUT}" "cam_left +restarted")
+expect_match("${OUT}" "cam_right +restarted")
+expect_no_match("${ERR}" "Restart all")
 rant(stop Cam)
 expect_match("${OUT}" "cam_right +stopped")
 expect_match("${OUT}" "cam_left +stopped")
