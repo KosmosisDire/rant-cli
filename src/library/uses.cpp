@@ -163,9 +163,11 @@ static std::string first_arg(const std::string& args) {
     return a;
 }
 
+static bool is_fetch(const Call& c) { return named(c, { "CPMAddPackage", "CPMFindPackage", "CPMDeclarePackage", "FetchContent_Declare" }); }
+
 /* A fetch of the library: named after it, or pointing at its repo. */
 static bool fetches(const std::string& text, const Call& c, const Library& lib) {
-    if (!named(c, { "CPMAddPackage", "CPMFindPackage", "CPMDeclarePackage", "FetchContent_Declare" })) return false;
+    if (!is_fetch(c)) return false;
     std::string args = c.args(text);
     std::regex name = icase(R"(\bNAME\s+)" + escaped(lib.name) + R"((?![\w-]))");
     std::regex repo = icase(R"((^|[/:"\s]))" + escaped(lib.repo) + R"((\.git)?(?![\w.-]))");
@@ -226,9 +228,14 @@ std::string cmake_add(const std::string& text, const Library& lib, const std::st
         return (named(c, { "include" }) && lower(c.args(text)).find("cpm") != std::string::npos) || named(c, { "CPMAddPackage" });
     };
     bool cpm = std::any_of(calls.begin(), calls.end(), cpm_setup);
+    /* other libraries may fetch Rant themselves and the first fetch of a name wins, so Rant goes first */
+    size_t before = text.size();
+    if (lib.name == default_library)
+        for (auto& c : calls)
+            if (is_fetch(c)) before = std::min(before, c.args_begin);
     std::optional<size_t> anchor;
     for (auto& c : calls)
-        if (named(c, { "project", "FetchContent_MakeAvailable" }) || cpm_setup(c)) anchor = std::max(anchor.value_or(0), c.end);
+        if ((named(c, { "project", "FetchContent_MakeAvailable" }) || cpm_setup(c)) && c.end <= before) anchor = std::max(anchor.value_or(0), c.end);
 
     std::string block, url = git_url(lib);
     if (cpm) {

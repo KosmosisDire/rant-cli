@@ -168,6 +168,18 @@ TEST(another_library_is_told_apart_by_its_own_names) {
     CHECK_EQ(library::csharp_set(cs, extra, "1.3.0"), replaced(cs, "\"1.2.0\"", "\"[1.3.0]\""));
 }
 
+TEST(rant_is_fetched_before_the_libraries_that_fetch_it_too) {
+    std::string after = library::cmake_add(cpm, extra, "v1.2.0", nullptr);
+    CHECK(after.find("CPMAddPackage(NAME extra") > after.find("NAME rant\n  GIT_REPOSITORY"));
+    std::string text = "project(a)\ninclude(cmake/get_cpm.cmake)\n\n# for poses\nCPMAddPackage(NAME extra GIT_REPOSITORY https://github.com/KosmosisDire/Rant-extra.git GIT_TAG v1.2.0)\n"
+                       "add_executable(a a.cpp)\n";
+    CHECK_EQ(library::cmake_add(text, rant, "v0.0.18", nullptr),
+             replaced(text, "include(cmake/get_cpm.cmake)\n",
+                      "include(cmake/get_cpm.cmake)\n\nCPMAddPackage(NAME rant\n              GIT_REPOSITORY https://github.com/KosmosisDire/Rant.git\n"
+                      "              GIT_TAG v0.0.18)\n") +
+                 "target_link_libraries(a PRIVATE rant::rant_host)\n");
+}
+
 /* A scratch folder, removed with everything in it. */
 struct Scratch {
     fs::path root = fs::temp_directory_path() / ("rant-uses-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
