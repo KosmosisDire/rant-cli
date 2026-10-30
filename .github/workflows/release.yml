@@ -14,6 +14,7 @@ jobs:
   build:
     name: build ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -44,6 +45,7 @@ jobs:
 
       # The end to end tests need a Rant mesh, which a runner's network may not carry.
       - name: Unit tests
+        timeout-minutes: 10
         run: ctest --preset ${{ matrix.preset }} -R "^(unit|config)[.]"
 
       - name: Stage
@@ -63,6 +65,7 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/')
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/download-artifact@v8
         with:
