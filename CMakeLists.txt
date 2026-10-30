@@ -22,6 +22,12 @@ foreach(_cfg ${CMAKE_CONFIGURATION_TYPES})
   set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_${_CFG} "${CMAKE_CURRENT_SOURCE_DIR}/bin")
 endforeach()
 
+# Visual Studio compiles a target's files one at a time unless told, and this reaches every
+# package CPM adds below
+if(CMAKE_GENERATOR MATCHES "Visual Studio")
+  add_compile_options($<$<COMPILE_LANGUAGE:C,CXX>:/MP>)
+endif()
+
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/get_cpm.cmake")
 
 # Placement needs 0.0.19 or newer and snake_case field names 0.0.22. A release
