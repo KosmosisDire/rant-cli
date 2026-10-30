@@ -22,7 +22,7 @@ static const std::vector<Words>& table() {
         { Kind::Package, "package", "packages", { "pkg", "pkgs" }, "the packages of this workspace" },
         { Kind::Group, "group", "groups", {}, "the groups of this workspace" },
         { Kind::Source, "source", "sources", {}, "where rant install finds packages, in the order it looks" },
-        { Kind::Service, "service", "services", {}, "what rant enable starts at login, and whether it runs" },
+        { Kind::Service, "service", "services", {}, "the services of each enabled workspace, and whether they run" },
     };
     return t;
 }
