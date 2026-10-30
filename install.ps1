@@ -132,8 +132,13 @@
         if ($LASTEXITCODE -ne 0) { Warn 'a package did not install, fix what rant said above, then run `rant install <package>`' }
     }
 
+    # Windows Security can take an unsigned program away after it first ran
+    $now = Capture { & $exe --version }
+    if (-not $now.ok) {
+        Fail "rant.exe no longer runs, Windows Security may have taken it, see its Protection history: $($now.lines -join ' ')"
+    }
     Write-Host ''
-    Say 'Done. ' 'Green'; Write-Host "$((Capture { & $exe --version }).lines -join '') is installed."
+    Say 'Done. ' 'Green'; Write-Host "$($now.lines -join '') is installed."
     Write-Host '  This window can use it now, other open ones once restarted. Try ' -NoNewline
     Say 'rant --help' 'White'; Write-Host '.'
     if ($yes) { Write-Host '  ' -NoNewline; Say 'rant install' 'White'; Write-Host ' picks packages to add.' }
