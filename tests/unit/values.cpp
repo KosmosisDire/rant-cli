@@ -45,9 +45,9 @@ static json round_trip(const rant::Schema& s, const mesh::Assignments& a) {
 
 TEST(every_kind_round_trips) {
     rant::Schema s = node().schema(
-        "Pt { x: f32, y: f32 } "
+        "Pt { x: f32, y: f32 } Mode = enum<u8> { Idle, Run } "
         "Sample { seq: u32, delta: i16, value: f64, name: string, label: string<8>, tags: string<16>[], "
-        "nums: i16[], fixed: f64[3], pts: Pt[], mode: enum<u8> { Idle, Run }, on: bool, extra: map }");
+        "nums: i16[], fixed: f64[3], pts: Pt[], mode: Mode, on: bool, extra: map }");
     json in = json::parse(R"({"seq":7,"delta":-2,"value":1.5,"name":"long name","label":"short","tags":["a","b"],
         "nums":[1,-2,3],"fixed":[1.0,2.0,3.0],"pts":[{"x":1.0,"y":2.0},{"x":3.0,"y":4.0}],"mode":"Run","on":true,
         "extra":{"k":1,"s":"t","nested":{"b":false},"list":[1,2]}})");
@@ -56,7 +56,7 @@ TEST(every_kind_round_trips) {
 }
 
 TEST(assignments_reach_nested_and_indexed_fields) {
-    rant::Schema s = node().schema("Pt { x: f32, y: f32 } Path { name: string, pts: Pt[], at: Pt }");
+    rant::Schema s = node().schema("Pt { x: f32, y: f32 } Trail { name: string, pts: Pt[], at: Pt }");
     json out = round_trip(s, { { "pts[1].y", json(5) }, { "at.x", json(2) }, { "name", json("p") } });
     CHECK_EQ(out, json::parse(R"({"name":"p","pts":[{"x":0.0,"y":0.0},{"x":0.0,"y":5.0}],"at":{"x":2.0,"y":0.0}})"));
 }
@@ -68,7 +68,7 @@ TEST(a_bare_root_takes_the_value_itself) {
 }
 
 TEST(mistakes_say_what_was_wanted) {
-    rant::Schema s = node().schema("Shape { side: u8, mode: enum<u8> { Idle, Run }, label: string<4> }");
+    rant::Schema s = node().schema("Mode = enum<u8> { Idle, Run } Shape { side: u8, mode: Mode, label: string<4> }");
     auto message = [&](const mesh::Assignments& a) {
         try {
             mesh::encode(a, s);

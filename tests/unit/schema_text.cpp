@@ -21,13 +21,13 @@ TEST(a_standard_type_is_its_name) {
 }
 
 TEST(a_user_type_prints_one_field_per_line_then_the_types_it_uses) {
-    CHECK_EQ(text("Pt { x: f32, y: f32 } "
-                  "Route { name: string, pts: Pt[], at: Pose, mode: enum<u8> { Idle, Run }, raw: u8[4], tags: string<8>[] }"),
+    CHECK_EQ(text("Pt { x: f32, y: f32 } Mode = enum<u8> { Idle, Run } "
+                  "Route { name: string, pts: Pt[], at: Pose, mode: Mode, raw: u8[4], tags: string<8>[] }"),
              std::string("Route {\n"
                          "  name: string\n"
                          "  pts:  Pt[]\n"
                          "  at:   Pose\n"
-                         "  mode: enum<u8> { Idle, Run }\n"
+                         "  mode: Mode\n"
                          "  raw:  u8[4]\n"
                          "  tags: string<8>[]\n"
                          "}\n"
@@ -35,17 +35,9 @@ TEST(a_user_type_prints_one_field_per_line_then_the_types_it_uses) {
                          "Pt {\n"
                          "  x: f32\n"
                          "  y: f32\n"
-                         "}"));
-}
-
-TEST(an_anonymous_struct_prints_inline) {
-    CHECK_EQ(text("{ a: u8, inner: { b: bool } }"),
-             std::string("{\n"
-                         "  a:     u8\n"
-                         "  inner: {\n"
-                         "    b: bool\n"
-                         "  }\n"
-                         "}"));
+                         "}\n"
+                         "\n"
+                         "Mode = enum<u8> { Idle, Run }"));
 }
 
 TEST(no_schema_is_untyped) {

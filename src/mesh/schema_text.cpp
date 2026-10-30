@@ -41,7 +41,7 @@ public:
         } else if (name.len && standard(name) && !whole_) {
             root.push_back(paint(Style::Accent, std::string(name.data, name.len)));
         } else if (first.name.len == 0) {
-            root = type_lines(0, 0);    /* a bare root, such as f64 or u8[] */
+            root = type_lines(0);    /* a bare root, such as f64 or u8[] */
         } else {
             uint16_t at = 0;
             std::string head = name.len ? paint(Style::Accent, std::string(name.data, name.len)) + " " : "";
@@ -86,7 +86,7 @@ private:
         for (auto i : direct) {
             d::RantSchemaFieldInfo f = info(i);
             std::string name(f.name.data, f.name.len);
-            auto type = type_lines(i, indent);
+            auto type = type_lines(i);
             lines.push_back(std::string(indent, ' ') + name + paint(Style::Faint, ":") +
                             std::string(widest - name.size() + 1, ' ') + type[0]);
             lines.insert(lines.end(), type.begin() + 1, type.end());
@@ -117,36 +117,30 @@ private:
         return s + " " + paint(Style::Faint, "}");
     }
 
-    /* The struct a field or an array element opens: named, or inline over several lines. */
-    std::vector<std::string> struct_type(uint16_t i, d::RantString type_name, size_t indent) {
+    /* The struct a field or an array element opens, by its name and defined once below. */
+    std::vector<std::string> struct_type(uint16_t i, d::RantString type_name) {
         uint16_t at = (uint16_t)(i + 1);
         uint16_t depth = (uint16_t)(info(i).depth + 1);
-        if (type_name.len) {
-            std::string name(type_name.data, type_name.len);
-            if (standard(type_name) || defined_.count(name)) return { paint(Style::Accent, name) };
-            defined_.insert(name);
-            size_t slot = defs_.size();    /* the definition goes before the types it uses */
-            defs_.emplace_back();
-            std::vector<std::string> lines{ paint(Style::Accent, name) + " " + paint(Style::Faint, "{") };
-            for (auto& l : members(at, depth, 2)) lines.push_back(l);
-            lines.push_back(paint(Style::Faint, "}"));
-            defs_[slot] = join(lines);
-            return { paint(Style::Accent, name) };
-        }
-        std::vector<std::string> lines{ paint(Style::Faint, "{") };
-        for (auto& l : members(at, depth, indent + 2)) lines.push_back(l);
-        lines.push_back(std::string(indent, ' ') + paint(Style::Faint, "}"));
-        return lines;
+        std::string name(type_name.data, type_name.len);
+        if (standard(type_name) || defined_.count(name)) return { paint(Style::Accent, name) };
+        defined_.insert(name);
+        size_t slot = defs_.size();    /* the definition goes before the types it uses */
+        defs_.emplace_back();
+        std::vector<std::string> lines{ paint(Style::Accent, name) + " " + paint(Style::Faint, "{") };
+        for (auto& l : members(at, depth, 2)) lines.push_back(l);
+        lines.push_back(paint(Style::Faint, "}"));
+        defs_[slot] = join(lines);
+        return { paint(Style::Accent, name) };
     }
 
-    std::vector<std::string> type_lines(uint16_t i, size_t indent) {
+    std::vector<std::string> type_lines(uint16_t i) {
         d::RantSchemaFieldInfo f = info(i);
         auto alias = [&](const std::string& base) {
             if (!f.type_name.len) return base;
             return named(std::string(f.type_name.data, f.type_name.len), { base });
         };
         switch (f.kind) {
-        case d::RANT_STRUCT: return struct_type(i, f.type_name, indent);
+        case d::RANT_STRUCT: return struct_type(i, f.type_name);
         case d::RANT_STR:
             return { alias(paint(Style::Amber, "string") + paint(Style::Faint, "<") + std::to_string(f.str_cap) + paint(Style::Faint, ">")) };
         case d::RANT_VSTR: return { alias(paint(Style::Amber, "string")) };
@@ -157,7 +151,7 @@ private:
             std::string suffix = paint(Style::Faint, "[") + (f.kind == d::RANT_ARR ? std::to_string(f.count) : "") +
                                  paint(Style::Faint, "]");
             /* the element is the next row, any type, a list of lists too */
-            std::vector<std::string> elem = type_lines((uint16_t)(i + 1), indent);
+            std::vector<std::string> elem = type_lines((uint16_t)(i + 1));
             elem.back() += suffix;
             if (f.type_name.len) return { named(std::string(f.type_name.data, f.type_name.len), elem) };
             return elem;
