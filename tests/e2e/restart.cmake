@@ -68,4 +68,38 @@ expect_match("${OUT}" "building demo\nrebuilt-demo\n")
 expect_match("${OUT}" "sensor +started +pid [0-9]+")
 file(WRITE "${SCRATCH}/demo/package.rant" "${demo}")
 
+# A node type means the node running under the name it starts with, never a copy beside it.
+rant(restart demo/sensor)
+expect_match("${OUT}" "sensor +restarted +pid [0-9]+")
+rant(restart node demo/sensor)
+expect_match("${OUT}" "sensor +restarted +pid [0-9]+")
+rant(ls nodes)
+expect_no_match("${OUT}" "sensor_1")
+rant(restart demo/sensor range=1 FAILS)
+expect_match("${ERR}" "a node takes no key=value")
+
+# From another workspace it finds the node where it runs, as the node's name does.
+file(MAKE_DIRECTORY "${OTHER}")
+file(COPY "${SCRATCH}/demo" DESTINATION "${OTHER}")
+file(WRITE "${OTHER}/workspace.rant" "")
+rant(restart demo/sensor IN "${OTHER}")
+expect_match("${ERR}" "`sensor` runs in")
+expect_match("${OUT}" "sensor +restarted +pid [0-9]+")
+
+# With none under that name it starts one, as with another type under that name.
+rant(stop sensor)
+rant(restart demo/sensor)
+expect_match("${ERR}" "`demo/sensor` is not running, starting it")
+expect_match("${OUT}" "sensor +started +pid [0-9]+")
+rant(stop sensor)
+file(WRITE "${SCRATCH}/demo/package.rant" "${demo}node \"other\" {\n  run = [\"./bin/test_node\", \"--life\", \"60\"]\n}\n")
+file(WRITE "${SCRATCH}/Stand.run" "node \"demo/other\" {\n  name = \"sensor\"\n}\n")
+rant(run Stand)
+rant(restart demo/sensor)
+expect_match("${OUT}" "sensor_1 +started +pid [0-9]+")
+rant(stop Stand)
+rant(stop sensor_1)
+file(REMOVE "${SCRATCH}/Stand.run")
+file(WRITE "${SCRATCH}/demo/package.rant" "${demo}")
+
 rant(stop)

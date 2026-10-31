@@ -277,15 +277,34 @@ static int restart_named(app::Context& ctx, const std::string& name, const std::
     return built ? code : 1;
 }
 
+/* The node a node type's reference means: the one running under the name that type starts
+ * with on this machine. Another under that name or of that type is not it. */
+static std::optional<std::string> running_as(app::Context& ctx, const std::string& ref) {
+    config::Plan plan = config::plan_node(ctx.cwd(), ref);
+    if (plan.instances.empty()) return std::nullopt;
+    const config::Instance& p = plan.instances.front();
+    for (auto& [root, st] : states_anywhere(ctx, false))
+        for (auto& i : st.instances)
+            if (i.name == p.name && i.type == p.type) return i.name;
+    return std::nullopt;
+}
+
 /* Restarts a name where it runs on this machine, as stop finds it, else starts it here. */
 static int run(app::Context& ctx) {
     auto& w = ctx.args.words;
     if (w.empty()) return restart_all(ctx);
     bool node = w[0] == "node";
     if (node && w.size() != 2) throw app::UsageError("restart node takes one node, such as `rant restart node talker`");
-    const std::string name = node ? w[1] : w[0];
+    std::string name = node ? w[1] : w[0];
     auto where = where_running(ctx, name, node, "restart");
     if (!where) return 1;
+    if (where->empty() && (node || (w.size() == 1 && !names_group(ctx, name))))
+        if (auto running = running_as(ctx, name)) {
+            name = *running;
+            node = true;
+            where = where_running(ctx, name, node, "restart");
+            if (!where) return 1;
+        }
     std::vector<std::string> params = node ? std::vector<std::string>{} : resolved_params(ctx, name, { w.begin() + 1, w.end() });
     auto act = [&](const std::string& in) {
         if (!in.empty()) ctx.out.note("`" + name + "` runs in " + in);
