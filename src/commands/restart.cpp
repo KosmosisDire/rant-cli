@@ -114,6 +114,8 @@ static void start_root(app::Context& ctx, run::Session& s, const Halted& h, std:
             summary.add({ p.name, Summary::Mark::Running, "already running", "started outside rant" });
             continue;
         }
+        /* a node roots share starts once, a second start would leave the first untracked */
+        if (std::any_of(started.begin(), started.end(), [&](const state::Instance& i) { return i.name == p.name; })) continue;
         std::vector<std::string> roots = inst ? inst->roots : std::vector<std::string>{ key };
         /* a node comes back in the session it ran in */
         state::Instance rec = run::spawn(s.workspace(), p, p.name, inst ? std::optional<uint32_t>(inst->session) : std::nullopt);

@@ -102,4 +102,15 @@ rant(stop sensor_1)
 file(REMOVE "${SCRATCH}/Stand.run")
 file(WRITE "${SCRATCH}/demo/package.rant" "${demo}")
 
+# Roots sharing a node start it once. A second start leaves the first running untracked, which
+# stays on the mesh after a stop.
+rant(run pick)
+rant(restart)
+expect_match("${OUT}" "\n4 restarted, all running")
+rant(run nav speed=9)
+rant(restart nav)
+expect_match("${OUT}" "\n3 restarted, all running")
+
 rant(stop)
+rant(ls nodes)
+expect_match("${OUT}" "NODES\n  [(]none[)]")
