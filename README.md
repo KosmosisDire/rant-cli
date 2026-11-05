@@ -28,6 +28,8 @@ rant run Nav speed=2           # run a group of nodes, rant run Nav --help lists
 rant run node talker           # or one node alone
 rant ls nodes                  # the running nodes, and those that could start
 rant sub Odom                  # print a topic
+rant record 'Cam/*' Odom       # record them until Ctrl-C
+rant play 2026-11-05_09-30-00Z --speed 2  # send a recording again at twice the speed
 rant log Nav -f                # follow what its nodes print
 rant stop Nav
 rant enable Nav                # run it now and every time this computer starts

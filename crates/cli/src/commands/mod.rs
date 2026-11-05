@@ -14,7 +14,9 @@ pub mod kinds;
 pub mod log;
 pub mod ls;
 pub mod new;
+pub mod play;
 pub mod publish;
+pub mod record;
 pub mod remove;
 pub mod restart;
 pub mod run;
@@ -52,6 +54,8 @@ pub fn run(ctx: &mut Context, command: Command) -> Result<()> {
         Command::Sub(a) => sub::run(ctx, &a),
         Command::Pub(a) => publish::run(ctx, &a),
         Command::Call(a) => call::run(ctx, &a),
+        Command::Record(a) => record::run(ctx, &a),
+        Command::Play(a) => play::run(ctx, &a),
         Command::Explore(a) => explore::run(ctx, &a),
         Command::Install(a) => install::run(ctx, &a),
         Command::Remove(a) => remove::run(ctx, &a),

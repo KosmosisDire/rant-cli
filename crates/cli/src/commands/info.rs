@@ -16,9 +16,10 @@ use crate::failure::{Result, failed, usage};
 use crate::library;
 use crate::mesh::{Client, FULL_SETTLE, Peer, kind_name, schema_text, standard_types, types_in_use};
 use crate::nodes::managed_peers;
-use crate::output::{Data, Style, Text, Yaml};
+use crate::output::{Data, Style, Text, Yaml, bytes};
 use crate::packages;
 use crate::packages::sources::{self, Sources};
+use crate::recording;
 use crate::state::{Instance, RootKind, State};
 
 #[derive(clap::Args, Debug)]
@@ -95,12 +96,15 @@ pub fn run(ctx: &mut Context, args: &Args) -> Result<()> {
         [name] => (None, name),
         [k, name] => match Kind::named(k).filter(|k| k.explained()) {
             Some(k) => (Some(k), name),
-            None => return Err(usage(format!("`{k}` is not a kind, use node, entity, topic, var, fn, task, type, package or group"))),
+            None => return Err(usage(format!("`{k}` is not a kind, use node, entity, topic, var, fn, task, type, package, group or recording"))),
         },
         _ => return Err(usage("info takes a name, or a kind and a name such as `rant info package cam`")),
     };
     let st = snapshot(ctx)?;
     let mut answers = Vec::new();
+    if kind.is_none_or(|k| k == Kind::Recording) {
+        recording_answer(ctx, name, &mut answers)?;
+    }
     // a node is a running one or one that could start, so it looks in both places
     if kind.is_none_or(|k| !k.on_mesh() || k == Kind::Node) {
         workspace_answers(ctx, kind, name, &st, &mut answers)?;
@@ -152,6 +156,32 @@ pub fn run(ctx: &mut Context, args: &Args) -> Result<()> {
         ctx.out.note(&format!("`{name}` names {} and {last}, `rant info {} {name}` shows only one", rest.join(", "), kinds[0]));
     }
     ctx.show(&Answers(answers));
+    Ok(())
+}
+
+// ---- recordings ----
+
+/// A recording by its path or its name in the recordings folder: what it holds and how long.
+fn recording_answer(ctx: &mut Context, name: &str, out: &mut Vec<Answer>) -> Result<()> {
+    let Ok(path) = recording::locate(ctx, std::path::Path::new(name)) else { return Ok(()) };
+    let c = recording::contents(&path)?;
+    let mut a = Answer::new(Kind::Recording);
+    a.set("recording", ctx.shown(&path));
+    for (key, shown) in [("names", "asked"), ("domain", "domain"), ("started", "started")] {
+        if let Some(v) = c.about.get(key) {
+            a.set(shown, v.as_str());
+        }
+    }
+    a.set("seconds", ((c.last_us - c.first_us) as f64 / 1e5).round() / 10.0);
+    a.set("messages", c.tracks.iter().map(|(_, n)| n).sum::<u64>());
+    a.set("size", bytes(std::fs::metadata(&path).map_or(0, |m| m.len())));
+    let tracks = c.tracks.iter().map(|(t, n)| json!({"name": t.name, "kind": kind_name(t.kind), "type": t.type_name, "from": t.from, "messages": n}));
+    a.set("names", Value::Array(tracks.collect()));
+    if let Some(cut) = c.cut {
+        ctx.out.warn(&cut);
+        a.set("complete", false);
+    }
+    out.push(a);
     Ok(())
 }
 

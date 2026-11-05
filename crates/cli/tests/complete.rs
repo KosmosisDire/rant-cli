@@ -22,7 +22,7 @@ fn complete() {
     t.install_test_node("demo/bin", "test_node");
     write(&t.path("opts.run"), OPTS);
 
-    expect_match(&t.complete(&[], "r"), r"^remove\nrestart\nrun\n$");
+    expect_match(&t.complete(&[], "r"), r"^record\nremove\nrestart\nrun\n$");
     expect_match(&t.complete(&["run"], ""), r"^base\nnav\nnode\nopts\npick\n$");
     expect_match(&t.complete(&["run", "node"], ""), r"^sensor\ntest_node\n$");
 

@@ -20,9 +20,10 @@ use crate::library::{self, Library};
 use crate::mesh::{Client, FULL_SETTLE, kind_name, types_in_use};
 use crate::names::matches;
 use crate::nodes::managed_peers;
-use crate::output::{Data, Format, Style, Table, Text, columns};
+use crate::output::{Data, Format, Style, Table, Text, bytes, columns, iso_ms};
 use crate::packages;
 use crate::packages::sources::Sources;
+use crate::recording;
 use crate::services::{self, When, entry};
 use crate::state::{self, Instance, RootKind, State, Store};
 
@@ -84,6 +85,10 @@ pub fn run(ctx: &mut Context, args: &Args) -> Result<()> {
             ctx.show(&d);
         }
         Kind::Library => list_libraries(ctx, pattern)?,
+        Kind::Recording => {
+            let d = list_recordings(ctx, pattern)?;
+            ctx.show(&d);
+        }
         _ => {
             let d = list_entities(ctx, kind, pattern)?;
             ctx.show(&d);
@@ -338,6 +343,45 @@ fn list_types(ctx: &mut Context, pattern: &str) -> Result<Types> {
     let mesh = mesh(ctx)?;
     let used = types_in_use(&mesh.entities()).into_iter().filter(|(name, _)| matches(pattern, name));
     Ok(Types(used.map(|(name, u)| TypeRow { name, used_by: u.entities }).collect()))
+}
+
+// ---- recordings ----
+
+#[derive(Serialize)]
+struct RecordingRow {
+    name: String,
+    file: String,
+    bytes: u64,
+    modified: String,
+}
+
+#[derive(Serialize)]
+#[serde(transparent)]
+struct Recordings(Vec<RecordingRow>);
+
+impl Data for Recordings {
+    fn text(&self, t: &Text) -> String {
+        let mut table = Table::default();
+        for r in &self.0 {
+            table.row(vec![r.name.clone(), t.paint(Style::Dim, &bytes(r.bytes)), t.paint(Style::Dim, &r.modified)]);
+        }
+        section(t, "RECORDINGS", table.lines("  "))
+    }
+}
+
+/// The recordings in the recordings folder, by name, which is their start time unless named.
+fn list_recordings(ctx: &mut Context, pattern: &str) -> Result<Recordings> {
+    let mut rows = Vec::new();
+    for path in recording::listed(ctx)? {
+        let name = recording::name_of(&path);
+        let Ok(meta) = std::fs::metadata(&path) else { continue };
+        if !matches(pattern, &name) {
+            continue;
+        }
+        let since = meta.modified().ok().and_then(|m| m.duration_since(std::time::UNIX_EPOCH).ok()).map_or(0, |d| d.as_micros() as u64);
+        rows.push(RecordingRow { name, file: ctx.shown(&path), bytes: meta.len(), modified: format!("{}Z", &iso_ms(since)[..19]) });
+    }
+    Ok(Recordings(rows))
 }
 
 // ---- the workspace ----

@@ -19,6 +19,7 @@ pub enum Kind {
     Group,
     Source,
     Service,
+    Recording,
 }
 
 struct Words {
@@ -44,6 +45,7 @@ const TABLE: &[Words] = &[
     Words { kind: Kind::Group, singular: "group", plural: "groups", more: &[], listed: "the groups of this workspace" },
     Words { kind: Kind::Source, singular: "source", plural: "sources", more: &[], listed: "where rant install finds packages, in the order it looks" },
     Words { kind: Kind::Service, singular: "service", plural: "services", more: &[], listed: "the services of each enabled workspace, and whether they run" },
+    Words { kind: Kind::Recording, singular: "recording", plural: "recordings", more: &[], listed: "the recordings in the workspace's recordings folder" },
 ];
 
 impl Kind {
@@ -63,7 +65,7 @@ impl Kind {
     }
 
     pub fn on_mesh(self) -> bool {
-        !matches!(self, Kind::Package | Kind::Library | Kind::Group | Kind::Source | Kind::Service)
+        !matches!(self, Kind::Package | Kind::Library | Kind::Group | Kind::Source | Kind::Service | Kind::Recording)
     }
 
     /// An entity matches Entity, or the kind that names its own.

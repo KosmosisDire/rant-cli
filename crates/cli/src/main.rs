@@ -21,6 +21,7 @@ mod output;
 mod packages;
 mod pick;
 mod prompt;
+mod recording;
 #[cfg(windows)]
 mod registry;
 mod scaffold;

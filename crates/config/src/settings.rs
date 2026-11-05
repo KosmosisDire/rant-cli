@@ -17,6 +17,8 @@ pub const WORKSPACE_FILE: &str = "workspace.rant";
 pub struct Settings {
     pub root: PathBuf,
     pub logs: PathBuf,
+    /// Where `rant record` writes and `rant ls recordings` looks.
+    pub recordings: PathBuf,
     /// rant's own data: the state file and caches.
     pub data: PathBuf,
     pub ignore: Vec<String>,
@@ -65,6 +67,7 @@ impl Settings {
         Ok(Settings {
             root: rant_home.to_path_buf(),
             logs: rant_home.join("logs"),
+            recordings: rant_home.join("recordings"),
             data: rant_home.to_path_buf(),
             ignore: Vec::new(),
             placement: Placement::default(),
@@ -78,11 +81,15 @@ impl Settings {
 fn parse(src: &Source, dir: &Path) -> Result<Settings, Diag> {
     let has_package = dir.join(PACKAGE_FILE).is_file();
     let scope = Scope { params: None, file_dir: dir, package_dir: has_package.then_some(dir), workspace: dir };
-    let keys = [&["logs", "ignore"][..], &placement::KEYS[..]].concat();
+    let keys = [&["logs", "recordings", "ignore"][..], &placement::KEYS[..]].concat();
     let fields = Fields::of_body(src, &src.body, WORKSPACE_FILE, &keys, &[service::BLOCK])?;
     let logs = match fields.attr("logs") {
         Some(a) => dir.join(eval::string(src, a, &scope)?),
         None => dir.join("logs"),
+    };
+    let recordings = match fields.attr("recordings") {
+        Some(a) => dir.join(eval::string(src, a, &scope)?),
+        None => dir.join("recordings"),
     };
     let ignore = match fields.attr("ignore") {
         Some(a) => eval::string_list(src, a, &scope)?,
@@ -91,6 +98,7 @@ fn parse(src: &Source, dir: &Path) -> Result<Settings, Diag> {
     Ok(Settings {
         root: dir.to_path_buf(),
         logs,
+        recordings,
         data: data_dir(dir),
         ignore,
         placement: Placement::read(src, &fields.attrs, &scope)?,
@@ -132,12 +140,13 @@ mod tests {
     #[test]
     fn finds_the_nearest_workspace_above() {
         let t = TestDir::new();
-        t.write("workspace.rant", "logs = \"out\"\n");
+        t.write("workspace.rant", "logs = \"out\"\nrecordings = \"rec\"\n");
         t.write("a/package.rant", "");
         t.mkdir("a/b");
         let ws = Settings::open(&t.path("a/b")).unwrap().unwrap();
         assert_eq!(ws.root, t.path(""));
         assert_eq!(ws.logs, t.path("out"));
+        assert_eq!(ws.recordings, t.path("rec"));
         assert_eq!(t.read(".rant/.gitignore"), "*\n");
     }
 

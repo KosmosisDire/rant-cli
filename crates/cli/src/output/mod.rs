@@ -256,6 +256,35 @@ impl Output {
     }
 }
 
+/// A size in decimal units: 812 B, 4.2 KB, 1.3 MB.
+pub fn bytes(n: u64) -> String {
+    const UNITS: [&str; 4] = ["KB", "MB", "GB", "TB"];
+    if n < 1000 {
+        return format!("{n} B");
+    }
+    let (mut v, mut unit) = (n as f64 / 1000.0, 0);
+    while v >= 999.95 && unit + 1 < UNITS.len() {
+        (v, unit) = (v / 1000.0, unit + 1);
+    }
+    format!("{v:.1} {}", UNITS[unit])
+}
+
+/// Microseconds since 1970 as ISO 8601 UTC to the millisecond, such as 2026-11-04T09:30:00.123Z.
+pub fn iso_ms(us: u64) -> String {
+    let (secs, ms) = (us / 1_000_000, us / 1000 % 1000);
+    let (days, rest) = ((secs / 86_400) as i64, secs % 86_400);
+    // the civil date of a day count, after Howard Hinnant's days_to_civil
+    let z = days + 719_468;
+    let (era, doe) = (z.div_euclid(146_097), z.rem_euclid(146_097));
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + i64::from(m <= 2);
+    format!("{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}.{ms:03}Z", rest / 3600, rest / 60 % 60, rest % 60)
+}
+
 /// A path relative to `from`, or whole when that is shorter or on another drive.
 pub fn shown(p: &Path, from: Option<&Path>) -> String {
     let whole = paths::slash(p);
@@ -344,6 +373,14 @@ mod tests {
         let deep = base.join("a/b/c/d/e/f/g/h/i/j/k/l/m/n/o/p/q/r/s/t/u/v/w/x/y/z");
         assert_eq!(shown(&far, Some(&deep)), paths::slash(&far), "a long climb reads worse than the whole path");
         assert_eq!(shown(&far, None), paths::slash(&far));
+    }
+
+    #[test]
+    fn times_read_as_utc_dates() {
+        assert_eq!((bytes(812), bytes(4_200), bytes(999_960), bytes(1_300_000)), ("812 B".into(), "4.2 KB".into(), "1.0 MB".into(), "1.3 MB".into()));
+        assert_eq!(iso_ms(0), "1970-01-01T00:00:00.000Z");
+        assert_eq!(iso_ms(1_700_000_000_123_456), "2023-11-14T22:13:20.123Z");
+        assert_eq!(iso_ms(951_782_400_000_000), "2000-02-29T00:00:00.000Z");
     }
 
     #[test]

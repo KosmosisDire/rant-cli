@@ -19,6 +19,7 @@ use crate::files::same_path;
 use crate::mesh::{Client, Snapshot, kind_name, standard_types};
 use crate::output::{Format, Output};
 use crate::packages;
+use crate::recording;
 use crate::state::RootKind;
 
 /// The mesh query one completion makes: whoever answers within this joins the snapshot.
@@ -225,6 +226,8 @@ fn offers(command: &str, r: &mut Request) -> Candidates {
         "call" if w.is_empty() => paths(r.entities(&[EntityKind::Function, EntityKind::Task])),
         "pub" if w.is_empty() => paths(r.entities(&[EntityKind::Topic, EntityKind::Variable])),
         "sub" if w.is_empty() => paths(r.entities(&[EntityKind::Topic, EntityKind::Variable, EntityKind::Function, EntityKind::Task])),
+        "record" => paths(r.entities(&[EntityKind::Topic, EntityKind::Variable, EntityKind::Function, EntityKind::Task]).into_iter().filter(|n| !w.contains(n)).collect()),
+        "play" if w.is_empty() => words(recordings(r)),
         "enable" if w.is_empty() => words(r.groups()),
         "disable" if w.is_empty() => words(r.services()),
         "enable" | "disable" => words(r.params()),
@@ -280,7 +283,15 @@ fn info_names(r: &mut Request, kind: Option<kinds::Kind>) -> Vec<String> {
         Some(Kind::Type) => out.extend(standard_types()),
         _ => {}
     }
+    if want(Kind::Recording) {
+        out.extend(recordings(r));
+    }
     out
+}
+
+/// The names of the recordings in the recordings folder.
+fn recordings(r: &mut Request) -> Vec<String> {
+    recording::listed(r.ctx).unwrap_or_default().iter().map(|p| recording::name_of(p)).collect()
 }
 
 /// An option as the command line reads it.

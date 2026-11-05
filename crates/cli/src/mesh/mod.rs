@@ -71,8 +71,13 @@ pub struct Client {
 impl Client {
     /// home holds the snapshot of names a settle saw, for completion.
     pub fn new(domain: u16, home: Option<&Path>) -> Result<Client> {
-        let options = NodeOptions::new().domain(domain).fetch_details(true).disable_logs(true).max_peers(256).max_topics(16);
-        let node = Node::new("@rant/cli", options).map_err(|e| failed(format!("cannot join the mesh on domain {domain}: {e}")))?;
+        Client::open("@rant/cli", NodeOptions::new().max_topics(16), domain, home)
+    }
+
+    /// A node by a name the mesh shows, for a command that stays on it, such as the recorder.
+    pub fn open(name: &str, options: NodeOptions, domain: u16, home: Option<&Path>) -> Result<Client> {
+        let options = options.domain(domain).fetch_details(true).disable_logs(true).max_peers(256);
+        let node = Node::new(name, options).map_err(|e| failed(format!("cannot join the mesh on domain {domain}: {e}")))?;
         // a peer's schema clash is not the CLI's error
         node.on_event(|_| {});
         Ok(Client { node, domain, home: home.map(Path::to_path_buf) })

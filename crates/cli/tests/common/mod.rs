@@ -123,6 +123,20 @@ impl Test {
         run
     }
 
+    /// Runs `then` once a test node with `node_args` has been up two seconds, then stops the node,
+    /// for a command whose outcome hangs on a node already there.
+    pub fn with_node<R>(&self, node_args: &[&str], then: impl FnOnce() -> R) -> R {
+        let mut node = self.command(&test_node());
+        node.args(["--domain", &self.domain.to_string(), "--life", "30"]).args(node_args);
+        node.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+        let mut node = node.spawn().expect("the test node starts");
+        sleep(2.0);
+        let r = then();
+        let _ = node.kill();
+        wait(&mut node, Duration::from_secs(10), "the test node");
+        r
+    }
+
     /// The candidates `rant __complete` offers for the words and the word at the cursor.
     pub fn complete(&self, words: &[&str], cur: &str) -> String {
         let mut cli = self.command(&rant_cli());

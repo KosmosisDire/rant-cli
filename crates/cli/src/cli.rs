@@ -4,7 +4,7 @@ use std::ffi::OsString;
 
 use clap::{Arg, ArgAction, Args, CommandFactory, FromArgMatches, Parser, Subcommand};
 
-use crate::commands::{add, build, call, disable, enable, explore, info, init, install, kinds, log, ls, new, publish, remove, restart, run, setup, stop, sub, uninstall, update};
+use crate::commands::{add, build, call, disable, enable, explore, info, init, install, kinds, log, ls, new, play, publish, record, remove, restart, run, setup, stop, sub, uninstall, update};
 use crate::output::Format;
 
 #[derive(Parser, Debug)]
@@ -93,6 +93,12 @@ pub enum Command {
     /// call a function and print the reply, or run a task
     #[command(override_usage = "rant call <function|task> [value]")]
     Call(call::Args),
+    /// record topics, variables and the calls of functions and tasks into a file, until Ctrl-C
+    #[command(override_usage = "rant record <name...> [-o file]")]
+    Record(record::Args),
+    /// send a recording again, its times moved to now, faster or slower
+    #[command(override_usage = "rant play <recording> [--speed factor]")]
+    Play(play::Args),
     /// set up tab completion for your shells, or the named ones
     #[command(override_usage = "rant setup [shell...]")]
     Setup(setup::Args),
@@ -117,7 +123,7 @@ pub enum Command {
 }
 
 /// The headings of the main help, and the commands under each.
-const SECTIONS: &[(&str, &[&str])] = &[("In a workspace", &["init", "new", "build", "run", "stop", "restart", "enable", "disable", "log"]), ("On the mesh, anywhere", &["ls", "info", "sub", "pub", "call"]), ("Setting up", &["setup", "add", "install", "remove", "update", "uninstall", "explore"])];
+const SECTIONS: &[(&str, &[&str])] = &[("In a workspace", &["init", "new", "build", "run", "stop", "restart", "enable", "disable", "log"]), ("On the mesh, anywhere", &["ls", "info", "sub", "pub", "call", "record", "play"]), ("Setting up", &["setup", "add", "install", "remove", "update", "uninstall", "explore"])];
 
 const COMMAND_HELP: &str = "{usage-heading} {usage}\n\n{about}\n\n{all-args}{after-help}";
 const MAIN_HELP: &str = "rant: build, run and inspect Rant nodes\n\n{usage-heading} {usage}\n{before-help}Options:\n{options}\n\n\

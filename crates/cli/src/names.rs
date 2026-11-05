@@ -34,6 +34,11 @@ pub fn matches(pattern: &str, name: &str) -> bool {
     if pattern.contains(['*', '?']) { glob(pattern.as_bytes(), name.as_bytes()) } else { name.contains(pattern) }
 }
 
+/// A name chooser: a glob when the pattern holds * or ?, otherwise the whole name.
+pub fn selects(pattern: &str, name: &str) -> bool {
+    glob(pattern.as_bytes(), name.as_bytes())
+}
+
 fn glob(p: &[u8], t: &[u8]) -> bool {
     let (mut pi, mut ti, mut star, mut mark) = (0, 0, None, 0);
     while ti < t.len() {
@@ -82,6 +87,7 @@ mod tests {
         assert!(matches("", "talker") && matches("alk", "talker") && !matches("x", "talker"));
         assert!(matches("t*r", "talker") && matches("ta?ker", "talker") && matches("*", "") && !matches("t*x", "talker"));
         assert!(matches("*cam*", "left/cam_driver") && !matches("cam", "Cam"));
+        assert!(selects("arm/pose", "arm/pose") && !selects("arm", "arm/pose") && selects("arm/*", "arm/pose") && selects("*", "x"));
     }
 
     #[test]
