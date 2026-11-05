@@ -38,6 +38,7 @@ pub struct Run<'a> {
     args: Vec<String>,
     dir: String,
     env: Vec<(String, String)>,
+    domain: Option<u16>,
 }
 
 impl Test {
@@ -60,7 +61,7 @@ impl Test {
 
     /// `rant --domain D <args>` in the scratch folder with an empty stdin that is no terminal.
     pub fn rant(&self, args: &[&str]) -> Run<'_> {
-        Run { test: self, args: args.iter().map(|a| a.to_string()).collect(), dir: self.scratch.clone(), env: Vec::new() }
+        Run { test: self, args: args.iter().map(|a| a.to_string()).collect(), dir: self.scratch.clone(), env: Vec::new(), domain: None }
     }
 
     /// Runs rant while a test node with `node_args` runs beside it for a few seconds. Both start
@@ -250,6 +251,13 @@ impl Run<'_> {
         self
     }
 
+    /// Gives --domain d in place of the test's own, and the test nodes it starts take theirs
+    /// from Rant, as a node that leaves the default does.
+    pub fn on_domain(mut self, d: u16) -> Self {
+        self.domain = Some(d);
+        self
+    }
+
     /// Expects exit code 0.
     pub fn ok(self) -> Output {
         let shown = self.args.join(" ");
@@ -278,9 +286,9 @@ impl Run<'_> {
     fn go(self) -> Output {
         let t = self.test;
         let mut cli = t.command(&rant_cli());
-        cli.env("TEST_NODE_DOMAIN", t.domain.to_string());
+        cli.env("TEST_NODE_DOMAIN", self.domain.map_or_else(|| t.domain.to_string(), |_| String::new()));
         cli.envs(self.env);
-        cli.arg("--domain").arg(t.domain.to_string()).args(&self.args).current_dir(&self.dir);
+        cli.arg("--domain").arg(self.domain.unwrap_or(t.domain).to_string()).args(&self.args).current_dir(&self.dir);
         cli.stdin(fs::File::open(t.empty_stdin()).expect("the empty stdin opens"));
         capture(cli, Duration::from_secs(300), &self.args.join(" ")).with_plain_line_ends()
     }

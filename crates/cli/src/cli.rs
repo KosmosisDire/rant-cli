@@ -4,7 +4,7 @@ use std::ffi::OsString;
 
 use clap::{Arg, ArgAction, Args, CommandFactory, FromArgMatches, Parser, Subcommand};
 
-use crate::commands::{add, build, call, explore, info, init, install, kinds, log, ls, new, publish, remove, restart, run, stop, sub, update};
+use crate::commands::{add, build, call, disable, enable, explore, info, init, install, kinds, log, ls, new, publish, remove, restart, run, stop, sub, update};
 use crate::output::Format;
 
 #[derive(Parser, Debug)]
@@ -69,6 +69,12 @@ pub enum Command {
     /// stop and start again as configured now, start what is not running, all of it when nothing is named
     #[command(override_usage = "rant restart [<group> [key=value...] | [node] <node>]")]
     Restart(restart::Args),
+    /// run the services now and at every boot, which takes admin once, a group named joining them first
+    #[command(override_usage = "rant enable [<group> [key=value...]]")]
+    Enable(enable::Args),
+    /// stop the services and no longer start them, or take one group off them
+    #[command(override_usage = "rant disable [<group> [key=value...]]")]
+    Disable(disable::Args),
     /// show what nodes wrote, every running node when nothing is named
     #[command(override_usage = "rant log [group | [node] node...]")]
     Log(log::Args),
@@ -105,7 +111,7 @@ pub enum Command {
 }
 
 /// The headings of the main help, and the commands under each.
-const SECTIONS: &[(&str, &[&str])] = &[("In a workspace", &["init", "new", "build", "run", "stop", "restart", "log"]), ("On the mesh, anywhere", &["ls", "info", "sub", "pub", "call"]), ("Setting up", &["install", "remove", "update", "add", "explore"])];
+const SECTIONS: &[(&str, &[&str])] = &[("In a workspace", &["init", "new", "build", "run", "stop", "restart", "enable", "disable", "log"]), ("On the mesh, anywhere", &["ls", "info", "sub", "pub", "call"]), ("Setting up", &["install", "remove", "update", "add", "explore"])];
 
 const COMMAND_HELP: &str = "{usage-heading} {usage}\n\n{about}\n\n{all-args}{after-help}";
 const MAIN_HELP: &str = "rant: build, run and inspect Rant nodes\n\n{usage-heading} {usage}\n{before-help}Options:\n{options}\n\n\

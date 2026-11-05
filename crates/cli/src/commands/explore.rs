@@ -29,7 +29,7 @@ pub fn run(ctx: &mut Context, args: &Args) -> Result<()> {
     // a job name of its own each time, since several explorers may run at once
     let stamp = crate::files::stamp();
     let c = Command { argv: argv.clone(), cwd: node.cwd.clone(), ..Command::default() };
-    rant_process::start_child(&c, &home.join("explorer.log"), &format!("Local\\rant-explorer-{stamp}")).map_err(|e| failed(e.to_string()))?;
+    rant_process::start_child(&c, &home.join("explorer.log"), &format!("Local\\rant-explorer-{stamp}"))?;
     ctx.out.note(&format!("started {}", argv[0]));
     Ok(())
 }

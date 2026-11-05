@@ -30,6 +30,12 @@ pub fn path_key(p: &Path) -> String {
     format!("{hash:016x}")
 }
 
+/// Whether two paths name one place, whichever separators they are written with.
+pub fn same_path(a: &Path, b: &Path) -> bool {
+    let key = |p: &Path| path_key(&p.components().collect::<std::path::PathBuf>());
+    key(a) == key(b)
+}
+
 /// Writes a temp file beside the target and renames it into place, so a crash never leaves
 /// half a file.
 pub fn write_atomic(target: &Path, text: &str) -> std::io::Result<()> {
@@ -85,6 +91,7 @@ mod tests {
         assert_eq!(path_key(Path::new("a")), "af63dc4c8601ec8c");
         if cfg!(windows) {
             assert_eq!(path_key(Path::new("C:/Work")), path_key(Path::new("c:/work")));
+            assert!(same_path(Path::new("C:/Work/a"), Path::new(r"c:\work\a\")));
         }
     }
 

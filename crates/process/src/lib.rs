@@ -17,7 +17,9 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-pub use os::{Child, Doorbell, alive, helper, owns, pid_alive, ring, session, start_child, stop, stop_pid};
+pub use os::{Child, Doorbell, alive, helper, owns, pid_alive, ring, run_elevated, session, start_child, stop, stop_pid};
+#[cfg(windows)]
+pub use os::{system_dir, user_sid};
 
 #[derive(Debug, Clone, Default)]
 pub struct Command {

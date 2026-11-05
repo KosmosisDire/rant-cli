@@ -37,6 +37,11 @@ impl Root {
         Root { kind: RootKind::Group, name: name.to_string(), params }
     }
 
+    /// The root of a group run with these resolved params.
+    pub fn planned(group: &str, values: &BTreeMap<String, rant_config::Value>) -> Root {
+        Root::group(group, values.iter().map(|(k, v)| (k.clone(), rant_config::param::text(v))).collect())
+    }
+
     pub fn node(name: &str) -> Root {
         Root { kind: RootKind::Node, name: name.to_string(), params: BTreeMap::new() }
     }

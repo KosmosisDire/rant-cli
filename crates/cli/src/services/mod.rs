@@ -1,6 +1,8 @@
 //! The service process, `rant __services`, one per rant home and session. It starts the nodes
 //! with restart set as its children, starts them again as their restart says, then ends.
 
+pub mod entry;
+
 use std::collections::BTreeMap;
 use std::fs::File;
 use std::path::{Path, PathBuf};
@@ -11,7 +13,7 @@ use rant_process::{Child, Command, Doorbell, Stopped, Tracking};
 use serde::{Deserialize, Serialize};
 
 use crate::failure::{Result, failed};
-use crate::files::path_key;
+use crate::files::{self, path_key};
 use crate::nodes;
 use crate::state::{self, Store};
 
@@ -98,10 +100,9 @@ pub fn ensure_running(home: &Path) -> Result<()> {
         return Ok(());
     }
     let _ = std::fs::create_dir_all(home.join("logs"));
-    let job = format!("Local\\rant-services-{}-{}", home_key(home), crate::files::stamp());
-    let me = std::env::current_exe().map_err(|e| failed(format!("cannot find rant itself: {e}")))?;
-    rant_process::start_detached(&Command::new([me.to_string_lossy().into_owned(), "__services".into()], home), &log_file(home), &job)
-        .map_err(|e| failed(e.to_string()))?;
+    let job = format!("Local\\rant-services-{}-{}", home_key(home), files::stamp());
+    let me = crate::home::program()?;
+    rant_process::start_detached(&Command::new([me.to_string_lossy().into_owned(), "__services".into()], home), &log_file(home), &job)?;
     if rant_process::wait_until(Duration::from_secs(10), || running(home)) {
         return Ok(());
     }
@@ -130,6 +131,16 @@ pub enum When {
     Login,
 }
 
+impl When {
+    /// As services.json and messages say it.
+    pub fn word(self) -> &'static str {
+        match self {
+            When::Boot => "boot",
+            When::Login => "login",
+        }
+    }
+}
+
 fn boot() -> When {
     When::Boot
 }
@@ -147,6 +158,11 @@ pub fn enabled(home: &Path) -> Result<Vec<Enabled>> {
     // an entry with a kind is an older rant's for one group, which nothing starts now
     let current = all.iter().filter(|j| j.get("kind").is_none());
     current.map(|j| serde_json::from_value(j.clone()).map_err(|_| damaged())).collect()
+}
+
+pub fn save(home: &Path, list: &[Enabled]) -> Result<()> {
+    let text = serde_json::to_string_pretty(&serde_json::json!({ "enabled": list })).expect("the list is plain data") + "\n";
+    files::write_atomic(&list_file(home), &text).map_err(|e| failed(format!("cannot write {}: {e}", list_file(home).display())))
 }
 
 /// One line of the log, after the local time.
@@ -199,7 +215,7 @@ fn start_enabled(home: &Path, when: When) {
         e.messages().iter().for_each(|m| say(home, m));
         Vec::new()
     });
-    let Ok(me) = std::env::current_exe() else { return };
+    let Ok(me) = crate::home::program() else { return };
     for e in list.iter().filter(|e| e.start == when) {
         let folder = e.folder.display().to_string();
         if !e.folder.is_dir() {
@@ -210,9 +226,8 @@ fn start_enabled(home: &Path, when: When) {
         if let Some(d) = e.domain {
             argv.extend(["--domain".into(), d.to_string()]);
         }
-        let job = format!("Local\\rant-services-{}-start-{}", home_key(home), crate::files::stamp());
-        let word = if when == When::Boot { "boot" } else { "login" };
-        say(home, &format!("at {word}, starting the services of {folder}"));
+        let job = format!("Local\\rant-services-{}-start-{}", home_key(home), files::stamp());
+        say(home, &format!("at {}, starting the services of {folder}", when.word()));
         let c = Command { argv, cwd: e.folder.clone(), env: e.env.clone(), base: None };
         if let Err(f) = rant_process::start_detached(&c, &log_file(home), &job) {
             say(home, &format!("cannot start the services of {folder}: {f}"));
@@ -491,6 +506,7 @@ pub fn serve(home: &Path, start: Option<When>) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::scratch::Scratch;
 
     #[test]
     fn a_node_that_keeps_failing_waits_longer_each_time_up_to_a_minute() {
@@ -500,8 +516,8 @@ mod tests {
 
     #[test]
     fn the_enabled_list_reads_and_skips_old_entries() {
-        let home = std::env::temp_dir().join(format!("rant-unit-enabled-{}", std::process::id()));
-        std::fs::create_dir_all(&home).unwrap();
+        let t = Scratch::new("enabled");
+        let home = t.0.clone();
         assert!(enabled(&home).unwrap().is_empty());
         std::fs::write(list_file(&home), r#"{"enabled": [{"folder": "ws", "start": "login", "domain": 7, "env": {"RANT_PREFIX": "cell"}}]}"#).unwrap();
         let env = BTreeMap::from([("RANT_PREFIX".into(), "cell".into())]);
@@ -510,6 +526,18 @@ mod tests {
         assert_eq!(enabled(&home).unwrap(), [Enabled { folder: "y".into(), start: When::Boot, domain: None, env: BTreeMap::new() }]);
         std::fs::write(list_file(&home), r#"{"enabled": [{"folder": "y", "start": "noon"}]}"#).unwrap();
         assert!(enabled(&home).is_err());
-        std::fs::remove_dir_all(&home).unwrap();
+    }
+
+    #[test]
+    fn the_enabled_list_saves_as_it_reads() {
+        let t = Scratch::new("saved");
+        let list = [
+            Enabled { folder: "C:/ws".into(), start: When::Login, domain: Some(7), env: BTreeMap::from([("RANT_PREFIX".into(), "cell".into())]) },
+            Enabled { folder: "/other".into(), start: When::Boot, domain: None, env: BTreeMap::new() },
+        ];
+        save(&t.0, &list).unwrap();
+        assert_eq!(enabled(&t.0).unwrap(), list);
+        let text = std::fs::read_to_string(list_file(&t.0)).unwrap();
+        assert!(text.contains("\"folder\": \"/other\",\n      \"start\": \"boot\"\n    }"), "{text}");
     }
 }

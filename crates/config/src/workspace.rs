@@ -57,6 +57,14 @@ pub struct ServiceCheck<'a> {
     pub checked: Result<Checked, Diag>,
 }
 
+impl ServiceCheck<'_> {
+    /// The group as the block names it, with its params as rant run takes them: "Hmi project=hmi".
+    pub fn shown(&self) -> String {
+        let words = self.checked.as_ref().map(|c| c.words.as_slice()).unwrap_or_default();
+        std::iter::once(&self.service.group).chain(words).cloned().collect::<Vec<_>>().join(" ")
+    }
+}
+
 impl Workspace {
     /// The packages of these settings seen from `here`, and every error loading met.
     pub fn load(settings: Settings, here: &Path, rant_home: &Path) -> (Workspace, Vec<Diag>) {

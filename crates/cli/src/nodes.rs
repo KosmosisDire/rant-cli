@@ -78,7 +78,7 @@ pub fn start(data: &Path, rec: &Instance) -> Result<Child> {
     c.env.insert("RANT_NODE_NAME".into(), rec.name.clone());
     c.env.insert("RANT_NODE_NAME_PREFIX".into(), String::new());
     c.env.insert("PYTHONUNBUFFERED".into(), "1".into());
-    rant_process::start_child(&c, log, &job_name(data, &rec.name)).map_err(|e| failed(e.to_string()))
+    Ok(rant_process::start_child(&c, log, &job_name(data, &rec.name))?)
 }
 
 /// Starts a plan instance under name and gives its record, with no roots. One with restart set,

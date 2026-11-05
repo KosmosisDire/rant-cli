@@ -23,7 +23,6 @@ impl Scratch {
         std::fs::write(&p, text).unwrap();
         p
     }
-
 }
 
 impl Drop for Scratch {

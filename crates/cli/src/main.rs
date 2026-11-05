@@ -20,6 +20,8 @@ mod output;
 mod packages;
 mod pick;
 mod prompt;
+#[cfg(windows)]
+mod registry;
 mod scaffold;
 #[cfg(test)]
 mod scratch;

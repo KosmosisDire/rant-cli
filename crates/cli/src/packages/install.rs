@@ -72,8 +72,9 @@ pub fn refuse_running(home: &Path, name: &str) -> Result<()> {
 /// The system's tar, which opens .tar.gz on Windows 10 and later too. On Windows its own, since
 /// an MSYS tar earlier on PATH reads C: as a remote host.
 fn tar_program() -> Result<PathBuf> {
-    if let Some(root) = std::env::var_os("SystemRoot") {
-        let system = Path::new(&root).join("System32").join("tar.exe");
+    #[cfg(windows)]
+    {
+        let system = rant_process::system_dir().join("tar.exe");
         if system.is_file() {
             return Ok(system);
         }

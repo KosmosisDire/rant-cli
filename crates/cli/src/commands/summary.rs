@@ -259,7 +259,7 @@ impl Summary {
 }
 
 /// How long run and restart wait for started nodes, and then watch them.
-#[derive(clap::Args, Debug, Clone)]
+#[derive(clap::Args, Debug, Clone, Default)]
 pub struct Watch {
     /// start what is built already, without building first
     #[arg(long)]

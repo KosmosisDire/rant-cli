@@ -82,7 +82,7 @@ fn update_programs(ctx: &Context, home: &Path, sources: &mut Sources, named: &[S
         return Ok(ok);
     }
 
-    let me = std::env::current_exe().map_err(|e| failed(format!("cannot find rant itself: {e}")))?;
+    let me = crate::home::program()?;
     ctx.out.line("This updates:");
     if let Some((v, _)) = &cli {
         ctx.out.line(&format!("  rant-cli {VERSION} to {v}, over {}", rant_config::paths::slash(&me)));

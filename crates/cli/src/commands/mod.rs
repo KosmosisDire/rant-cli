@@ -4,6 +4,8 @@ pub mod add;
 pub mod build;
 pub mod call;
 pub mod calls;
+pub mod disable;
+pub mod enable;
 pub mod explore;
 pub mod info;
 pub mod init;
@@ -40,6 +42,8 @@ pub fn run(ctx: &mut Context, command: Command) -> Result<()> {
         Command::Run(a) => run::run(ctx, &a),
         Command::Stop(a) => stop::run(ctx, &a),
         Command::Restart(a) => restart::run(ctx, &a),
+        Command::Enable(a) => enable::run(ctx, &a),
+        Command::Disable(a) => disable::run(ctx, &a),
         Command::Log(a) => log::run(ctx, &a),
         Command::Ls(a) => ls::run(ctx, &a),
         Command::Info(a) => info::run(ctx, &a),

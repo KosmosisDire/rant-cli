@@ -181,7 +181,7 @@ fn services() {
     expect_match(&r.out, "other +restarted");
     expect_no_match(&r.out, "steady|desk");
     let r = t.rant(&["stop", "-y"]).ok();
-    expect_match(&r.out, r"nodes: +other\n");
+    expect_match(&r.err, r"nodes: +other\n");
     expect_match(&r.err, "services keep running, name one to stop it: Plain, Desk seat=left");
     expect_match(&r.out, "other +stopped");
     let r = t.rant(&["stop", "-y"]).ok();

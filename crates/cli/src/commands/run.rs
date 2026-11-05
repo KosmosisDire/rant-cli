@@ -169,8 +169,7 @@ pub fn run_group(ctx: &mut Context, group: &str, words: &[String], args: &Args) 
         ctx.show(&PlanView::new(&ws, &plan));
         return Ok(());
     }
-    let params: BTreeMap<String, String> = gp.values.iter().map(|(k, v)| (k.clone(), param::text(v))).collect();
-    let root = Root::group(&gp.group, params);
+    let root = Root::planned(&gp.group, &gp.values);
     let key = root.key();
     let home = ctx.home()?.to_path_buf();
     let settings = &ws.model.settings;
@@ -253,7 +252,7 @@ pub fn run_group(ctx: &mut Context, group: &str, words: &[String], args: &Args) 
 
 /// A bare `rant run`: each service of the workspace, or of rant's home outside one, run as its
 /// group from the folder of its file, as every boot runs them once it is enabled.
-fn run_services(ctx: &mut Context, args: &Args) -> Result<()> {
+pub fn run_services(ctx: &mut Context, args: &Args) -> Result<()> {
     let ws = ctx.require_scope()?;
     if ws.model.settings.services.is_empty() {
         return Err(usage("say which group to run: `rant run <group>`, or one node with `rant run node <node>`"));

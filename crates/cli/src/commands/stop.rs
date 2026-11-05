@@ -8,6 +8,7 @@ use std::time::Duration;
 use rant_config::refs::same_name;
 use rant_process::Stopped;
 
+use crate::commands::enable::{Kept, kept_services};
 use crate::commands::run::{closed, group_name, in_each, names_group, nothing, resolved_params, where_running};
 use crate::commands::summary::{Row, RowState, Summary, held_by};
 use crate::context::Context;
@@ -16,7 +17,7 @@ use crate::files::path_key;
 use crate::mesh::{Client, FULL_SETTLE};
 use crate::nodes::{GRACE, Session, halt, release_root};
 use crate::services;
-use crate::state::{self, Instance, Root, RootKind, State, Store};
+use crate::state::{self, Root, RootKind, State, Store};
 
 #[derive(clap::Args, Debug)]
 pub struct Args {
@@ -70,39 +71,6 @@ fn stop_named(ctx: &mut Context, name: &str, words: &[String]) -> Result<()> {
         }
         stop_here(ctx, name, in_)
     })
-}
-
-/// What stopping or restarting everything leaves be in an enabled workspace, since only naming
-/// a service stops it: its services' roots and nodes, and the running ones by name.
-#[derive(Debug, Default)]
-pub struct Kept {
-    pub roots: BTreeSet<String>,
-    pub nodes: BTreeSet<String>,
-    pub running: Vec<String>,
-}
-
-/// st is the state of the workspace whose data folder is data.
-pub fn kept_services(home: &Path, st: &State, data: &Path) -> Result<Kept> {
-    let mut k = Kept::default();
-    let folder = state::folder_of(home, data);
-    if !services::enabled(home)?.iter().any(|e| path_key(&e.folder) == path_key(&folder)) {
-        return Ok(k);
-    }
-    // a folder that is no longer a workspace holds no services
-    let Some(settings) = rant_config::Settings::find(&folder, home).ok().filter(|s| path_key(&s.root) == path_key(&folder)) else { return Ok(k) };
-    let (ws, _) = rant_config::Workspace::load(settings, &folder, home);
-    for check in ws.services() {
-        let Ok(c) = check.checked else { continue };
-        let params = c.values.iter().map(|(k, v)| (k.clone(), rant_config::param::text(v))).collect();
-        let key = Root::group(&c.full, params).key();
-        let holding: Vec<&Instance> = st.instances.iter().filter(|i| i.roots.contains(&key)).collect();
-        k.nodes.extend(holding.iter().map(|i| i.name.clone()));
-        if !holding.is_empty() {
-            k.running.push(std::iter::once(&check.service.group).chain(&c.words).cloned().collect::<Vec<_>>().join(" "));
-        }
-        k.roots.insert(key);
-    }
-    Ok(k)
 }
 
 /// Drops every node and root of a state but those its services hold, the roots from the nodes
@@ -343,8 +311,7 @@ pub fn stop_node(ctx: &mut Context, name: &str) -> Result<()> {
 fn targets(ctx: &mut Context, st: &State, group: &str, words: &[String]) -> Result<Vec<Root>> {
     if !words.is_empty() {
         let gp = ctx.require_scope()?.plan_group(group, words)?;
-        let params = gp.values.iter().map(|(k, v)| (k.clone(), rant_config::param::text(v))).collect();
-        let root = Root::group(&gp.group, params);
+        let root = Root::planned(&gp.group, &gp.values);
         if st.root(&root.key()).is_none() {
             return Err(failed(format!("`{}` is not running, see `rant ls`", &root.key()["group ".len()..])));
         }

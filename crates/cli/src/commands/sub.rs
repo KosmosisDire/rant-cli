@@ -36,7 +36,7 @@ impl Source {
     fn next(&mut self, out: &mut ValueStream, wait: Duration) -> Result<bool> {
         match self {
             Source::Topic(sub) => {
-                let taken = sub.take(wait).map_err(|e| failed(e.to_string()))?;
+                let taken = sub.take(wait)?;
                 let Some(m) = taken else { return Ok(false) };
                 let (from, data, schema): (String, Vec<u8>, Option<Schema>) = (m.publisher_name().to_string(), m.data().to_vec(), m.schema());
                 out.add(&from, data, schema);
@@ -62,7 +62,7 @@ pub fn run(ctx: &mut Context, args: &Args) -> Result<()> {
     }
     let mut source = match reflection.find(EntityKind::Variable, name) {
         Some(e) => {
-            let var = node.remote_variable::<Bytes>(name, VariableOptions::new().reflect_from_mesh(true)).map_err(|e| failed(e.to_string()))?;
+            let var = node.remote_variable::<Bytes>(name, VariableOptions::new().reflect_from_mesh(true))?;
             let (tx, changes) = mpsc::channel();
             var.on_change(move |u| _ = tx.send(u.data().to_vec())).map_err(|e| failed(e.to_string()))?;
             Source::Variable { var, changes, owner: mesh.provider_of(&e) }
@@ -71,7 +71,7 @@ pub fn run(ctx: &mut Context, args: &Args) -> Result<()> {
             if reflection.find(EntityKind::Topic, name).is_none() {
                 ctx.out.note(&format!("no publisher of `{name}` yet, waiting for one"));
             }
-            Source::Topic(node.pulled_subscriber::<Bytes>(name, Qos::new().reflect_from_mesh(true)).map_err(|e| failed(e.to_string()))?)
+            Source::Topic(node.pulled_subscriber::<Bytes>(name, Qos::new().reflect_from_mesh(true))?)
         }
     };
     let mut out = ValueStream::new(ctx, name, args.stream.value_only);

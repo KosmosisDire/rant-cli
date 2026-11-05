@@ -13,6 +13,9 @@ use crate::source::Source;
 /// The attributes that set a placement, wherever one may be set.
 pub const KEYS: [&str; 3] = ["domain", "prefix", "node_prefix"];
 
+/// The shell variables that place a node, which Rant reads.
+pub const ENV: [&str; 3] = ["RANT_DOMAIN", "RANT_PREFIX", "RANT_NODE_NAME_PREFIX"];
+
 /// What the Rant library allows: a node name of 32 bytes, and a prefix that leaves room in a
 /// 64 byte name for a `/` and one byte.
 const NODE_NAME_MAX: usize = 32;

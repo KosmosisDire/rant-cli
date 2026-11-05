@@ -10,10 +10,12 @@ use rant_config::param;
 use serde::Serialize;
 use serde_json::{Map, Value, json};
 
+use crate::commands::enable::{scope_at, service_key};
 use crate::commands::kinds::Kind;
 use crate::commands::run::snapshot;
 use crate::context::Context;
-use crate::failure::{Result, failed, usage};
+use crate::files::same_path;
+use crate::failure::{Result, usage};
 use crate::library::{self, Library};
 use crate::mesh::{Client, FULL_SETTLE, kind_name, types_in_use};
 use crate::names::matches;
@@ -21,7 +23,8 @@ use crate::nodes::managed_peers;
 use crate::output::{Data, Format, Style, Table, Text, columns};
 use crate::packages;
 use crate::packages::sources::Sources;
-use crate::state::{Instance, RootKind, State};
+use crate::services::{self, When, entry};
+use crate::state::{self, Instance, RootKind, State, Store};
 
 #[derive(clap::Args, Debug)]
 pub struct Args {
@@ -52,7 +55,7 @@ pub fn run(ctx: &mut Context, args: &Args) -> Result<()> {
         return Err(usage("--no-mesh goes with `rant ls nodes`"));
     }
     if kind == Kind::Service {
-        return Err(failed(format!("`rant ls {}` comes with a later step of the rewrite", args.words.join(" "))));
+        return list_services(ctx, pattern);
     }
     if kind == Kind::Source {
         if !pattern.is_empty() {
@@ -623,5 +626,132 @@ fn list_libraries(ctx: &mut Context, pattern: &str) -> Result<()> {
         use_: u,
     };
     ctx.show(&Libraries(uses.into_iter().map(row).collect()));
+    Ok(())
+}
+
+#[derive(Serialize)]
+struct ServiceNode {
+    name: String,
+    running: bool,
+    restart: &'static str,
+    restarts: u32,
+}
+
+/// A service and where it stands: its nodes now, found by planning it as rant run would, and
+/// the restarts the service process made.
+#[derive(Serialize)]
+struct ServiceRow {
+    service: String,
+    group: String,
+    params: Vec<String>,
+    folder: String,
+    start: Option<&'static str>,
+    state: String,
+    restarts: u32,
+    nodes: Vec<ServiceNode>,
+}
+
+/// A line of the table: a service, or none where a folder holds none.
+struct ServiceLine {
+    service: Option<String>,
+    at: String,
+    state: String,
+    restarts: u32,
+    folder: PathBuf,
+}
+
+#[derive(Serialize)]
+#[serde(transparent)]
+struct ServiceList {
+    rows: Vec<ServiceRow>,
+    #[serde(skip)]
+    lines: Vec<ServiceLine>,
+}
+
+impl Data for ServiceList {
+    fn text(&self, t: &Text) -> String {
+        let dim = |s: &str| t.paint(Style::Dim, s);
+        let mut table = Table::default();
+        for l in &self.lines {
+            let restarts = match l.restarts {
+                0 => String::new(),
+                1 => "1 restart".into(),
+                n => format!("{n} restarts"),
+            };
+            let service = l.service.clone().unwrap_or_else(|| t.paint(Style::Faint, "(none)"));
+            table.row(vec![service, dim(&l.at), l.state.clone(), dim(&restarts), dim(&t.path(&l.folder))]);
+        }
+        section(t, "SERVICES", table.lines("  "))
+    }
+}
+
+/// The nodes of a scope's state that a root key holds, the state pruned first.
+fn standing(home: &Path, data: &Path, key: &str) -> Result<(String, u32, Vec<ServiceNode>)> {
+    let mut store = Store::open(data, true)?;
+    state::prune(store.state(), |s| services::running_in(home, s));
+    store.save()?;
+    let (mut up, mut waiting, mut restarts, mut nodes) = (0, 0, 0, Vec::new());
+    for i in store.state().instances.iter().filter(|i| i.roots.iter().any(|r| r == key)) {
+        let running = rant_process::alive(&i.tracking());
+        up += usize::from(running);
+        waiting += usize::from(!running && i.restart != rant_config::plan::Restart::Never);
+        restarts += i.restarts;
+        nodes.push(ServiceNode { name: i.name.clone(), running, restart: i.restart.as_str(), restarts: i.restarts });
+    }
+    let all = nodes.len();
+    let mut state = if all == 0 { "stopped".to_string() } else if up == all { "running".to_string() } else { format!("{up} of {all} running") };
+    if waiting > 0 {
+        state += &format!(", {waiting} restarting");
+    }
+    Ok((state, restarts, nodes))
+}
+
+/// The services of each enabled folder, then of this scope while it is not enabled, so what
+/// rant enable would start shows.
+fn list_services(ctx: &mut Context, pattern: &str) -> Result<()> {
+    let home = ctx.home()?.to_path_buf();
+    let list = services::enabled(&home)?;
+    let mut folders: Vec<(PathBuf, Option<When>)> = list.iter().map(|e| (e.folder.clone(), Some(e.start))).collect();
+    if let Some(here) = ctx.scope().map(|s| s.root.clone())
+        && !list.iter().any(|e| same_path(&e.folder, &here))
+    {
+        folders.push((here, None));
+    }
+    let mut out = ServiceList { rows: Vec::new(), lines: Vec::new() };
+    for (folder, start) in folders {
+        let at = start.map_or_else(|| "not enabled".to_string(), |w| format!("at {}", w.word()));
+        let none = |state: String| ServiceLine { service: None, at: at.clone(), state, restarts: 0, folder: folder.clone() };
+        let ws = match scope_at(&home, &folder) {
+            Ok(ws) => ws,
+            Err(why) => {
+                out.lines.push(none(why));
+                continue;
+            }
+        };
+        let checks = ws.services();
+        if checks.is_empty() && pattern.is_empty() {
+            out.lines.push(none(String::new()));
+        }
+        for check in checks.iter().filter(|c| matches(pattern, &c.service.group)) {
+            let (state, restarts, nodes) = match service_key(check) {
+                Ok(key) => standing(&home, &ws.model.settings.data, &key)?,
+                Err(why) => (why, 0, Vec::new()),
+            };
+            let (group, params) = match &check.checked {
+                Ok(c) => (c.full.clone(), c.words.clone()),
+                Err(_) => (check.service.group.clone(), Vec::new()),
+            };
+            let service = check.shown();
+            out.lines.push(ServiceLine { service: Some(service.clone()), at: at.clone(), state: state.clone(), restarts, folder: folder.clone() });
+            let folder = folder.to_string_lossy().into_owned();
+            out.rows.push(ServiceRow { service, group, params, folder, start: start.map(When::word), state, restarts, nodes });
+        }
+    }
+    ctx.show(&out);
+    for when in [When::Boot, When::Login] {
+        if list.iter().any(|e| e.start == when) && !entry::present(when, &home) {
+            ctx.out.note(&format!("nothing starts them at {} for this rant and home, `rant enable` sets that up again", when.word()));
+        }
+    }
     Ok(())
 }

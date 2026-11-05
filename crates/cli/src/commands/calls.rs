@@ -11,7 +11,7 @@ use serde_json::{Map, Value, json};
 use crate::commands::call::status_text;
 use crate::commands::sub::Args;
 use crate::context::Context;
-use crate::failure::{Result, failed};
+use crate::failure::Result;
 use crate::interrupt;
 use crate::mesh::{Client, to_json};
 use crate::output::{Format, Yaml};
@@ -50,8 +50,7 @@ pub fn run(ctx: &Context, mesh: &Client, name: &str, args: &Args) -> Result<()> 
                 message: e.message().to_string(),
                 value: carries.then(|| to_json(e.data(), e.schema().as_ref())),
             });
-        })
-        .map_err(|e| failed(e.to_string()))?;
+        })?;
     let deadline = Instant::now() + Duration::from_secs(2);
     while watch.match_count() == 0 && Instant::now() < deadline {
         std::thread::sleep(Duration::from_millis(20));

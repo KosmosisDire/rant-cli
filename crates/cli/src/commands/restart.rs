@@ -9,7 +9,7 @@ use rant_process::Stopped;
 
 use crate::commands::build::build_for;
 use crate::commands::run::{self, finish_started, group_name, in_each, names_group, nothing, place_on_domain, resolved_params, snapshot, states_anywhere, where_running};
-use crate::commands::stop::kept_services;
+use crate::commands::enable::kept_services;
 use crate::commands::summary::{Row, RowState, Summary, Watch, held_by};
 use crate::context::Context;
 use crate::failure::{Failure, Result, failed, usage};
@@ -220,8 +220,7 @@ fn restart_then_watch(ctx: &mut Context, header: &str, w: &Watch, targets: impl 
 fn group_roots(ctx: &mut Context, st: &State, group: &str, words: &[String]) -> Result<Vec<Root>> {
     if !words.is_empty() {
         let gp = ctx.require_scope()?.plan_group(group, words)?;
-        let params = gp.values.iter().map(|(k, v)| (k.clone(), rant_config::param::text(v))).collect();
-        let key = Root::group(&gp.group, params).key();
+        let key = Root::planned(&gp.group, &gp.values).key();
         return Ok(st.roots.iter().filter(|r| r.key() == key).cloned().collect());
     }
     let name = group_name(ctx, group)?;

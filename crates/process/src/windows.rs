@@ -102,7 +102,8 @@ pub(crate) fn inherited_environment() -> Vec<String> {
     out
 }
 
-fn system_dir() -> PathBuf {
+/// System32, where Windows keeps its own programs.
+pub fn system_dir() -> PathBuf {
     let mut buf = [0u16; 512];
     // SAFETY: the length passed is the buffer's.
     let n = unsafe { GetSystemDirectoryW(buf.as_mut_ptr(), buf.len() as u32) } as usize;
@@ -285,35 +286,78 @@ fn creation_time(process: &OwnedHandle) -> u64 {
     ((created.dwHighDateTime as u64) << 32) | created.dwLowDateTime as u64
 }
 
-/// A security descriptor that lets this user and the system open an object from any session,
-/// since the boot task runs rant in another session with other defaults.
-fn user_only_security() -> *mut c_void {
-    static SD: OnceLock<usize> = OnceLock::new();
-    // SAFETY: the token buffer is aligned for TOKEN_USER and every string is freed once used.
-    *SD.get_or_init(|| unsafe {
+/// The SID of the user rant runs as, such as S-1-5-21-1-2-3-1001.
+pub fn user_sid() -> Option<String> {
+    // SAFETY: the token buffer is aligned for TOKEN_USER and the string is freed once read.
+    unsafe {
         let mut token: HANDLE = null_mut();
         if OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) == 0 {
-            return 0;
+            return None;
         }
         let token = OwnedHandle::from_raw_handle(token);
         let mut size = 0u32;
         GetTokenInformation(raw(&token), TokenUser, null_mut(), 0, &mut size);
         let mut buf = vec![0usize; (size as usize).div_ceil(size_of::<usize>())];
         if GetTokenInformation(raw(&token), TokenUser, buf.as_mut_ptr().cast(), size, &mut size) == 0 {
-            return 0;
+            return None;
         }
         let user = &*(buf.as_ptr() as *const TOKEN_USER);
         let mut sid = null_mut();
         if ConvertSidToStringSidW(user.User.Sid, &mut sid) == 0 {
-            return 0;
+            return None;
         }
         let len = (0..).take_while(|&i| *sid.add(i) != 0).count();
-        let text = format!("D:(A;;GA;;;{})(A;;GA;;;SY)", String::from_utf16_lossy(std::slice::from_raw_parts(sid, len)));
+        let text = String::from_utf16_lossy(std::slice::from_raw_parts(sid, len));
         LocalFree(sid.cast());
+        Some(text)
+    }
+}
+
+/// A security descriptor that lets this user and the system open an object from any session,
+/// since the boot task runs rant in another session with other defaults.
+fn user_only_security() -> *mut c_void {
+    static SD: OnceLock<usize> = OnceLock::new();
+    *SD.get_or_init(|| {
+        let Some(sid) = user_sid() else { return 0 };
         let mut sd = null_mut();
-        ConvertStringSecurityDescriptorToSecurityDescriptorW(wide(text).as_ptr(), SDDL_REVISION_1, &mut sd, null_mut());
+        // SAFETY: the text is NUL ended and the descriptor lives as long as the process.
+        unsafe { ConvertStringSecurityDescriptorToSecurityDescriptorW(wide(format!("D:(A;;GA;;;{sid})(A;;GA;;;SY)")).as_ptr(), SDDL_REVISION_1, &mut sd, null_mut()) };
         sd as usize
     }) as *mut c_void
+}
+
+/// run as an administrator through the admin prompt, which passes no environment and shows
+/// no output. Fails when the prompt is declined.
+pub fn run_elevated(c: &Command) -> Result<i32> {
+    use windows_sys::Win32::Foundation::ERROR_CANCELLED;
+    use windows_sys::Win32::UI::Shell::{SEE_MASK_NOASYNC, SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW, ShellExecuteExW};
+    use windows_sys::Win32::UI::WindowsAndMessaging::SW_HIDE;
+    let program = require_program(c)?;
+    let (file, verb) = (wide(&program), wide("runas"));
+    let params = wide(quote::windows_command_line(&c.argv[1..]));
+    let dir = wide(&c.cwd);
+    let mut sei = SHELLEXECUTEINFOW {
+        cbSize: size_of::<SHELLEXECUTEINFOW>() as u32,
+        fMask: SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NOASYNC,
+        lpVerb: verb.as_ptr(),
+        lpFile: file.as_ptr(),
+        lpParameters: params.as_ptr(),
+        lpDirectory: if c.cwd.as_os_str().is_empty() { null() } else { dir.as_ptr() },
+        nShow: SW_HIDE,
+        ..Default::default()
+    };
+    // SAFETY: every string outlives the call, and the process handle is owned after it.
+    if unsafe { ShellExecuteExW(&mut sei) } == 0 {
+        // SAFETY: no arguments.
+        if unsafe { GetLastError() } == ERROR_CANCELLED {
+            return Err(error("the admin prompt was declined"));
+        }
+        return Err(error(format!("cannot run {} as admin: {}", c.argv[0], last_error())));
+    }
+    let Some(process) = owned(sei.hProcess) else { return Ok(1) };
+    // SAFETY: a live process handle.
+    unsafe { WaitForSingleObject(raw(&process), INFINITE) };
+    Ok(exit_code(&process).unwrap_or(1) as i32)
 }
 
 /// A detached process this one started and stays the parent of, so it learns its exit code.

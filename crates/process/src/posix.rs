@@ -91,6 +91,15 @@ pub(crate) fn output(c: &Command) -> Option<String> {
     done.status.success().then(|| String::from_utf8_lossy(&done.stdout).into_owned())
 }
 
+/// run as root: as it is when rant runs as root, else through sudo, which asks in this terminal.
+pub fn run_elevated(c: &Command) -> Result<i32> {
+    // SAFETY: no arguments.
+    if unsafe { libc::geteuid() } == 0 {
+        return run(c);
+    }
+    run(&Command { argv: std::iter::once("sudo".to_string()).chain(c.argv.iter().cloned()).collect(), ..c.clone() })
+}
+
 /// A detached process this one started, which it may ask for its exit code.
 pub struct Child {
     tracking: Tracking,

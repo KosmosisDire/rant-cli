@@ -72,7 +72,7 @@ pub fn run(ctx: &mut Context, args: &Args) -> Result<()> {
     if e.kind == EntityKind::Task {
         return call_task(ctx, &mesh, &e, &values, timeout, args.stream.value_only);
     }
-    let f = mesh.node().remote_function::<Bytes, Bytes>(name, FunctionOptions::new().reflect_from_mesh(true)).map_err(|e| failed(e.to_string()))?;
+    let f = mesh.node().remote_function::<Bytes, Bytes>(name, FunctionOptions::new().reflect_from_mesh(true))?;
     let req = encode(&values, f.request_schema().as_ref())?;
     let r = f.call(&req, CallOptions::new().timeout(timeout)).map_err(|e| failed(format!("cannot call `{name}`: {}", send_failure(e))))?;
     if !r.is_ok() {
@@ -92,7 +92,7 @@ enum Update {
 fn call_task(ctx: &Context, mesh: &Client, e: &Entity, values: &Assignments, timeout: Duration, value_only: bool) -> Result<()> {
     let name = &e.name;
     let options = TaskOptions::new().reflect_from_mesh(true).timeout(timeout);
-    let task = mesh.node().remote_task::<Bytes, Bytes, Bytes>(name, options).map_err(|e| failed(e.to_string()))?;
+    let task = mesh.node().remote_task::<Bytes, Bytes, Bytes>(name, options)?;
     let req = encode(values, task.request_schema().as_ref())?;
     let from = mesh.provider_of(e);
     // CSV lines leave progress out, so the output stays one table: the result's

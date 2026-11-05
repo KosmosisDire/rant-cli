@@ -40,6 +40,18 @@ impl From<Diag> for Failure {
     }
 }
 
+impl From<rant_process::Error> for Failure {
+    fn from(e: rant_process::Error) -> Failure {
+        Failure::Failed(e.0)
+    }
+}
+
+impl From<rant::Error> for Failure {
+    fn from(e: rant::Error) -> Failure {
+        Failure::Failed(e.to_string())
+    }
+}
+
 pub fn usage(message: impl Into<String>) -> Failure {
     Failure::Usage(message.into())
 }
