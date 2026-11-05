@@ -12,9 +12,6 @@ pub use text::{Assignments, parse_words};
 pub use values::to_json;
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::future::Future;
-use std::pin::Pin;
-use std::task::{Context as Poller, Poll, Waker};
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -161,32 +158,15 @@ impl Client {
         Some(to_json(&var.get().ok()??, var.schema().as_ref()))
     }
 
-    /// Each peer's process id from its @rant/meta answer, those that answer within limit. Each is
-    /// its own async call, since blocking calls made at once on the meta handle come back crossed.
+    /// Each peer's process id from its @rant/meta answer, those that answer within limit, all
+    /// asked at once.
     pub fn pids(&self, peers: &[u32], limit: Duration) -> BTreeMap<u32, u64> {
         let r = self.node.reflection();
-        let mut asked: Vec<(u32, Pin<Box<dyn Future<Output = _> + Send>>)> = Vec::new();
-        for &p in peers {
-            if let Ok(f) = r.meta_async(p, MetaSections::PROC) {
-                asked.push((p, Box::pin(f)));
-            }
-        }
-        let mut poller = Poller::from_waker(Waker::noop());
-        let deadline = Instant::now() + limit;
-        let mut out = BTreeMap::new();
-        while !asked.is_empty() && Instant::now() < deadline {
-            asked.retain_mut(|(p, f)| match f.as_mut().poll(&mut poller) {
-                Poll::Ready(m) => {
-                    if let Some(pid) = m.ok().and_then(|m| m.process).map(|proc| proc.pid) {
-                        out.insert(*p, pid);
-                    }
-                    false
-                }
-                Poll::Pending => true,
-            });
-            std::thread::sleep(Duration::from_millis(5));
-        }
-        out
+        std::thread::scope(|s| {
+            let r = &r;
+            let asks: Vec<_> = peers.iter().map(|&p| (p, s.spawn(move || r.meta(p, MetaSections::PROC, limit)))).collect();
+            asks.into_iter().filter_map(|(p, ask)| Some((p, ask.join().ok()?.ok()?.process?.pid))).collect()
+        })
     }
 }
 
