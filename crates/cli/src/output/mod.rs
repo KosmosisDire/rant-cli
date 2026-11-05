@@ -2,11 +2,14 @@
 //! warnings and errors on stderr. Color only on a terminal, and never with NO_COLOR set.
 
 mod csv;
+mod live;
 mod table;
 mod yaml;
 
+pub use live::LiveView;
 pub use table::Table;
 
+use std::cell::Cell;
 use std::io::{IsTerminal, Write};
 use std::path::Path;
 
@@ -22,6 +25,8 @@ pub enum Style {
     Bold,
     Dim,
     Faint,
+    Accent,
+    Green,
     GreenHi,
     Amber,
     Red,
@@ -34,6 +39,8 @@ impl Style {
             Style::Bold => "1",
             Style::Dim => "38;2;154;154;154",
             Style::Faint => "38;2;100;100;100",
+            Style::Accent => "38;2;220;56;83",
+            Style::Green => "38;2;55;136;95",
             Style::GreenHi => "38;2;92;166;125",
             Style::Amber => "38;2;207;154;58",
             Style::Red => "38;2;210;87;75",
@@ -84,13 +91,76 @@ impl Text<'_> {
 
 pub struct Output {
     format: Format,
+    /// --lines: a stream prints each record on its own line, never redrawn in place.
+    lines: bool,
     color_out: bool,
     color_err: bool,
+    vt_err: bool,
+    /// A CSV stream printed its header.
+    csv_header: Cell<bool>,
 }
 
 impl Output {
-    pub fn new(format: Format) -> Output {
-        Output { format, color_out: takes_color(Stream::Out), color_err: takes_color(Stream::Err) }
+    pub fn new(format: Format, lines: bool) -> Output {
+        let vt_err = escapes_on(Stream::Err);
+        Output { format, lines, color_out: escapes_on(Stream::Out) && color_wanted(), color_err: vt_err && color_wanted(), vt_err, csv_header: Cell::new(false) }
+    }
+
+    pub fn format(&self) -> Format {
+        self.format
+    }
+
+    pub fn lines(&self) -> bool {
+        self.lines
+    }
+
+    /// Whether progress may redraw in place on stderr: text on a terminal, without --lines.
+    pub fn redraws(&self) -> bool {
+        self.format == Format::Text && !self.lines && self.vt_err
+    }
+
+    /// Text for stderr, where progress draws.
+    pub fn text_err<'a>(&self, from: Option<&'a Path>) -> Text<'a> {
+        Text { color: self.color_err, from }
+    }
+
+    pub fn text_out<'a>(&self, from: Option<&'a Path>) -> Text<'a> {
+        Text { color: self.color_out, from }
+    }
+
+    pub fn paint_err(&self, s: Style, text: &str) -> String {
+        paint(self.color_err, s, text)
+    }
+
+    pub fn paint_out(&self, s: Style, text: &str) -> String {
+        paint(self.color_out, s, text)
+    }
+
+    /// Whether stderr is a terminal a question may redraw on.
+    pub fn terminal_err(&self) -> bool {
+        self.vt_err
+    }
+
+    /// One record of a stream on its own line: compact JSON, a CSV row after a header the
+    /// first time, or the text a person reads.
+    pub fn record<R: Serialize>(&self, record: &R, text: &str) {
+        let line = match self.format {
+            Format::Json => serde_json::to_string(record).unwrap_or_default(),
+            Format::Csv => {
+                let v = serde_json::to_value(record).unwrap_or(Value::Null);
+                let table = csv::table(&v);
+                if self.csv_header.replace(true) { table.split_once('\n').map_or(String::new(), |(_, row)| row.to_string()) } else { table }
+            }
+            Format::Text => text.to_string(),
+        };
+        self.line(&line);
+    }
+
+    /// One line of a stream on stdout, at once.
+    pub fn line(&self, text: &str) {
+        let mut out = std::io::stdout().lock();
+        let _ = writeln!(out, "{text}");
+        let _ = out.flush();
     }
 
     /// A command's data in the format asked for. `from` is where paths in text count from.
@@ -158,12 +228,17 @@ enum Stream {
     Err,
 }
 
-fn takes_color(stream: Stream) -> bool {
+/// A terminal that takes ANSI escapes, for color and for redrawing in place.
+fn escapes_on(stream: Stream) -> bool {
     let terminal = match stream {
         Stream::Out => std::io::stdout().is_terminal(),
         Stream::Err => std::io::stderr().is_terminal(),
     };
-    terminal && std::env::var_os("NO_COLOR").is_none_or(|v| v.is_empty()) && escapes(stream)
+    terminal && escapes(stream)
+}
+
+fn color_wanted() -> bool {
+    std::env::var_os("NO_COLOR").is_none_or(|v| v.is_empty())
 }
 
 /// Turns on ANSI escapes for a Windows console. A mintty pipe has no console mode and shows

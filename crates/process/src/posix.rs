@@ -233,3 +233,44 @@ pub fn stop_pid(pid: u64, grace: Duration) -> Result<Stopped> {
 pub fn helper(_args: impl IntoIterator<Item = std::ffi::OsString>) -> Option<i32> {
     None
 }
+
+/// Windows sessions only. Every process here is in session 0.
+pub fn session() -> u32 {
+    0
+}
+
+/// A FIFO, opened for writing too so it never reads as closed while nobody rings.
+pub struct Doorbell {
+    fifo: std::fs::File,
+}
+
+impl Doorbell {
+    pub fn listen(address: &str) -> Option<Doorbell> {
+        let path = std::ffi::CString::new(address).ok()?;
+        // SAFETY: path is NUL ended, and an existing FIFO is fine.
+        unsafe { libc::mkfifo(path.as_ptr(), 0o600) };
+        let fifo = OpenOptions::new().read(true).write(true).custom_flags(libc::O_NONBLOCK).open(address).ok()?;
+        Some(Doorbell { fifo })
+    }
+
+    pub fn wait(&self, limit: Duration) -> bool {
+        use std::io::Read;
+        use std::os::fd::AsRawFd;
+        let mut p = libc::pollfd { fd: self.fifo.as_raw_fd(), events: libc::POLLIN, revents: 0 };
+        // SAFETY: one pollfd, as counted.
+        if unsafe { libc::poll(&mut p, 1, limit.as_millis() as libc::c_int) } <= 0 {
+            return false;
+        }
+        let mut buf = [0u8; 64];
+        while (&self.fifo).read(&mut buf).is_ok_and(|n| n > 0) {}
+        true
+    }
+}
+
+/// Opening fails while no Doorbell listens, so only a listener hears it.
+pub fn ring(address: &str) {
+    use std::io::Write;
+    if let Ok(mut fifo) = OpenOptions::new().write(true).custom_flags(libc::O_NONBLOCK).open(address) {
+        let _ = fifo.write(&[1]);
+    }
+}

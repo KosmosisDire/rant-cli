@@ -10,6 +10,8 @@ pub enum Failure {
     Failed(String),
     /// Config errors, each at its place, exit code 1.
     Diags(Vec<Diag>),
+    /// What went wrong is in the data a command showed already, exit code 1.
+    Reported,
 }
 
 pub type Result<T> = std::result::Result<T, Failure>;
@@ -18,7 +20,7 @@ impl Failure {
     pub fn code(&self) -> i32 {
         match self {
             Failure::Usage(_) => 2,
-            Failure::Failed(_) | Failure::Diags(_) => 1,
+            Failure::Failed(_) | Failure::Diags(_) | Failure::Reported => 1,
         }
     }
 
@@ -27,6 +29,7 @@ impl Failure {
         match self {
             Failure::Usage(m) | Failure::Failed(m) => vec![m.clone()],
             Failure::Diags(d) => d.iter().map(Diag::to_string).collect(),
+            Failure::Reported => Vec::new(),
         }
     }
 }

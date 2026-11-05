@@ -2,7 +2,12 @@
 
 pub mod build;
 pub mod init;
+pub mod log;
 pub mod new;
+pub mod restart;
+pub mod run;
+pub mod stop;
+pub mod summary;
 
 use std::path::Path;
 
@@ -18,6 +23,11 @@ pub fn run(ctx: &mut Context, command: Command) -> Result<()> {
         Command::Init(a) => init::run(ctx, &a).map(|d| ctx.show(&d)),
         Command::New(a) => new::run(ctx, &a).map(|d| ctx.show(&d)),
         Command::Build(a) => build::run(ctx, &a).map(|d| ctx.show(&d)),
+        // these print as they go
+        Command::Run(a) => run::run(ctx, &a),
+        Command::Stop(a) => stop::run(ctx, &a),
+        Command::Restart(a) => restart::run(ctx, &a),
+        Command::Log(a) => log::run(ctx, &a),
     }
 }
 

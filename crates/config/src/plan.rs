@@ -25,7 +25,8 @@ pub struct Instance {
 
 /// Whether a node that exited starts again. The service process does it, so only a node it
 /// started is restarted.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum Restart {
     #[default]
     Never,

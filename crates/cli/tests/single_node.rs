@@ -73,7 +73,7 @@ fn single_node() {
     t.rant(&["run", "node", "chatty"]).cwd(&t.other).ok();
     t.rant(&["run", "node", "chatty"]).ok();
     let r = t.rant(&["stop", "--all"]).ok();
-    expect_match(&r.out, r"-other: +chatty\n");
+    expect_match(&r.err, r"-other: +chatty\n");
     expect_match(&r.err, "Stop all 2 nodes");
     t.rant(&["run", "node", "chatty"]).cwd(&t.other).ok();
     let outside = format!("{}-outside", t.scratch);

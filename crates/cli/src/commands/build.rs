@@ -5,12 +5,13 @@ use std::path::Path;
 
 use rant_config::build_plan::{BuildPlan, Step};
 use rant_config::model::NodeType;
+use rant_config::plan::Plan;
 use rant_config::{Workspace, paths};
 use rant_process::{Command, shown};
 use serde::Serialize;
 
 use crate::context::Context;
-use crate::failure::{Result, failed};
+use crate::failure::{Failure, Result, failed};
 use crate::names::renames;
 use crate::output::{Data, Style, Table, Text};
 
@@ -47,14 +48,40 @@ pub fn run(ctx: &mut Context, args: &Args) -> Result<Report> {
     let ws = ctx.require_workspace()?;
     let plan = ws.build_plan(&args.packages)?;
     if args.dry_run {
-        return Ok(Report::DryRun(DryRun::new(ws, &plan, args.clean)));
+        return Ok(Report::DryRun(DryRun::new(&ws, &plan, args.clean)));
     }
-    let (groups, nodes) = own_names(ws);
+    let (groups, nodes) = own_names(&ws);
     let built = build_steps(ctx, &plan, args.clean)?;
     for note in renames(&groups, &nodes) {
         ctx.out.note(&note);
     }
     Ok(Report::Built(Built { built }))
+}
+
+/// Builds the packages the plans run and what they depend on, so a start runs the code as it
+/// is now. A failed build is reported and false, and the last build that worked starts.
+pub fn build_for(ctx: &mut Context, plans: &[&Plan]) -> Result<bool> {
+    let ws = ctx.require_scope()?;
+    let mut packages: Vec<String> = Vec::new();
+    for i in plans.iter().flat_map(|p| &p.instances) {
+        let own = ws.model.package(&i.node.package).is_some_and(|p| !p.installed);
+        if own && !packages.contains(&i.node.package) {
+            packages.push(i.node.package.clone());
+        }
+    }
+    if packages.is_empty() {
+        return Ok(true);
+    }
+    let built = ws.build_plan(&packages).map_err(Failure::from).and_then(|plan| build_steps(ctx, &plan, false));
+    match built {
+        Ok(_) => Ok(true),
+        Err(f) => {
+            for m in f.messages() {
+                ctx.out.error(&format!("{m}, starting the last build"));
+            }
+            Ok(false)
+        }
+    }
 }
 
 /// The names of the workspace's own groups and node types, never an installed package's.

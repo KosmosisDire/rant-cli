@@ -87,11 +87,10 @@ impl Cache {
     pub(crate) fn classify(&mut self, path: &Path, meta: &std::fs::Metadata) -> Option<NodeKind> {
         let key = path.to_string_lossy().into_owned();
         let modified = meta.modified().ok().and_then(|t| t.duration_since(UNIX_EPOCH).ok()).map(|d| d.as_nanos()).unwrap_or(0);
-        if let Some(e) = self.files.get(&key) {
-            if e.modified == modified && e.size == meta.len() {
+        if let Some(e) = self.files.get(&key)
+            && e.modified == modified && e.size == meta.len() {
                 return e.node;
             }
-        }
         let node = classify(path);
         self.files.insert(key, Entry { modified, size: meta.len(), node });
         self.dirty = true;

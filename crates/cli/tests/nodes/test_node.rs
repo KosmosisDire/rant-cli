@@ -155,7 +155,7 @@ fn on_stop_request() {
     }
     // SAFETY: the handler only touches atomics
     unsafe {
-        libc::signal(libc::SIGTERM, handler as libc::sighandler_t);
-        libc::signal(libc::SIGINT, handler as libc::sighandler_t);
+        libc::signal(libc::SIGTERM, handler as *const () as libc::sighandler_t);
+        libc::signal(libc::SIGINT, handler as *const () as libc::sighandler_t);
     }
 }

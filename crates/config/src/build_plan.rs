@@ -121,11 +121,10 @@ fn edges(model: &Model) -> Result<Vec<Edge>, Diag> {
                 }
             }
             for (dir, source) in &m.subdirs {
-                if let Some(t) = model.package_holding(&paths::normalize(dir)) {
-                    if t.name != pkg.name {
+                if let Some(t) = model.package_holding(&paths::normalize(dir))
+                    && t.name != pkg.name {
                         add(&mut out, pkg, &t.name, format!("{source} in {file}"));
                     }
-                }
             }
         }
     }

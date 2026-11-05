@@ -192,11 +192,10 @@ impl<'m> Groups<'m> {
         if reference.contains('/') {
             return named(reference).ok_or_else(|| self.unknown(reference));
         }
-        if let Some(p) = package {
-            if let Some(g) = named(&format!("{p}/{reference}")) {
+        if let Some(p) = package
+            && let Some(g) = named(&format!("{p}/{reference}")) {
                 return Ok(g);
             }
-        }
         if let Some(g) = named(reference) {
             return Ok(g);
         }

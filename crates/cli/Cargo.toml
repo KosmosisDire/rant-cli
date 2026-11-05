@@ -35,8 +35,14 @@ serde_json.workspace = true
 windows-sys = { workspace = true, features = [
     "Win32_Foundation",
     "Win32_Graphics_Gdi",
+    "Win32_NetworkManagement_IpHelper",
+    "Win32_NetworkManagement_Ndis",
+    "Win32_Networking_WinSock",
+    "Win32_Storage_FileSystem",
     "Win32_System_Console",
     "Win32_System_LibraryLoader",
+    "Win32_System_SystemInformation",
+    "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_WindowsAndMessaging",
 ] }
 

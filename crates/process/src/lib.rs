@@ -17,7 +17,7 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-pub use os::{Child, alive, helper, owns, pid_alive, start_child, stop, stop_pid};
+pub use os::{Child, Doorbell, alive, helper, owns, pid_alive, ring, session, start_child, stop, stop_pid};
 
 #[derive(Debug, Clone, Default)]
 pub struct Command {
@@ -147,7 +147,7 @@ pub fn shown(argv: &[String]) -> String {
 }
 
 /// Waits until done says so or limit passes. True when it did.
-fn wait_until(limit: Duration, mut done: impl FnMut() -> bool) -> bool {
+pub fn wait_until(limit: Duration, mut done: impl FnMut() -> bool) -> bool {
     let deadline = Instant::now() + limit;
     while !done() {
         if Instant::now() >= deadline {

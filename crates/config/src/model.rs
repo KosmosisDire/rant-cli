@@ -238,11 +238,10 @@ fn name_packages(candidates: Vec<Candidate>, diags: &mut Vec<Diag>) -> Vec<Packa
 /// is named after its folder, so `pick/main.py` is the node type `pick`.
 fn node_name(path: &Path, kind: NodeKind) -> String {
     let stem = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
-    if kind == NodeKind::Python && (stem == "main" || stem == "__main__") {
-        if let Some(dir) = path.parent().and_then(|d| d.file_name()) {
+    if kind == NodeKind::Python && (stem == "main" || stem == "__main__")
+        && let Some(dir) = path.parent().and_then(|d| d.file_name()) {
             return dir.to_string_lossy().into_owned();
         }
-    }
     stem
 }
 

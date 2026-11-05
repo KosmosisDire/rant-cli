@@ -27,7 +27,7 @@ fn restart() {
 
     // Asked to restart everything, it asks first.
     let r = t.rant(&["restart"]).ok();
-    expect_match(&r.out, r"roots: group nav range=30 speed=1\n");
+    expect_match(&r.err, r"roots: group nav range=30 speed=1\n");
     expect_match(&r.err, r"Restart all 3 nodes[?] \[y/N\] y");
 
     let r = t.rant(&["restart", "nowhere"]).fails();

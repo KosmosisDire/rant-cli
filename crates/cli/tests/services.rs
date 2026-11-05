@@ -178,7 +178,7 @@ fn services() {
     write(&t.path("Other.run"), "node \"demo/sensor\" {\n  name = \"other\"\n}\n");
     t.rant(&["run", "Other", "--watch", "0"]).ok();
     let r = t.rant(&["restart", "-y", "--no-build", "--watch", "0"]).ok();
-    expect_match(&r.out, r"roots: group Other\n");
+    expect_match(&r.err, r"roots: group Other\n");
     expect_match(&r.err, "services keep running, name one to restart it: Plain, Desk seat=left");
     expect_match(&r.out, "other +restarted");
     expect_no_match(&r.out, "steady|desk");

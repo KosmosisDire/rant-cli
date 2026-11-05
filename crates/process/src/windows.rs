@@ -34,11 +34,12 @@ use windows_sys::Win32::System::JobObjects::{
     QueryInformationJobObject, SetInformationJobObject, TerminateJobObject,
 };
 use windows_sys::Win32::System::Pipes::CreatePipe;
+use windows_sys::Win32::System::RemoteDesktop::ProcessIdToSessionId;
 use windows_sys::Win32::System::SystemInformation::GetSystemDirectoryW;
 use windows_sys::Win32::System::SystemServices::{JOB_OBJECT_QUERY, JOB_OBJECT_TERMINATE};
 use windows_sys::Win32::System::Threading::{
-    CREATE_BREAKAWAY_FROM_JOB, CREATE_NEW_PROCESS_GROUP, CREATE_NO_WINDOW, CREATE_SUSPENDED, CREATE_UNICODE_ENVIRONMENT, CreateProcessW,
-    DETACHED_PROCESS, DeleteProcThreadAttributeList, EXTENDED_STARTUPINFO_PRESENT, GetCurrentProcess, GetCurrentProcessId,
+    CREATE_BREAKAWAY_FROM_JOB, CREATE_NEW_PROCESS_GROUP, CREATE_NO_WINDOW, CREATE_SUSPENDED, CREATE_UNICODE_ENVIRONMENT, CreateEventW,
+    CreateProcessW, DETACHED_PROCESS, EVENT_MODIFY_STATE, OpenEventW, SetEvent, DeleteProcThreadAttributeList, EXTENDED_STARTUPINFO_PRESENT, GetCurrentProcess, GetCurrentProcessId,
     GetExitCodeProcess, GetProcessTimes, INFINITE, InitializeProcThreadAttributeList, LPPROC_THREAD_ATTRIBUTE_LIST, OpenProcess,
     OpenProcessToken, PROC_THREAD_ATTRIBUTE_HANDLE_LIST, PROCESS_INFORMATION, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SYNCHRONIZE,
     PROCESS_TERMINATE, QueryFullProcessImageNameW, ResumeThread, STARTF_USESTDHANDLES, STARTUPINFOEXW, STARTUPINFOW, TerminateProcess,
@@ -577,4 +578,36 @@ pub fn stop_pid(pid: u64, _grace: Duration) -> Result<Stopped> {
         WaitForSingleObject(raw(&process), 2000);
     }
     Ok(Stopped::KilledAtOnce)
+}
+
+pub fn session() -> u32 {
+    let mut id = 0;
+    // SAFETY: id is written only.
+    unsafe { ProcessIdToSessionId(GetCurrentProcessId(), &mut id) };
+    id
+}
+
+/// A named event, which a ring from any session of this user sets.
+pub struct Doorbell {
+    event: OwnedHandle,
+}
+
+impl Doorbell {
+    pub fn listen(address: &str) -> Option<Doorbell> {
+        let sa = SECURITY_ATTRIBUTES { nLength: size_of::<SECURITY_ATTRIBUTES>() as u32, lpSecurityDescriptor: user_only_security(), bInheritHandle: 0 };
+        // SAFETY: sa and the name outlive the call.
+        owned(unsafe { CreateEventW(&sa, 0, 0, wide(address).as_ptr()) }).map(|event| Doorbell { event })
+    }
+
+    pub fn wait(&self, limit: Duration) -> bool {
+        // SAFETY: a live event handle.
+        unsafe { WaitForSingleObject(raw(&self.event), limit.as_millis() as u32) == WAIT_OBJECT_0 }
+    }
+}
+
+pub fn ring(address: &str) {
+    // SAFETY: the name is NUL ended and the handle is closed when it drops.
+    if let Some(event) = owned(unsafe { OpenEventW(EVENT_MODIFY_STATE, 0, wide(address).as_ptr()) }) {
+        unsafe { SetEvent(raw(&event)) };
+    }
 }

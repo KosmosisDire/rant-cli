@@ -133,7 +133,7 @@ fn groups() {
     t.rant(&["run", "nav"]).ok();
     t.rant(&["run", "pick"]).ok();
     let r = t.rant(&["stop"]).ok();
-    expect_match(&r.out, r"groups: nav, pick\nnodes:  lidar, odom, planner, arm\n");
+    expect_match(&r.err, r"groups: nav, pick\nnodes:  lidar, odom, planner, arm\n");
     expect_match(&r.err, r"Stop all 4 nodes[?] \[y/N\] y");
     expect_match(&r.out, r"arm +stopped\n.*planner +stopped\n.*odom +stopped\n.*lidar +stopped\n");
     let r = t.rant(&["stop"]).ok();

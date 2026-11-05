@@ -31,11 +31,10 @@ pub(crate) fn resolve(model: &Model, reference: &str, from_dir: &Path) -> Result
         return Err("empty node name".into());
     }
     if is_path(reference) {
-        if let Some((dir, name)) = reference.rsplit_once(':') {
-            if !name.is_empty() && !name.contains(['/', '\\']) && dir.len() > 1 {
+        if let Some((dir, name)) = reference.rsplit_once(':')
+            && !name.is_empty() && !name.contains(['/', '\\']) && dir.len() > 1 {
                 return in_package_dir(model, &from_dir.join(dir), name, reference);
             }
-        }
         return by_path(model, &from_dir.join(reference), reference);
     }
     if let Some((pkg, name)) = reference.split_once('/') {

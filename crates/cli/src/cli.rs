@@ -4,7 +4,7 @@ use std::ffi::OsString;
 
 use clap::{Arg, ArgAction, Args, CommandFactory, FromArgMatches, Parser, Subcommand};
 
-use crate::commands::{build, init, new};
+use crate::commands::{build, init, log, new, restart, run, stop};
 use crate::output::Format;
 
 #[derive(Parser, Debug)]
@@ -17,6 +17,7 @@ pub struct Cli {
 }
 
 #[derive(Args, Debug)]
+#[command(next_display_order = 100)]
 pub struct Global {
     /// answer yes to every question
     #[arg(short, long, global = true)]
@@ -29,10 +30,10 @@ pub struct Global {
     csv: bool,
     /// print each record on its own line instead of updating in place
     #[arg(short, long, global = true)]
-    lines: bool,
+    pub lines: bool,
     /// the Rant domain to use and start nodes on, else the workspace's, else RANT_DOMAIN, else 0
     #[arg(long, global = true, value_name = "N")]
-    domain: Option<u16>,
+    pub domain: Option<u16>,
     /// show the version
     #[arg(long)]
     pub version: bool,
@@ -59,10 +60,22 @@ pub enum Command {
     /// build packages in dependency order
     #[command(override_usage = "rant build [package...]")]
     Build(build::Args),
+    /// start a group or one node, detached, logging to the logs folder, the services when none is named
+    #[command(override_usage = "rant run [<group> [key=value...] | node <node>]")]
+    Run(run::Args),
+    /// stop any node on this machine, all this workspace started when nothing is named, a service only by name
+    #[command(override_usage = "rant stop [<group> [key=value...] | [node] <node>]")]
+    Stop(stop::Args),
+    /// stop and start again as configured now, start what is not running, all of it when nothing is named
+    #[command(override_usage = "rant restart [<group> [key=value...] | [node] <node>]")]
+    Restart(restart::Args),
+    /// show what nodes wrote, every running node when nothing is named
+    #[command(override_usage = "rant log [group | [node] node...]")]
+    Log(log::Args),
 }
 
 /// The headings of the main help, and the commands under each.
-const SECTIONS: &[(&str, &[&str])] = &[("In a workspace", &["init", "new", "build"]), ("On the mesh, anywhere", &[]), ("Setting up", &[])];
+const SECTIONS: &[(&str, &[&str])] = &[("In a workspace", &["init", "new", "build", "run", "stop", "restart", "log"]), ("On the mesh, anywhere", &[]), ("Setting up", &[])];
 
 const COMMAND_HELP: &str = "{usage-heading} {usage}\n\n{about}\n\n{all-args}";
 const MAIN_HELP: &str = "rant: build, run and inspect Rant nodes\n\n{usage-heading} {usage}\n{before-help}Options:\n{options}\n\n\
@@ -73,6 +86,15 @@ pub fn command() -> clap::Command {
     let cmd = Cli::command().disable_help_flag(true).arg(help).mut_subcommands(|c| c.disable_help_flag(true).help_template(COMMAND_HELP));
     let sections = sections(&cmd);
     cmd.override_usage("rant <command> [args] [options]").help_template(MAIN_HELP).before_help(sections)
+}
+
+/// One command's help on stdout, for a command that reads -h itself.
+pub fn print_help(name: &str) {
+    let mut cmd = command();
+    // the global options reach a command only once the tree is built
+    cmd.build();
+    let help = cmd.find_subcommand_mut(name).map(|c| c.render_help().to_string()).unwrap_or_default();
+    crate::output::Output::new(crate::output::Format::Text, false).line(help.trim_end());
 }
 
 pub fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Cli, clap::Error> {
