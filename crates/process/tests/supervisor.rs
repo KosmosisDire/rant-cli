@@ -10,11 +10,13 @@ fn main() {
     if let Some(code) = helper(std::env::args_os()) {
         std::process::exit(code);
     }
-    let tests: [(&str, fn()); 4] = [
+    let tests: &[(&str, fn())] = &[
         ("a_detached_start_is_alive_until_stopped", a_detached_start_is_alive_until_stopped),
         ("a_process_that_exits_is_not_alive", a_process_that_exits_is_not_alive),
         ("a_child_tells_its_exit_code", a_child_tells_its_exit_code),
         ("an_untrackable_id_is_never_signalled", an_untrackable_id_is_never_signalled),
+        #[cfg(target_os = "linux")]
+        ("a_group_of_zombies_is_not_alive", a_group_of_zombies_is_not_alive),
     ];
     let failed = tests.iter().filter(|(name, test)| {
         let ok = std::panic::catch_unwind(test).is_ok();
@@ -75,6 +77,20 @@ fn a_child_tells_its_exit_code() {
     assert_eq!(slow.ended(), None);
     stop(slow.tracking(), Duration::from_secs(3));
     assert!(eventually(|| slow.ended().is_some()));
+}
+
+/// A parent that never reaps, as process 1 of a container without an init.
+#[cfg(target_os = "linux")]
+fn a_group_of_zombies_is_not_alive() {
+    let dir = scratch("zombie");
+    let script = "setsid sh -c 'exit 0' & echo $! > leader; exec sleep 30";
+    let parent = start_detached(&Command::new(["sh", "-c", script], &dir), &dir.join("out.log"), &job("zombie")).unwrap();
+    let leader = || std::fs::read_to_string(dir.join("leader")).ok()?.trim().parse::<u64>().ok();
+    assert!(eventually(|| leader().is_some()));
+    let t = Tracking { pid: leader().unwrap(), ..Tracking::default() };
+    assert!(eventually(|| !alive(&t)));
+    assert_eq!(stop(&t, Duration::from_secs(1)), Stopped::AlreadyGone);
+    stop(&parent, Duration::from_secs(3));
 }
 
 fn an_untrackable_id_is_never_signalled() {

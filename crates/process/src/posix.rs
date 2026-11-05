@@ -152,10 +152,33 @@ fn reap(pid: i32) {
 /// Linux, microseconds since the epoch on macOS. None when it is gone.
 #[cfg(not(target_os = "macos"))]
 fn start_time(pid: i32) -> Option<u64> {
+    stat(pid)?.get(19)?.parse().ok()
+}
+
+/// The fields of /proc/pid/stat after the name, the state first and the group third.
+#[cfg(not(target_os = "macos"))]
+fn stat(pid: i32) -> Option<Vec<String>> {
     let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
-    // the name may hold spaces and parentheses, and field 22 counts from after it
-    let rest = &stat[stat.rfind(')')? + 2..];
-    rest.split_whitespace().nth(19)?.parse().ok()
+    // the name may hold spaces and parentheses
+    Some(stat[stat.rfind(')')? + 2..].split_whitespace().map(str::to_owned).collect())
+}
+
+/// Whether a member of the group is more than a zombie. A zombie still takes signals, and in
+/// a container whose process 1 never reaps, a node that ended stays one.
+#[cfg(not(target_os = "macos"))]
+fn members_live(group: i32) -> bool {
+    let living = |pid: i32| stat(pid).is_some_and(|f| f.first().is_some_and(|s| s != "Z") && f.get(2).is_some_and(|g| *g == group.to_string()));
+    if living(group) {
+        return true;
+    }
+    let Ok(procs) = std::fs::read_dir("/proc") else { return true };
+    procs.flatten().filter_map(|e| e.file_name().to_str()?.parse().ok()).any(living)
+}
+
+/// macOS has no containers, and launchd reaps every orphan.
+#[cfg(target_os = "macos")]
+fn members_live(_group: i32) -> bool {
+    true
 }
 
 #[cfg(target_os = "macos")]
@@ -189,7 +212,7 @@ pub fn alive(t: &Tracking) -> bool {
     }
     // the group id stays taken while any member lives, and only a leader with another start
     // time means the id went to a new group
-    start_time(group).is_none_or(|st| t.start_time == 0 || st == t.start_time)
+    start_time(group).is_none_or(|st| t.start_time == 0 || st == t.start_time) && members_live(group)
 }
 
 pub fn owns(t: &Tracking, pid: u64) -> bool {
