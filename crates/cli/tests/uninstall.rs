@@ -19,11 +19,11 @@ fn uninstall() {
     write(&format!("{home}/.rant/packages/explorer/package.rant"), "description = \"The explorer\"\n");
 
     let r = t.rant(&["uninstall"]).ok();
-    expect_match(&r.out, r"removing:\n");
-    expect_match(&r.out, r"[.]bashrc [(]its rant lines[)]\n");
-    expect_match(&r.out, r"conf[.]d.rant[.]fish\n");
-    expect_match(&r.out, r"[.]claude.skills.tool [(]the skill of tool[)]\n");
-    expect_match(&r.out, "Workspaces stay as they are");
+    expect_match(&r.err, r"removing:\n");
+    expect_match(&r.err, r"[.]bashrc [(]its rant lines[)]\n");
+    expect_match(&r.err, r"conf[.]d.rant[.]fish\n");
+    expect_match(&r.err, r"[.]claude.skills.tool [(]the skill of tool[)]\n");
+    expect_match(&r.err, "Workspaces stay as they are");
     expect_match(&r.out, r"uninstalled rant-cli\n");
 
     // Only rant's own lines and files went.
@@ -43,8 +43,8 @@ fn uninstall() {
     write(&format!("{home}/.rant/bridge.yaml"), "passphrase: secret\n");
     write(&format!("{home}/.rant/packages/bridge/package.rant"), "name = \"bridge\"\n");
     let r = t.rant(&["uninstall"]).ok();
-    expect_match(&r.out, r"[.]rant\n");
-    expect_match(&r.out, "bridge[.]yaml stays, it holds your bridge passphrase and settings");
+    expect_match(&r.err, r"[.]rant\n");
+    expect_match(&r.err, "bridge[.]yaml stays, it holds your bridge passphrase and settings");
     let left = list(&format!("{home}/.rant"));
     assert!(left.len() == 1 && exists(&format!("{home}/.rant/bridge.yaml")), "expected only bridge.yaml to stay, got: {left:?}");
     let r = t.rant(&["uninstall"]).ok();

@@ -72,6 +72,12 @@ impl Kind {
     }
 }
 
+/// The words ls takes, each kind's plural, or with plural false those info explains, singular.
+pub fn words(plural: bool) -> Vec<String> {
+    let taken = TABLE.iter().filter(|w| plural || w.kind.explained());
+    taken.map(|w| (if plural { w.plural } else { w.singular }).to_string()).collect()
+}
+
 /// Each kind's plural with what ls lists for it, for its help.
 pub fn help() -> String {
     let lines: Vec<String> = TABLE.iter().map(|w| format!("  {:22} {}", w.plural, w.listed)).collect();

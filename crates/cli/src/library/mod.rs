@@ -5,7 +5,7 @@ mod edit;
 mod moves;
 mod uses;
 
-pub use moves::{add, all, find, update};
+pub use moves::{add, all, find, nuget_feed_added, update};
 pub use uses::{Use, in_folder, node_source, under};
 
 use std::path::Path;

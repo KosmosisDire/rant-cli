@@ -4,6 +4,7 @@ mod agents;
 mod cli;
 mod cmake;
 mod commands;
+mod complete;
 mod context;
 mod failure;
 mod files;
@@ -47,6 +48,10 @@ fn run() -> i32 {
     let args: Vec<std::ffi::OsString> = std::env::args_os().collect();
     if args.get(1).is_some_and(|a| a == "__services") {
         return serve(&args[2..]);
+    }
+    if args.get(1).is_some_and(|a| a == "__complete") {
+        let tokens: Vec<String> = args[2..].iter().map(|a| a.to_string_lossy().into_owned()).collect();
+        return complete::run(&tokens);
     }
     let cli = match cli::parse(args) {
         Ok(cli) => cli,

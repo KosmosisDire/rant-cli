@@ -84,6 +84,7 @@ pub fn file_id(p: &Path) -> Option<(u64, u64)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::scratch::Scratch;
 
     #[test]
     fn a_path_key_is_fnv_of_the_path() {
@@ -97,8 +98,8 @@ mod tests {
 
     #[test]
     fn an_atomic_write_replaces_the_file_and_keeps_its_id_apart() {
-        let dir = std::env::temp_dir().join(format!("rant-unit-files-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let t = Scratch::new("files");
+        let dir = t.0.clone();
         let f = dir.join("x");
         write_atomic(&f, "one").unwrap();
         let first = file_id(&f).unwrap();
@@ -106,6 +107,5 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&f).unwrap(), "two");
         assert_ne!(file_id(&f).unwrap(), first, "a rename puts another file in place");
         assert_eq!(file_id(&dir.join("missing")), None);
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

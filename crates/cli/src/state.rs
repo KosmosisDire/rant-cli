@@ -277,12 +277,8 @@ pub fn folder_of(home: &Path, data: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::scratch::Scratch;
 
-    fn scratch(name: &str) -> PathBuf {
-        let p = std::env::temp_dir().join(format!("rant-unit-{name}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&p);
-        p
-    }
 
     fn instance(name: &str, root: &str) -> Instance {
         Instance {
@@ -321,7 +317,8 @@ mod tests {
 
     #[test]
     fn save_and_load_round_trip() {
-        let dir = scratch("state-roundtrip");
+        let t = Scratch::new("state-roundtrip");
+        let dir = t.0.clone();
         {
             let mut s = Store::open(&dir, true).unwrap();
             s.state().roots.push(Root::node("a"));
@@ -363,7 +360,8 @@ mod tests {
 
     #[test]
     fn a_held_state_is_not_taken_without_waiting() {
-        let dir = scratch("state-busy");
+        let t = Scratch::new("state-busy");
+        let dir = t.0.clone();
         let first = Store::open(&dir, true).unwrap();
         assert!(first.locked());
         assert!(!Store::open(&dir, false).unwrap().locked());
@@ -373,7 +371,8 @@ mod tests {
 
     #[test]
     fn a_damaged_file_is_reported_and_another_format_is_empty() {
-        let dir = scratch("state-damaged");
+        let t = Scratch::new("state-damaged");
+        let dir = t.0.clone();
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("state"), "{ not json").unwrap();
         assert!(Store::open(&dir, true).is_err());
@@ -383,7 +382,8 @@ mod tests {
 
     #[test]
     fn remembered_folders_drop_out_once_their_state_is_gone() {
-        let home = scratch("state-home");
+        let t = Scratch::new("state-home");
+        let home = t.0.clone();
         let data = home.join("ws/.rant");
         std::fs::create_dir_all(&data).unwrap();
         remember(&home, &data);

@@ -104,17 +104,13 @@ impl Follower {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::scratch::Scratch;
 
-    fn scratch(name: &str) -> PathBuf {
-        let p = std::env::temp_dir().join(format!("rant-unit-{name}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&p);
-        std::fs::create_dir_all(&p).unwrap();
-        p
-    }
 
     #[test]
     fn the_tail_is_the_last_lines_even_past_one_window() {
-        let dir = scratch("logs-tail");
+        let t = Scratch::new("logs-tail");
+        let dir = t.0.clone();
         let log = dir.join("a.log");
         let long: String = (0..20_000).map(|i| format!("line {i}\r\n")).collect();
         std::fs::write(&log, long).unwrap();
@@ -128,7 +124,8 @@ mod tests {
 
     #[test]
     fn logged_nodes_name_a_prefixed_node_by_its_folder() {
-        let dir = scratch("logs-nodes");
+        let t = Scratch::new("logs-nodes");
+        let dir = t.0.clone();
         std::fs::create_dir_all(dir.join("left")).unwrap();
         for f in ["talker.log", "talker.log.1", "left/lidar.log", "notes.txt"] {
             std::fs::write(dir.join(f), "").unwrap();
@@ -138,7 +135,8 @@ mod tests {
 
     #[test]
     fn a_follower_reads_new_whole_lines_and_a_restarted_log_from_its_start() {
-        let dir = scratch("logs-follow");
+        let t = Scratch::new("logs-follow");
+        let dir = t.0.clone();
         let log = dir.join("a.log");
         std::fs::write(&log, "old\n").unwrap();
         let mut f = Follower::new(log.clone());

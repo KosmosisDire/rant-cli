@@ -25,6 +25,15 @@ use crate::github::{self, Asset};
 /// The official package database, read after sources.rant.
 pub const OFFICIAL: &str = "KosmosisDire/rant-packages";
 
+/// Undoes every link among the packages, so removing the folder never reaches a linked build.
+pub fn unlink_all(home: &Path) {
+    for e in std::fs::read_dir(dir(home)).into_iter().flatten().flatten() {
+        if is_link(&e.path()) {
+            let _ = unlink(&e.path());
+        }
+    }
+}
+
 pub fn dir(home: &Path) -> PathBuf {
     home.join("packages")
 }
@@ -212,11 +221,12 @@ pub fn installed_node(home: &Path, package: &str, node: &str) -> Option<NodeType
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::scratch::Scratch;
 
     #[test]
     fn the_cache_and_records_read_back() {
-        let home = std::env::temp_dir().join(format!("rant-unit-packages-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&home);
+        let t = Scratch::new("packages");
+        let home = t.0.clone();
         std::fs::create_dir_all(home.join("cache/sources")).unwrap();
         std::fs::create_dir_all(dir(&home)).unwrap();
         let official = r#"[{"name": "rant", "repo": "KosmosisDire/Rant", "library": {"cmake": "rant::rant_host", "python": "", "csharp": "Rant", "rust": "rant-middleware"}},
@@ -233,6 +243,5 @@ mod tests {
         assert_eq!((r.version.as_str(), r.skills.len(), r.extension.as_str()), ("0.0.9", 1, ""));
         assert_eq!(record(&home, "nothing"), None);
         assert!(!is_link(&dir(&home)));
-        std::fs::remove_dir_all(&home).unwrap();
     }
 }

@@ -18,10 +18,12 @@ pub mod publish;
 pub mod remove;
 pub mod restart;
 pub mod run;
+pub mod setup;
 pub mod stop;
 pub mod stream;
 pub mod sub;
 pub mod summary;
+pub mod uninstall;
 pub mod update;
 
 use std::path::Path;
@@ -55,6 +57,8 @@ pub fn run(ctx: &mut Context, command: Command) -> Result<()> {
         Command::Remove(a) => remove::run(ctx, &a),
         Command::Update(a) => update::run(ctx, &a),
         Command::Add(a) => add::run(ctx, &a),
+        Command::Setup(a) => setup::run(ctx, &a),
+        Command::Uninstall(a) => uninstall::run(ctx, &a),
     }
 }
 

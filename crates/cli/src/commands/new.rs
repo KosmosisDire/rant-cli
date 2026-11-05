@@ -33,7 +33,7 @@ pub struct Args {
     pub lang: Option<String>,
 }
 
-const KINDS: [&str; 4] = ["workspace", "package", "node", "group"];
+pub const KINDS: [&str; 4] = ["workspace", "package", "node", "group"];
 const LANGUAGES: [&str; 4] = ["cpp", "python", "csharp", "rust"];
 
 pub fn run(ctx: &mut Context, args: &Args) -> Result<()> {

@@ -232,6 +232,7 @@ pub fn test_node() -> &'static Node {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::scratch::Scratch;
 
     #[test]
     fn a_peer_host_is_its_ip_alone() {
@@ -244,11 +245,11 @@ mod tests {
 
     #[test]
     fn a_snapshot_round_trips() {
-        let home = std::env::temp_dir().join(format!("rant-unit-snapshot-{}", std::process::id()));
+        let t = Scratch::new("snapshot");
+        let home = t.0.clone();
         let s = Snapshot { nodes: BTreeSet::from(["talker".into()]), entities: BTreeSet::from([("chatter".into(), "topic".into())]) };
         s.save(&home, 140);
         assert_eq!(Snapshot::load(&home, 140), s);
         assert_eq!(Snapshot::load(&home, 141), Snapshot::default());
-        std::fs::remove_dir_all(&home).unwrap();
     }
 }

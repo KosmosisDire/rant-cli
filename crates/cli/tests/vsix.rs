@@ -115,7 +115,7 @@ fn vsix() {
     let r = t.rant(&["install", "ext", "--from", "ext-build", "--editor", &editor, "--profile", "Mixed"]).ok();
     expect_match(&r.err, "in the profile Mixed");
     let r = t.rant(&["uninstall"]).ok();
-    expect_match(&r.out, r"the VS Code extension test[.]ext, through [^\n]*fake-code[^\n]* in the profile Mixed\n");
+    expect_match(&r.err, r"the VS Code extension test[.]ext, through [^\n]*fake-code[^\n]* in the profile Mixed\n");
     let logged = read(&calls);
     assert_eq!(count_matches(&logged, "--uninstall-extension"), 2, "uninstall did not remove the extension:\n{logged}");
 }
