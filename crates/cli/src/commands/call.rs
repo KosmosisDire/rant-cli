@@ -31,7 +31,7 @@ pub struct Args {
 /// How long a cancelled task may take to answer before the caller leaves without it.
 const CANCEL_WAIT: Duration = Duration::from_secs(10);
 
-fn status_text(s: CallStatus) -> &'static str {
+pub fn status_text(s: CallStatus) -> &'static str {
     match s {
         CallStatus::Ok => "ok",
         CallStatus::AppError => "failed",

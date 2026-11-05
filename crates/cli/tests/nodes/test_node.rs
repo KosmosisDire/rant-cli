@@ -1,5 +1,5 @@
 //! A node for the end to end tests: test_node [--name N] [--domain D] [--pub TOPIC] [--var NAME]
-//! [--fn NAME] [--task NAME] [--life SECONDS] [--exit CODE] [--ignore-stop] [--ignore-cancel]
+//! [--fn NAME] [--task NAME] [--cancel-call TASK] [--life SECONDS] [--exit CODE] [--ignore-stop] [--ignore-cancel]
 
 use std::io::Write;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
-use rant::{FunctionOptions, Node, NodeOptions, PendingTask, Qos, Request, TaskOptions, TaskRequest, VariableOptions};
+use rant::{CallOptions, FunctionOptions, Node, NodeOptions, PendingTask, Qos, Request, TaskOptions, TaskRequest, VariableOptions};
 
 #[derive(rant::Message)]
 struct Reading {
@@ -26,6 +26,7 @@ struct Args {
     variable: Option<String>,
     function: Option<String>,
     task: Option<String>,
+    cancel_call: Option<String>,
     life: f64,
     exit_code: i32,
     ignore_cancel: bool,
@@ -50,6 +51,7 @@ fn parse(mut words: impl Iterator<Item = String>) -> Args {
             "--var" => args.variable = Some(value()),
             "--fn" => args.function = Some(value()),
             "--task" => args.task = Some(value()),
+            "--cancel-call" => args.cancel_call = Some(value()),
             "--life" => args.life = number(&value()),
             "--exit" => args.exit_code = number(&value()),
             "--ignore-stop" => IGNORE_STOP.store(true, Ordering::SeqCst),
@@ -93,6 +95,9 @@ fn run(args: Args) -> i32 {
     });
 
     say(&format!("ready {}", args.name));
+    if let Some(name) = &args.cancel_call {
+        cancel_call(&node, name);
+    }
     let start = Instant::now();
     let mut seq = 0u32;
     let mut lived = false;
@@ -125,6 +130,19 @@ fn count(n: u32, pending: PendingTask<u32, u32>, ignore_cancel: bool) {
         let _ = pending.progress(&i);
     }
     let _ = pending.complete(&n);
+}
+
+/// Starts the task counting to 30 once a provider matched, and cancels it 0.35 s in.
+fn cancel_call(node: &Node, name: &str) {
+    let task = node.remote_task::<u32, u32, u32>(name, TaskOptions::new()).expect("the remote task opens");
+    let end = Instant::now() + Duration::from_secs(5);
+    while task.match_count() == 0 && Instant::now() < end {
+        thread::sleep(Duration::from_millis(20));
+    }
+    let call = task.call_async(&30, CallOptions::new(), |_| {}).expect("the call goes out");
+    thread::sleep(Duration::from_millis(350));
+    // a task call dropped before its outcome cancels the task
+    drop(call);
 }
 
 /// A line to stdout, which may be a pipe whose reader is gone.

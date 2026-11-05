@@ -85,6 +85,43 @@ impl Test {
         run
     }
 
+    /// Runs rant beside a test node while others call it: once rant had two seconds to start, each
+    /// of `callers` runs in turn, rant's words, or a second test node's after the word "node".
+    pub fn while_calling(&self, node_args: &[&str], args: &[&str], callers: &[&[&str]]) -> Output {
+        let shown = args.join(" ");
+        let domain = self.domain.to_string();
+        let mut node = self.command(&test_node());
+        node.args(["--domain", &domain, "--life", "12"]).args(node_args);
+        node.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::piped());
+        let mut node = node.spawn().expect("the test node starts");
+        let node_err = drain(node.stderr.take().unwrap());
+        let mut cli = self.command(&rant_cli());
+        cli.arg("--domain").arg(&domain).args(args).current_dir(&self.scratch);
+        cli.stdin(fs::File::open(self.empty_stdin()).expect("the empty stdin opens")).stdout(Stdio::piped()).stderr(Stdio::piped());
+        let mut child = cli.spawn().unwrap_or_else(|e| panic!("cannot start rant {shown}: {e}"));
+        let (out, err) = (drain(child.stdout.take().unwrap()), drain(child.stderr.take().unwrap()));
+        sleep(2.0);
+        for words in callers {
+            match words.split_first() {
+                Some((&"node", rest)) => {
+                    let mut caller = self.command(&test_node());
+                    caller.args(["--domain", &domain, "--life", "1"]).args(rest).stdin(Stdio::null()).stdout(Stdio::null());
+                    let mut caller = caller.spawn().expect("the calling test node starts");
+                    wait(&mut caller, Duration::from_secs(30), "the calling test node");
+                }
+                _ => _ = self.rant(words).ok(),
+            }
+        }
+        let code = wait(&mut child, Duration::from_secs(30), &shown);
+        let _ = node.kill();
+        wait(&mut node, Duration::from_secs(10), "the test node");
+        let run = Output { out: received(out, &shown), err: received(err, &shown) + &received(node_err, "the test node"), code }.with_plain_line_ends();
+        if run.code != 0 {
+            panic!("rant {shown} exited {}\nstdout:\n{}\nstderr:\n{}", run.code, run.out, run.err);
+        }
+        run
+    }
+
     /// The candidates `rant __complete` offers for the words and the word at the cursor.
     pub fn complete(&self, words: &[&str], cur: &str) -> String {
         let mut cli = self.command(&rant_cli());

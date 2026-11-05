@@ -1,10 +1,12 @@
-//! `rant sub`: the newest value of a topic or a variable until Ctrl-C, or a line per value.
+//! `rant sub`: the newest value of a topic or a variable until Ctrl-C, or a line per value. A
+//! function or task gives each step of its calls, which `calls` prints.
 
 use std::sync::mpsc;
 use std::time::Duration;
 
 use rant::{Bytes, EntityKind, Qos, Schema, VariableOptions};
 
+use crate::commands::calls;
 use crate::commands::stream::{StreamArgs, ValueStream};
 use crate::context::Context;
 use crate::failure::{Result, failed};
@@ -13,10 +15,10 @@ use crate::mesh::{Client, FULL_SETTLE};
 
 #[derive(clap::Args, Debug)]
 pub struct Args {
-    /// the topic or variable
+    /// the topic, variable, function or task
     #[arg(value_name = "name")]
     pub name: String,
-    /// stop after N values
+    /// stop after N values, or N calls ended
     #[arg(short = 'n', long, value_name = "N", value_parser = clap::value_parser!(u64).range(1..))]
     pub count: Option<u64>,
     #[command(flatten)]
@@ -55,6 +57,9 @@ pub fn run(ctx: &mut Context, args: &Args) -> Result<()> {
     let name = &args.name;
     let node = mesh.node();
     let reflection = node.reflection();
+    if [EntityKind::Function, EntityKind::Task].into_iter().any(|k| reflection.find(k, name).is_some()) {
+        return calls::run(ctx, &mesh, name, args);
+    }
     let mut source = match reflection.find(EntityKind::Variable, name) {
         Some(e) => {
             let var = node.remote_variable::<Bytes>(name, VariableOptions::new().reflect_from_mesh(true)).map_err(|e| failed(e.to_string()))?;

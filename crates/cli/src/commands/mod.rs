@@ -2,6 +2,7 @@
 
 pub mod build;
 pub mod call;
+pub mod calls;
 pub mod explore;
 pub mod info;
 pub mod init;

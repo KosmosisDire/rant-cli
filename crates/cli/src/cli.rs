@@ -78,8 +78,8 @@ pub enum Command {
     /// explain a node, running or not, an entity, a type, a package or a group
     #[command(override_usage = "rant info [kind] <name>")]
     Info(info::Args),
-    /// show the newest value of a topic or variable until Ctrl-C
-    #[command(override_usage = "rant sub <topic|variable>")]
+    /// show the newest value of a topic or variable, or each call of a function or task, until Ctrl-C
+    #[command(override_usage = "rant sub <topic|variable|function|task>")]
     Sub(sub::Args),
     /// publish to a topic or write a variable, once or at a rate
     #[command(override_usage = "rant pub <topic|variable> <value>")]
