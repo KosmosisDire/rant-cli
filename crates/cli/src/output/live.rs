@@ -1,20 +1,30 @@
-//! A block of lines redrawn in place on stderr. It fits the terminal, with a line saying how
-//! much did not, so the cursor always lands back on its first line.
+//! A block of lines redrawn in place, on stderr for progress or stdout for values. It fits the
+//! terminal, with a line saying how much did not, so the cursor lands back on its first line.
 
 use std::io::Write;
 
 pub struct LiveView {
     drawn: usize,
+    err: bool,
 }
 
 impl LiveView {
     pub fn new() -> LiveView {
-        put("\x1b[?25l");
-        LiveView { drawn: 0 }
+        LiveView::on(true)
+    }
+
+    /// A view on stdout, for values that are the command's data.
+    pub fn stdout() -> LiveView {
+        LiveView::on(false)
+    }
+
+    fn on(err: bool) -> LiveView {
+        put(err, "\x1b[?25l");
+        LiveView { drawn: 0, err }
     }
 
     pub fn draw(&mut self, lines: &[String]) {
-        let (rows, cols) = terminal_size();
+        let (rows, cols) = terminal_size(self.err);
         let cols = if cols > 1 { cols - 1 } else { 200 };
         let room = if rows > 2 { rows - 1 } else { lines.len() };
         let mut frame = self.back();
@@ -26,12 +36,12 @@ impl LiveView {
             frame += &(clip(&format!("... {} more lines", lines.len() - shown), cols) + "\n");
         }
         self.drawn = shown + usize::from(shown < lines.len());
-        put(&frame);
+        put(self.err, &frame);
     }
 
     /// Takes the last frame off the screen, so what replaces it prints in its place.
     pub fn erase(mut self) {
-        put(&self.back());
+        put(self.err, &self.back());
         self.drawn = 0;
     }
 
@@ -44,14 +54,17 @@ impl LiveView {
 
 impl Drop for LiveView {
     fn drop(&mut self) {
-        put("\x1b[?25h");
+        put(self.err, "\x1b[?25h");
     }
 }
 
-fn put(s: &str) {
-    let mut err = std::io::stderr().lock();
-    let _ = err.write_all(s.as_bytes());
-    let _ = err.flush();
+fn put(err: bool, s: &str) {
+    let _ = if err { write_all(std::io::stderr().lock(), s) } else { write_all(std::io::stdout().lock(), s) };
+}
+
+fn write_all(mut w: impl Write, s: &str) -> std::io::Result<()> {
+    w.write_all(s.as_bytes())?;
+    w.flush()
 }
 
 /// text cut to cols visible characters, color codes kept whole and closed.
@@ -79,13 +92,16 @@ pub fn clip(text: &str, cols: usize) -> String {
     if cut { out + "\x1b[0m" } else { out }
 }
 
-/// The visible rows and columns of the terminal behind stderr, 0 and 0 when unknown.
+/// The visible rows and columns of the terminal behind stderr, or stdout, 0 and 0 when unknown.
 #[cfg(windows)]
-pub fn terminal_size() -> (usize, usize) {
-    use windows_sys::Win32::System::Console::{CONSOLE_SCREEN_BUFFER_INFO, GetConsoleScreenBufferInfo, GetStdHandle, STD_ERROR_HANDLE};
+pub fn terminal_size(err: bool) -> (usize, usize) {
+    use windows_sys::Win32::System::Console::{
+        CONSOLE_SCREEN_BUFFER_INFO, GetConsoleScreenBufferInfo, GetStdHandle, STD_ERROR_HANDLE, STD_OUTPUT_HANDLE,
+    };
     let mut info = CONSOLE_SCREEN_BUFFER_INFO::default();
+    let which = if err { STD_ERROR_HANDLE } else { STD_OUTPUT_HANDLE };
     // SAFETY: the standard handle belongs to the process, and info is only written.
-    if unsafe { GetConsoleScreenBufferInfo(GetStdHandle(STD_ERROR_HANDLE), &mut info) } == 0 {
+    if unsafe { GetConsoleScreenBufferInfo(GetStdHandle(which), &mut info) } == 0 {
         return (0, 0);
     }
     let w = info.srWindow;
@@ -93,10 +109,11 @@ pub fn terminal_size() -> (usize, usize) {
 }
 
 #[cfg(unix)]
-pub fn terminal_size() -> (usize, usize) {
+pub fn terminal_size(err: bool) -> (usize, usize) {
     // SAFETY: the ioctl writes only the struct.
     let mut w: libc::winsize = unsafe { std::mem::zeroed() };
-    if unsafe { libc::ioctl(libc::STDERR_FILENO, libc::TIOCGWINSZ, &mut w) } != 0 {
+    let fd = if err { libc::STDERR_FILENO } else { libc::STDOUT_FILENO };
+    if unsafe { libc::ioctl(fd, libc::TIOCGWINSZ, &mut w) } != 0 {
         return (0, 0);
     }
     (w.ws_row as usize, w.ws_col as usize)

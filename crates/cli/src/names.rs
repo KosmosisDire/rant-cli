@@ -28,6 +28,30 @@ fn spelled(name: &str, rule: unsafe extern "C" fn(*const c_char, *mut c_char, us
     if n == 0 { name.to_string() } else { String::from_utf8_lossy(&out[..n]).into_owned() }
 }
 
+/// A name filter: a glob when the pattern holds * or ?, otherwise a substring. An empty
+/// pattern matches everything.
+pub fn matches(pattern: &str, name: &str) -> bool {
+    if pattern.contains(['*', '?']) { glob(pattern.as_bytes(), name.as_bytes()) } else { name.contains(pattern) }
+}
+
+fn glob(p: &[u8], t: &[u8]) -> bool {
+    let (mut pi, mut ti, mut star, mut mark) = (0, 0, None, 0);
+    while ti < t.len() {
+        if pi < p.len() && (p[pi] == b'?' || p[pi] == t[ti]) {
+            (pi, ti) = (pi + 1, ti + 1);
+        } else if pi < p.len() && p[pi] == b'*' {
+            (star, mark) = (Some(pi), ti);
+            pi += 1;
+        } else if let Some(s) = star {
+            mark += 1;
+            (pi, ti) = (s + 1, mark);
+        } else {
+            return false;
+        }
+    }
+    p[pi..].iter().all(|&c| c == b'*')
+}
+
 /// A note for each name against the convention: a group such as nav for Nav, a node such as
 /// ArmController for arm_controller. A package or prefix before a `/` is left alone.
 pub fn renames(groups: &[String], nodes: &[String]) -> Vec<String> {
@@ -51,6 +75,13 @@ mod tests {
         assert_eq!(pascal("HTTPServer"), "HttpServer");
         assert_eq!(pascal("__"), "__");
         assert_eq!(snake("ArmController"), "arm_controller");
+    }
+
+    #[test]
+    fn a_pattern_is_a_substring_or_a_glob() {
+        assert!(matches("", "talker") && matches("alk", "talker") && !matches("x", "talker"));
+        assert!(matches("t*r", "talker") && matches("ta?ker", "talker") && matches("*", "") && !matches("t*x", "talker"));
+        assert!(matches("*cam*", "left/cam_driver") && !matches("cam", "Cam"));
     }
 
     #[test]

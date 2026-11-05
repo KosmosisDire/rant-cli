@@ -1,6 +1,5 @@
-//! The end to end harness. Each test drives the built rant in a scratch folder and home of its
-//! own, on a Rant domain of its own, so it never reaches the real home or the lab mesh.
-//! RANT_CLI names another rant to drive, such as the C++ one.
+//! The end to end harness: each test drives rant in a scratch folder, home and Rant domain of its
+//! own, never the real home or the lab mesh. RANT_CLI names another rant to drive.
 #![allow(dead_code)]
 
 use std::fs;

@@ -124,10 +124,8 @@ fn services() {
     let r = t.rant(&["run"]).cwd(&outside).fails();
     expect_match(&r.err, "say which group to run");
 
-    // What rant enable keeps, written here by hand, since rant enable writes the real boot and
-    // login entries. An entry without a start starts at boot, and an older rant's entry for one
-    // group is passed over. The service process starts each workspace's services as the entries
-    // would.
+    // What rant enable keeps, written by hand since it writes real boot and login entries. One
+    // without a start starts at boot, and an older rant's entry for one group is passed over.
     let r = t.rant(&["stop", "-y"]).ok();
     expect_match(&r.out, "steady +stopped");
     mkdir(&t.other);

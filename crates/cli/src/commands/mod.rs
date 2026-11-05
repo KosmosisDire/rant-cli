@@ -1,12 +1,20 @@
 //! Every command, a file each. A command returns its data and the output layer prints it.
 
 pub mod build;
+pub mod call;
+pub mod explore;
+pub mod info;
 pub mod init;
+pub mod kinds;
 pub mod log;
+pub mod ls;
 pub mod new;
+pub mod publish;
 pub mod restart;
 pub mod run;
 pub mod stop;
+pub mod stream;
+pub mod sub;
 pub mod summary;
 
 use std::path::Path;
@@ -28,6 +36,12 @@ pub fn run(ctx: &mut Context, command: Command) -> Result<()> {
         Command::Stop(a) => stop::run(ctx, &a),
         Command::Restart(a) => restart::run(ctx, &a),
         Command::Log(a) => log::run(ctx, &a),
+        Command::Ls(a) => ls::run(ctx, &a),
+        Command::Info(a) => info::run(ctx, &a),
+        Command::Sub(a) => sub::run(ctx, &a),
+        Command::Pub(a) => publish::run(ctx, &a),
+        Command::Call(a) => call::run(ctx, &a),
+        Command::Explore(a) => explore::run(ctx, &a),
     }
 }
 

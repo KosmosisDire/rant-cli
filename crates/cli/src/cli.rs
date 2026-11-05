@@ -4,7 +4,7 @@ use std::ffi::OsString;
 
 use clap::{Arg, ArgAction, Args, CommandFactory, FromArgMatches, Parser, Subcommand};
 
-use crate::commands::{build, init, log, new, restart, run, stop};
+use crate::commands::{build, call, explore, info, init, kinds, log, ls, new, publish, restart, run, stop, sub};
 use crate::output::Format;
 
 #[derive(Parser, Debug)]
@@ -72,12 +72,30 @@ pub enum Command {
     /// show what nodes wrote, every running node when nothing is named
     #[command(override_usage = "rant log [group | [node] node...]")]
     Log(log::Args),
+    /// list nodes, entities, types, packages, libraries, groups, sources or services, every entity on the mesh when no kind is named
+    #[command(override_usage = "rant ls [kind] [pattern]", after_help = kinds::help())]
+    Ls(ls::Args),
+    /// explain a node, running or not, an entity, a type, a package or a group
+    #[command(override_usage = "rant info [kind] <name>")]
+    Info(info::Args),
+    /// show the newest value of a topic or variable until Ctrl-C
+    #[command(override_usage = "rant sub <topic|variable>")]
+    Sub(sub::Args),
+    /// publish to a topic or write a variable, once or at a rate
+    #[command(override_usage = "rant pub <topic|variable> <value>")]
+    Pub(publish::Args),
+    /// call a function and print the reply, or run a task
+    #[command(override_usage = "rant call <function|task> [value]")]
+    Call(call::Args),
+    /// open the explorer, which `rant install explorer` installs
+    #[command(override_usage = "rant explore", alias = "explorer")]
+    Explore(explore::Args),
 }
 
 /// The headings of the main help, and the commands under each.
-const SECTIONS: &[(&str, &[&str])] = &[("In a workspace", &["init", "new", "build", "run", "stop", "restart", "log"]), ("On the mesh, anywhere", &[]), ("Setting up", &[])];
+const SECTIONS: &[(&str, &[&str])] = &[("In a workspace", &["init", "new", "build", "run", "stop", "restart", "log"]), ("On the mesh, anywhere", &["ls", "info", "sub", "pub", "call"]), ("Setting up", &["explore"])];
 
-const COMMAND_HELP: &str = "{usage-heading} {usage}\n\n{about}\n\n{all-args}";
+const COMMAND_HELP: &str = "{usage-heading} {usage}\n\n{about}\n\n{all-args}{after-help}";
 const MAIN_HELP: &str = "rant: build, run and inspect Rant nodes\n\n{usage-heading} {usage}\n{before-help}Options:\n{options}\n\n\
                          Run `rant <command> --help` for the details of one command.";
 

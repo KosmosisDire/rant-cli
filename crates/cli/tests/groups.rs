@@ -25,7 +25,7 @@ fn groups() {
     let r = t.rant(&["run", "nav", "colour=red"]).fails();
     expect_match(&r.err, "group `nav` has no param `colour`");
     let r = t.rant(&["run", "nowhere"]).fails();
-    expect_match(&r.err, "no group named `nowhere`, see `rant ls groups`");
+    expect_match(&r.err, "no group or node named `nowhere`, see `rant ls groups`");
 
     // Two groups share lidar and odom. A group named against the convention is noted.
     let r = t.rant(&["run", "nav"]).ok();
@@ -152,9 +152,8 @@ fn groups() {
     let r = t.rant(&["stop", "cell"]).ok();
     expect_match(&r.out, "left/lidar +stopped");
 
-    // A name runs wherever rant started it on this machine. A group another workspace runs is
-    // restarted, read and stopped from here, the runs of one group in a workspace restart and stop
-    // together, and a name two workspaces run needs a pick, so without a terminal it fails.
+    // A group another workspace runs is restarted, read and stopped from here, its runs together.
+    // A name two workspaces run needs a pick, so without a terminal it fails.
     write(&format!("{}/Plan.run", t.other), "node \"demo/planner\" {}\n");
     t.rant(&["run", "Plan"]).cwd(&t.other).ok();
     let r = t.rant(&["restart", "plan"]).ok();

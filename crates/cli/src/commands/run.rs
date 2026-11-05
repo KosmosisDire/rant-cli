@@ -431,10 +431,10 @@ impl PlanView {
             node: i.type_ref(),
             argv: i.argv.clone(),
             env: i.env.clone(),
-            cwd: i.cwd.to_string_lossy().into_owned(),
+            cwd: rant_config::paths::slash(&i.cwd),
             restart: i.restart,
         };
-        PlanView { workspace: ws.model.settings.root.to_string_lossy().into_owned(), nodes: plan.instances.iter().map(node).collect() }
+        PlanView { workspace: rant_config::paths::slash(&ws.model.settings.root), nodes: plan.instances.iter().map(node).collect() }
     }
 }
 

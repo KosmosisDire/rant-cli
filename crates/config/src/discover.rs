@@ -37,11 +37,12 @@ pub struct Folders {
     pub venvs: Vec<PathBuf>,
 }
 
-/// Every folder under start, start included, past what no walk enters and the `ignore`
-/// globs. Gitignored folders count, as venvs usually are.
-pub fn folders(start: &Path, settings: &Settings) -> Folders {
-    let ignore = filter::glob_set(&settings.ignore, &settings.root.join(WORKSPACE_FILE)).unwrap_or_else(|_| GlobSet::empty());
-    let root = settings.root.clone();
+/// Every folder under start, start included, past what no walk enters and the `ignore` globs
+/// of the workspace around it. Gitignored folders count, as venvs usually are.
+pub fn folders(start: &Path) -> Folders {
+    let settings = Settings::open(start).ok().flatten();
+    let ignore = settings.as_ref().and_then(|s| filter::glob_set(&s.ignore, &s.root.join(WORKSPACE_FILE)).ok()).unwrap_or_else(GlobSet::empty);
+    let root = settings.map_or_else(|| start.to_path_buf(), |s| s.root);
     let top = start.to_path_buf();
     let walker = ignore::WalkBuilder::new(start)
         .standard_filters(false)
@@ -140,8 +141,7 @@ mod tests {
         t.mkdir("old/stuff");
         t.mkdir("node_modules/x");
         t.write("app/build/CMakeCache.txt", "");
-        let settings = Settings::open(t.root()).unwrap().unwrap();
-        let f = folders(t.root(), &settings);
+        let f = folders(t.root());
         let rel = |v: &[PathBuf]| v.iter().map(|p| paths::relative(p, t.root())).collect::<Vec<_>>();
         let mut dirs = rel(&f.dirs);
         dirs.sort();

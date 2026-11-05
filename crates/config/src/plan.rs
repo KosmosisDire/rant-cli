@@ -54,11 +54,7 @@ impl Restart {
 impl Instance {
     /// The node type as a reference another tool can resolve again.
     pub fn type_ref(&self) -> String {
-        if self.node.package.is_empty() {
-            self.node.path.as_deref().map(paths::slash).unwrap_or_else(|| self.node.name.clone())
-        } else {
-            format!("{}/{}", self.node.package, self.node.name)
-        }
+        self.node.type_ref()
     }
 }
 

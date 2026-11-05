@@ -28,6 +28,7 @@ clap = { version = "4.6.7", features = ["derive"] }
 rant-config = { path = "../config" }
 rant-process = { path = "../process" }
 rant-middleware = { git = "https://github.com/KosmosisDire/Rant.git", tag = "crate-v0.0.41" }
+regex.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 
@@ -48,6 +49,3 @@ windows-sys = { workspace = true, features = [
 
 [target.'cfg(unix)'.dependencies]
 libc.workspace = true
-
-[dev-dependencies]
-regex.workspace = true

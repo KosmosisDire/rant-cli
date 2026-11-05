@@ -49,14 +49,14 @@ fn restart() {
     let demo = read(&package);
     write(&package, &format!("{demo}build = \"cmake -E echo rebuilt-demo\"\n"));
     let r = t.rant(&["restart", "sensor"]).ok();
-    expect_match(&r.out, r"building demo\nrebuilt-demo\n");
+    expect_match(&r.err, r"building demo\nrebuilt-demo\n");
     expect_match(&r.out, "sensor +restarted +pid [0-9]+");
     write(&package, &format!("{demo}build = \"cmake -E false\"\n"));
     let r = t.rant(&["restart", "sensor"]).fails();
     expect_match(&r.err, "building demo failed: .* exited 1, starting the last build");
     expect_match(&r.out, "sensor +restarted +pid [0-9]+");
     let r = t.rant(&["restart", "sensor", "--no-build"]).ok();
-    expect_no_match(&r.out, "building demo");
+    expect_no_match(&r.err, "building demo");
     write(&package, &demo);
 
     // A node that is not running, one that crashed say, is built before it starts too, as run
@@ -65,7 +65,7 @@ fn restart() {
     write(&package, &format!("{demo}build = \"cmake -E echo rebuilt-demo\"\n"));
     let r = t.rant(&["restart", "sensor"]).ok();
     expect_match(&r.err, "`sensor` is not running, starting it");
-    expect_match(&r.out, r"building demo\nrebuilt-demo\n");
+    expect_match(&r.err, r"building demo\nrebuilt-demo\n");
     expect_match(&r.out, "sensor +started +pid [0-9]+");
     write(&package, &demo);
 

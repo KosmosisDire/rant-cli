@@ -24,13 +24,15 @@ fn listing() {
     let r = t.rant(&["ls", "nodes", "--json"]).ok();
     expect_match(&r.out, r#""not_running": \[\n +\{\n +"name": "demo/sensor""#);
 
-    // ls alone lists nothing, it names what it can list.
+    // ls alone lists every entity on the mesh, and its help names every kind.
     let r = t.rant(&["ls"]).ok();
-    expect_match(&r.out, r"^Usage: rant ls <kind> \[pattern\]\n");
+    expect_match(&r.out, r"^ENTITIES\n  [(]none[)]\n$");
+    let r = t.rant(&["ls", "-h"]).ok();
+    expect_match(&r.out, r"^Usage: rant ls \[kind\] \[pattern\]\n");
     expect_match(&r.out, r"\nKinds:\n  nodes +running nodes");
     expect_match(&r.out, r"\n  groups +the groups of this workspace\n");
     let r = t.rant(&["ls", "nope"]).fails();
-    expect_match(&r.err, "`nope` is not a kind ls lists, see `rant ls`");
+    expect_match(&r.err, "`nope` is not a kind ls lists, see `rant ls -h`");
     let r = t.rant(&["ls", "nodes", "a", "b"]).fails();
     expect_match(&r.err, "ls takes a kind and one pattern at most");
 

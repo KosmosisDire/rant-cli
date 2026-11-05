@@ -1,12 +1,25 @@
 //! One short lived observer node per command. It opens with details fetched for every peer,
 //! so a single bounded settle answers who is there and what they offer.
 
+mod encode;
+mod schema_text;
+mod text;
+mod values;
+
+pub use encode::encode;
+pub use schema_text::{schema_text, standard_types, types_in_use};
+pub use text::{Assignments, parse_words};
+pub use values::to_json;
+
 use std::collections::{BTreeMap, BTreeSet};
+use std::future::Future;
+use std::pin::Pin;
+use std::task::{Context as Poller, Poll, Waker};
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use rant::{Entity, EntityKind, MetaSections, Node, NodeOptions};
+use rant::{Bytes, Entity, EntityKind, MetaSections, Node, NodeOptions, SendError, VariableOptions};
 use serde::{Deserialize, Serialize};
 
 use crate::failure::{Result, failed};
@@ -103,20 +116,91 @@ impl Client {
         out
     }
 
+    pub fn node(&self) -> &Node {
+        &self.node
+    }
+
     /// The mesh folded, builtins hidden, by name.
     pub fn entities(&self) -> Vec<Entity> {
         public(self.node.reflection().mesh())
     }
 
-    /// Each peer's process id from its @rant/meta answer. A peer that does not answer within
-    /// limit is left out.
+    pub fn entities_of(&self, peer: u32) -> Vec<Entity> {
+        public(self.node.reflection().entities(peer))
+    }
+
+    /// The node that answers for an entity: a variable's owner, a function's or task's provider.
+    pub fn provider_of(&self, e: &Entity) -> String {
+        let peers = self.node.reflection().peers();
+        peers.into_iter().find(|p| p.active && p.id == e.provider).map_or_else(|| e.from.clone(), |p| p.name)
+    }
+
+    /// The entity of one of kinds by that name. A failure names what is there instead, such
+    /// as a topic where a variable was asked for.
+    pub fn require_entity(&self, kinds: &[EntityKind], name: &str) -> Result<Entity> {
+        let mut other = None;
+        for e in self.entities().into_iter().filter(|e| e.name == name) {
+            if kinds.contains(&e.kind) {
+                return Ok(e);
+            }
+            other = Some(kind_name(e.kind));
+        }
+        let wanted = kinds.iter().map(|&k| kind_name(k)).collect::<Vec<_>>().join(" or ");
+        Err(match other {
+            Some(o) => failed(format!("`{name}` is a {o}, not a {wanted}")),
+            None => failed(format!("no {wanted} named `{name}` is on the mesh, see `rant ls entities`")),
+        })
+    }
+
+    /// A variable's current value, None when no owner answered within limit.
+    pub fn read_variable(&self, name: &str, limit: Duration) -> Option<serde_json::Value> {
+        let var = self.node.remote_variable::<Bytes>(name, VariableOptions::new().reflect_from_mesh(true)).ok()?;
+        if !var.wait(limit) {
+            return None;
+        }
+        Some(to_json(&var.get().ok()??, var.schema().as_ref()))
+    }
+
+    /// Each peer's process id from its @rant/meta answer, those that answer within limit. Each is
+    /// its own async call, since blocking calls made at once on the meta handle come back crossed.
     pub fn pids(&self, peers: &[u32], limit: Duration) -> BTreeMap<u32, u64> {
         let r = self.node.reflection();
-        std::thread::scope(|s| {
-            let r = &r;
-            let asked: Vec<_> = peers.iter().map(|&p| (p, s.spawn(move || r.meta(p, MetaSections::PROC, limit)))).collect();
-            asked.into_iter().filter_map(|(p, h)| Some((p, h.join().ok()?.ok()?.process?.pid))).collect()
-        })
+        let mut asked: Vec<(u32, Pin<Box<dyn Future<Output = _> + Send>>)> = Vec::new();
+        for &p in peers {
+            if let Ok(f) = r.meta_async(p, MetaSections::PROC) {
+                asked.push((p, Box::pin(f)));
+            }
+        }
+        let mut poller = Poller::from_waker(Waker::noop());
+        let deadline = Instant::now() + limit;
+        let mut out = BTreeMap::new();
+        while !asked.is_empty() && Instant::now() < deadline {
+            asked.retain_mut(|(p, f)| match f.as_mut().poll(&mut poller) {
+                Poll::Ready(m) => {
+                    if let Some(pid) = m.ok().and_then(|m| m.process).map(|proc| proc.pid) {
+                        out.insert(*p, pid);
+                    }
+                    false
+                }
+                Poll::Pending => true,
+            });
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        out
+    }
+}
+
+/// Why a send, set or call did not go out, in a reader's words.
+pub fn send_failure(e: SendError) -> &'static str {
+    match e {
+        SendError::NoTopic => "nobody on the other side answered in time",
+        SendError::TooBig => "the value is too big",
+        SendError::BadRole => "the other side does not take writes",
+        SendError::OutOfMemory => "out of memory",
+        SendError::State => "refused right now",
+        SendError::NoSys => "switched off on this node",
+        SendError::Schema => "the value does not fit the type",
+        _ => "failed",
     }
 }
 
@@ -156,6 +240,13 @@ impl Snapshot {
         let named = mesh.entities().into_iter().filter(|e| !is_placeholder(&e.name));
         self.entities.extend(named.map(|e| (e.name, kind_name(e.kind).to_string())));
     }
+}
+
+/// A node that only compiles schemas for the tests, never sends.
+#[cfg(test)]
+pub fn test_node() -> &'static Node {
+    static NODE: std::sync::OnceLock<Node> = std::sync::OnceLock::new();
+    NODE.get_or_init(|| Node::new("values-test", NodeOptions::new().domain(233).multicast_interface("127.0.0.1").disable_logs(true)).expect("a test node opens"))
 }
 
 #[cfg(test)]

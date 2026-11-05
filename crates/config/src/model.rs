@@ -52,6 +52,14 @@ impl NodeType {
     pub fn reference(&self) -> String {
         if self.package.is_empty() { self.name.clone() } else { format!("{}/{}", self.package, self.name) }
     }
+
+    /// A reference another tool can resolve again: one outside every package by its file.
+    pub fn type_ref(&self) -> String {
+        match &self.path {
+            Some(p) if self.package.is_empty() => slash(p),
+            _ => self.reference(),
+        }
+    }
 }
 
 impl Package {

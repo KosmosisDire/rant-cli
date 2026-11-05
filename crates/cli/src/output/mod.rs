@@ -7,7 +7,8 @@ mod table;
 mod yaml;
 
 pub use live::LiveView;
-pub use table::Table;
+pub use table::{Table, columns};
+pub use yaml::Yaml;
 
 use std::cell::Cell;
 use std::io::{IsTerminal, Write};
@@ -72,9 +73,25 @@ pub trait Data: Serialize {
 pub struct Text<'a> {
     color: bool,
     from: Option<&'a Path>,
+    /// The terminal's columns, 0 when the text goes elsewhere.
+    width: usize,
 }
 
 impl Text<'_> {
+    /// Text with no color and paths whole.
+    pub fn plain() -> Text<'static> {
+        Text { color: false, from: None, width: 0 }
+    }
+
+    /// The columns a long list may spread across, 0 for one item a line.
+    pub fn width(&self) -> usize {
+        self.width
+    }
+
+    pub fn colored(&self) -> bool {
+        self.color
+    }
+
     pub fn paint(&self, s: Style, text: &str) -> String {
         paint(self.color, s, text)
     }
@@ -95,6 +112,7 @@ pub struct Output {
     lines: bool,
     color_out: bool,
     color_err: bool,
+    vt_out: bool,
     vt_err: bool,
     /// A CSV stream printed its header.
     csv_header: Cell<bool>,
@@ -102,8 +120,9 @@ pub struct Output {
 
 impl Output {
     pub fn new(format: Format, lines: bool) -> Output {
-        let vt_err = escapes_on(Stream::Err);
-        Output { format, lines, color_out: escapes_on(Stream::Out) && color_wanted(), color_err: vt_err && color_wanted(), vt_err, csv_header: Cell::new(false) }
+        let (vt_out, vt_err) = (escapes_on(Stream::Out), escapes_on(Stream::Err));
+        let color = color_wanted();
+        Output { format, lines, color_out: vt_out && color, color_err: vt_err && color, vt_out, vt_err, csv_header: Cell::new(false) }
     }
 
     pub fn format(&self) -> Format {
@@ -121,11 +140,11 @@ impl Output {
 
     /// Text for stderr, where progress draws.
     pub fn text_err<'a>(&self, from: Option<&'a Path>) -> Text<'a> {
-        Text { color: self.color_err, from }
+        Text { color: self.color_err, from, width: if self.vt_err { live::terminal_size(true).1 } else { 0 } }
     }
 
     pub fn text_out<'a>(&self, from: Option<&'a Path>) -> Text<'a> {
-        Text { color: self.color_out, from }
+        Text { color: self.color_out, from, width: if self.vt_out { live::terminal_size(false).1 } else { 0 } }
     }
 
     pub fn paint_err(&self, s: Style, text: &str) -> String {
@@ -139,6 +158,11 @@ impl Output {
     /// Whether stderr is a terminal a question may redraw on.
     pub fn terminal_err(&self) -> bool {
         self.vt_err
+    }
+
+    /// Whether a stream of values redraws in place on stdout: a terminal, without --lines.
+    pub fn live_out(&self) -> bool {
+        self.vt_out && !self.lines
     }
 
     /// One record of a stream on its own line: compact JSON, a CSV row after a header the
@@ -156,6 +180,16 @@ impl Output {
         self.line(&line);
     }
 
+    /// A whole value as a person reads it redrawn in place: a YAML block, indented JSON, or a
+    /// CSV header and row.
+    pub fn block(&self, v: &Value, yaml: &mut Yaml) -> String {
+        match self.format {
+            Format::Json => serde_json::to_string_pretty(v).unwrap_or_default(),
+            Format::Csv => csv::table(v),
+            Format::Text => yaml.block(v),
+        }
+    }
+
     /// One line of a stream on stdout, at once.
     pub fn line(&self, text: &str) {
         let mut out = std::io::stdout().lock();
@@ -168,7 +202,7 @@ impl Output {
         let text = match self.format {
             Format::Json => serde_json::to_string_pretty(data).unwrap_or_default(),
             Format::Csv => csv::table(&serde_json::to_value(data).unwrap_or(Value::Null)),
-            Format::Text => data.text(&Text { color: self.color_out, from }),
+            Format::Text => data.text(&self.text_out(from)),
         };
         if !text.is_empty() {
             let _ = writeln!(std::io::stdout(), "{text}");

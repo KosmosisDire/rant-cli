@@ -2,7 +2,6 @@
 //! interleave, each line led by its node's name.
 
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use rant_config::refs::same_name;
@@ -11,6 +10,7 @@ use serde::Serialize;
 use crate::commands::run::{group_name, in_each, names_group, snapshot, where_running};
 use crate::context::Context;
 use crate::failure::{Failure, Result, failed, usage};
+use crate::interrupt;
 use crate::logs::{Follower, logged_nodes, tail};
 use crate::output::Style;
 use crate::state::RootKind;
@@ -88,8 +88,8 @@ pub fn run(ctx: &mut Context, args: &Args) -> Result<()> {
     if !args.follow {
         return Ok(());
     }
-    catch_interrupt();
-    while !INTERRUPTED.load(Ordering::Relaxed) {
+    interrupt::catch();
+    while !interrupt::interrupted() {
         for ((name, _), f) in logs.iter().zip(&mut followers) {
             f.poll().iter().for_each(|l| print(name, l));
         }
@@ -133,33 +133,4 @@ fn nodes_of(ctx: &mut Context, name: &str, node: bool) -> Result<Vec<String>> {
         out = ctx.require_scope()?.plan_group(name, &[])?.plan.instances.into_iter().map(|i| i.name).collect();
     }
     Ok(out)
-}
-
-static INTERRUPTED: AtomicBool = AtomicBool::new(false);
-
-/// Catches Ctrl-C from here on, so following ends cleanly.
-#[cfg(windows)]
-fn catch_interrupt() {
-    use windows_sys::Win32::System::Console::{CTRL_BREAK_EVENT, CTRL_C_EVENT, SetConsoleCtrlHandler};
-    unsafe extern "system" fn on_ctrl(kind: u32) -> i32 {
-        let ours = kind == CTRL_C_EVENT || kind == CTRL_BREAK_EVENT;
-        if ours {
-            INTERRUPTED.store(true, Ordering::Relaxed);
-        }
-        ours as i32
-    }
-    // SAFETY: the handler only sets an atomic.
-    unsafe { SetConsoleCtrlHandler(Some(on_ctrl), 1) };
-}
-
-#[cfg(unix)]
-fn catch_interrupt() {
-    extern "C" fn on_signal(_: libc::c_int) {
-        INTERRUPTED.store(true, Ordering::Relaxed);
-    }
-    // SAFETY: the handler only sets an atomic, which is async signal safe.
-    unsafe {
-        libc::signal(libc::SIGINT, on_signal as *const () as libc::sighandler_t);
-        libc::signal(libc::SIGTERM, on_signal as *const () as libc::sighandler_t);
-    }
 }
