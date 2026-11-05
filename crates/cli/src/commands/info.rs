@@ -189,12 +189,15 @@ fn package_answer(ctx: &mut Context, ws: &Workspace, st: &State, p: &Package) ->
     let uses = library::in_folder(&p.dir, &library::known(&home), false);
     let libraries: Vec<String> = uses.iter().map(|u| format!("{} {} through {} in {}", u.library, u.version.as_deref().unwrap_or("none"), u.how, ctx.shown(&u.file))).collect();
     a.set("libraries", json!(libraries));
-    let b = ws.build_plan(std::slice::from_ref(&p.name))?;
-    let depends: Vec<String> = b.edges.iter().filter(|e| e.from == p.name).map(|e| format!("{} ({})", e.to, e.source)).collect();
-    let mut build: Vec<String> = Vec::new();
-    for step in b.steps.iter().filter(|s| s.package == p.name) {
-        build.extend(step.configure.iter().map(|c| format!("{} (asks first)", rant_process::shown(c))));
-        build.extend(step.commands.iter().map(|c| rant_process::shown(c)));
+    let (mut depends, mut build): (Vec<String>, Vec<String>) = (Vec::new(), Vec::new());
+    // an installed package came built
+    if !p.installed {
+        let b = ws.build_plan(std::slice::from_ref(&p.name))?;
+        depends.extend(b.edges.iter().filter(|e| e.from == p.name).map(|e| format!("{} ({})", e.to, e.source)));
+        for step in b.steps.iter().filter(|s| s.package == p.name) {
+            build.extend(step.configure.iter().map(|c| format!("{} (asks first)", rant_process::shown(c))));
+            build.extend(step.commands.iter().map(|c| rant_process::shown(c)));
+        }
     }
     a.set("depends", json!(depends));
     a.set("build", json!(build));
