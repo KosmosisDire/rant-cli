@@ -24,7 +24,11 @@ test = false
 doc = false
 
 [dependencies]
+clap = { version = "4.6.7", features = ["derive"] }
+rant-config = { path = "../config" }
 rant-middleware = { git = "https://github.com/KosmosisDire/Rant.git", tag = "crate-v0.0.41" }
+serde.workspace = true
+serde_json.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = [
@@ -40,4 +44,3 @@ libc = "0.2"
 
 [dev-dependencies]
 regex.workspace = true
-serde_json.workspace = true
