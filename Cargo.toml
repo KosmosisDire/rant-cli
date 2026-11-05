@@ -10,8 +10,7 @@ publish = false
 
 [workspace.dependencies]
 libc = "0.2"
-# Rant beside this checkout by path until its next release, then an exact crate-v tag
-rant-middleware = { path = "../rant/bindings/rust/rant" }
+rant-middleware = { git = "https://github.com/KosmosisDire/Rant.git", tag = "crate-v0.0.42" }
 regex = "1.13.1"
 serde = { version = "1.0.229", features = ["derive"] }
 # preserve_order keeps fields in the order a command writes them

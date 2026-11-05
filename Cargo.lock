@@ -670,7 +670,8 @@ dependencies = [
 
 [[package]]
 name = "rant-macros"
-version = "0.0.41"
+version = "0.0.42"
+source = "git+https://github.com/KosmosisDire/Rant.git?tag=crate-v0.0.42#64c21f4e302c9054f72e505472965c9a9000bfb8"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -679,7 +680,8 @@ dependencies = [
 
 [[package]]
 name = "rant-middleware"
-version = "0.0.41"
+version = "0.0.42"
+source = "git+https://github.com/KosmosisDire/Rant.git?tag=crate-v0.0.42#64c21f4e302c9054f72e505472965c9a9000bfb8"
 dependencies = [
  "cc",
  "rant-macros",
@@ -696,7 +698,8 @@ dependencies = [
 
 [[package]]
 name = "rant-types"
-version = "0.0.41"
+version = "0.0.42"
+source = "git+https://github.com/KosmosisDire/Rant.git?tag=crate-v0.0.42#64c21f4e302c9054f72e505472965c9a9000bfb8"
 
 [[package]]
 name = "regex"
