@@ -139,7 +139,7 @@ impl Loc {
     }
 
     pub fn shown(&self) -> String {
-        format!("{}:{}:{}", self.file.display(), self.line, self.column)
+        format!("{}:{}:{}", crate::paths::slash(&self.file), self.line, self.column)
     }
 }
 

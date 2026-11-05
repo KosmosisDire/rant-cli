@@ -21,6 +21,18 @@ pub enum NodeKind {
     Rust,
 }
 
+impl NodeKind {
+    pub fn name(self) -> &'static str {
+        match self {
+            NodeKind::Native => "native",
+            NodeKind::Python => "python",
+            NodeKind::CSharp => "csharp",
+            NodeKind::Declared => "declared",
+            NodeKind::Rust => "rust",
+        }
+    }
+}
+
 /// A file the scan accepted as a node.
 #[derive(Debug, Clone)]
 pub(crate) struct Found {

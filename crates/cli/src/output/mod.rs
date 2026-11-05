@@ -2,7 +2,10 @@
 //! warnings and errors on stderr. Color only on a terminal, and never with NO_COLOR set.
 
 mod csv;
+mod table;
 mod yaml;
+
+pub use table::Table;
 
 use std::io::{IsTerminal, Write};
 use std::path::Path;
@@ -16,6 +19,7 @@ use serde_json::Value;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Style {
     Plain,
+    Bold,
     Dim,
     Faint,
     GreenHi,
@@ -27,6 +31,7 @@ impl Style {
     fn code(self) -> &'static str {
         match self {
             Style::Plain => "",
+            Style::Bold => "1",
             Style::Dim => "38;2;154;154;154",
             Style::Faint => "38;2;100;100;100",
             Style::GreenHi => "38;2;92;166;125",
@@ -63,6 +68,10 @@ pub struct Text<'a> {
 }
 
 impl Text<'_> {
+    pub fn paint(&self, s: Style, text: &str) -> String {
+        paint(self.color, s, text)
+    }
+
     /// Relative to where rant runs, or whole when that is shorter.
     pub fn path(&self, p: &Path) -> String {
         shown(p, self.from)
@@ -102,6 +111,15 @@ impl Output {
 
     pub fn warn(&self, text: &str) {
         self.say(&format!("{} {text}", paint(self.color_err, Style::Amber, "warning:")));
+    }
+
+    pub fn note(&self, text: &str) {
+        self.say(text);
+    }
+
+    /// What rant is doing now, such as which package it builds.
+    pub fn progress(&self, text: &str) {
+        self.say(&paint(self.color_err, Style::Bold, text));
     }
 
     /// A line on stderr. A pipe closed under rant is no reason to fail, so errors are dropped.

@@ -12,9 +12,11 @@ fn build() {
     expect_match(&r.out, r"BUILD ORDER\n  1. sdk\n +cmake -E echo building-sdk\n +cmake -E touch sdk.built\n  2. driver\n +cmake -S [.] -B build +[(]asks first[)]\n +cmake --build build\n  3. app\n");
 
     // Building app builds what it needs first, in the order the dry run showed. The configure
-    // question is answered yes, since stdin is not a terminal.
+    // question is answered yes, since stdin is not a terminal. What the tools print is
+    // progress on stderr, and stdout holds only the result.
     let r = t.rant(&["build", "app"]).ok();
-    expect_match(&r.out, r"building sdk\n.*building-sdk\n.*building driver\n.*building-driver.*building app\n.*building-app\n.*built 3 packages");
+    expect_match(&r.err, r"building sdk\n.*building-sdk\n.*building driver\n.*building-driver.*building app\n.*building-app\n");
+    expect_match(&r.out, r"^built 3 packages\n$");
     expect_match(&r.err, "driver is not configured yet. Configure it");
     let cache = t.path("driver/build/CMakeCache.txt");
     assert!(exists(&t.path("sdk/sdk.built")) && exists(&cache), "the builds did not run in their package directories");
@@ -46,7 +48,7 @@ fn build() {
     write(&t.path("broken/package.rant"), "build  = [\"cmake -E false\", \"cmake -E echo never\"]\ndepend = [\"sdk\"]\n");
     let r = t.rant(&["build", "broken"]).fails();
     expect_match(&r.err, "building broken failed: `cmake -E false` exited 1");
-    expect_no_match(&r.out, "never");
+    expect_no_match(&r.err, "never");
 
     // On Windows a batch file runs through cmd.exe, which must take every argument as data:
     // no %VAR% expansion and no & to start a second command.

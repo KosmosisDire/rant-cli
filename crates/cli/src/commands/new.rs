@@ -5,13 +5,13 @@ use std::path::PathBuf;
 
 use rant_config::paths;
 use rant_config::python::Folder;
+use rant_process::{Command, find_program, output};
 
 use super::{Added, Made};
 use crate::cmake;
 use crate::context::Context;
 use crate::failure::{Result, failed, usage};
 use crate::names::pascal;
-use crate::process::{find_program, output};
 use crate::scaffold::{self, Values};
 
 #[derive(clap::Args, Debug)]
@@ -164,7 +164,7 @@ fn require_tools(ctx: &mut Context, lang: &str, venv: bool) -> Result<()> {
                 missing.push("Python");
             } else if venv {
                 python.extend(["-c".into(), "import importlib.util as u, sys; sys.exit(u.find_spec('ensurepip') is None)".into()]);
-                if output(&python, &tmp).is_none() {
+                if output(&Command::new(python, &tmp)).is_none() {
                     missing.push("its venv module");
                 }
             }
@@ -181,7 +181,7 @@ fn require_tools(ctx: &mut Context, lang: &str, venv: bool) -> Result<()> {
             ("Rust", "build-essential")
         }
         _ => {
-            if output(&["dotnet".into(), "--list-sdks".into()], &tmp).is_none_or(|sdks| sdks.trim().is_empty()) {
+            if output(&Command::new(["dotnet", "--list-sdks"], &tmp)).is_none_or(|sdks| sdks.trim().is_empty()) {
                 missing.push("the .NET SDK");
             }
             ("C#", "dotnet-sdk-10.0")
@@ -209,7 +209,7 @@ fn spoken(items: &[&str]) -> String {
 /// The newest target framework the installed .NET SDKs build, such as net10.0, from lines
 /// such as `10.0.300 [path]`.
 fn dotnet_framework() -> String {
-    let sdks = output(&["dotnet".into(), "--list-sdks".into()], &std::env::temp_dir()).unwrap_or_default();
+    let sdks = output(&Command::new(["dotnet", "--list-sdks"], std::env::temp_dir())).unwrap_or_default();
     let major = |line: &str| line.split(|c: char| !c.is_ascii_digit()).next().and_then(|n| n.parse::<u32>().ok());
     format!("net{}.0", sdks.lines().filter_map(major).max().unwrap_or(0))
 }

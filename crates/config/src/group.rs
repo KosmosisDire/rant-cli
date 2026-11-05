@@ -62,7 +62,7 @@ pub(crate) fn name_files(files: Vec<PathBuf>, packages: &[Package], diags: &mut 
             None => stem,
         };
         if let Some(other) = out.iter().find(|g| g.name == name) {
-            diags.push(Diag::file(&path, format!("group `{name}` is also defined in {}", other.path.display())));
+            diags.push(Diag::file(&path, format!("group `{name}` is also defined in {}", paths::slash(&other.path))));
             continue;
         }
         out.push(GroupFile { name, package, path });

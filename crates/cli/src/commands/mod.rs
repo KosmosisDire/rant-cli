@@ -1,5 +1,6 @@
 //! Every command, a file each. A command returns its data and the output layer prints it.
 
+pub mod build;
 pub mod init;
 pub mod new;
 
@@ -16,6 +17,7 @@ pub fn run(ctx: &mut Context, command: Command) -> Result<()> {
     match command {
         Command::Init(a) => init::run(ctx, &a).map(|d| ctx.show(&d)),
         Command::New(a) => new::run(ctx, &a).map(|d| ctx.show(&d)),
+        Command::Build(a) => build::run(ctx, &a).map(|d| ctx.show(&d)),
     }
 }
 

@@ -8,7 +8,7 @@ mod failure;
 mod home;
 mod names;
 mod output;
-mod process;
+mod prompt;
 mod scaffold;
 
 use std::io::Write;
@@ -17,6 +17,9 @@ use context::Context;
 use output::Output;
 
 fn main() {
+    if let Some(code) = rant_process::helper(std::env::args_os()) {
+        std::process::exit(code);
+    }
     // SAFETY: no other thread runs yet. A launcher's node name here was meant for a node,
     // never for rant's own, and nodes rant starts get theirs set.
     unsafe { std::env::remove_var("RANT_NODE_NAME") };
@@ -39,7 +42,7 @@ fn run() -> i32 {
         let _ = writeln!(std::io::stdout(), "{}", cli::command().render_help().to_string().trim_end());
         return 0;
     };
-    let mut ctx = Context::new(Output::new(cli.global.format()));
+    let mut ctx = Context::new(Output::new(cli.global.format()), cli.global.yes);
     match commands::run(&mut ctx, command) {
         Ok(()) => 0,
         Err(f) => {

@@ -47,6 +47,13 @@ pub struct Package {
     pub installed: bool,
 }
 
+impl NodeType {
+    /// package/name, or the name alone outside every package.
+    pub fn reference(&self) -> String {
+        if self.package.is_empty() { self.name.clone() } else { format!("{}/{}", self.package, self.name) }
+    }
+}
+
 impl Package {
     /// What its package.rant says it is for.
     pub fn description(&self) -> Option<&str> {
@@ -218,7 +225,7 @@ fn name_packages(candidates: Vec<Candidate>, diags: &mut Vec<Diag>) -> Vec<Packa
             let file = c.block.as_ref().map(|b| b.file.clone()).or_else(|| c.manifests.first().map(|m| m.path.clone()));
             diags.push(Diag::file(
                 &file.unwrap_or_else(|| c.dir.join(PACKAGE_FILE)),
-                format!("package name `{name}` is also used by {}, set `name` in package.rant to tell them apart", other.dir.display()),
+                format!("package name `{name}` is also used by {}, set `name` in package.rant to tell them apart", paths::slash(&other.dir)),
             ));
             continue;
         }

@@ -364,6 +364,7 @@ dependencies = [
  "libc",
  "rant-config",
  "rant-middleware",
+ "rant-process",
  "regex",
  "serde",
  "serde_json",
@@ -404,6 +405,14 @@ dependencies = [
  "cc",
  "rant-macros",
  "rant-types",
+]
+
+[[package]]
+name = "rant-process"
+version = "0.0.36"
+dependencies = [
+ "libc",
+ "windows-sys",
 ]
 
 [[package]]

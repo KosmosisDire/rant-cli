@@ -1,6 +1,8 @@
 use std::fmt;
 use std::path::{Path, PathBuf};
 
+use crate::paths::slash;
+
 /// One located error. Line and column are one based, 0 means the whole file.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Diag {
@@ -35,9 +37,9 @@ impl fmt::Display for Diag {
         if !self.has_place() {
             write!(f, "{}", self.message)
         } else if self.line == 0 {
-            write!(f, "{}: {}", self.file.display(), self.message)
+            write!(f, "{}: {}", slash(&self.file), self.message)
         } else {
-            write!(f, "{}:{}:{}: {}", self.file.display(), self.line, self.column, self.message)
+            write!(f, "{}:{}:{}: {}", slash(&self.file), self.line, self.column, self.message)
         }
     }
 }

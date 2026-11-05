@@ -4,7 +4,7 @@ use std::ffi::OsString;
 
 use clap::{Arg, ArgAction, Args, CommandFactory, FromArgMatches, Parser, Subcommand};
 
-use crate::commands::{init, new};
+use crate::commands::{build, init, new};
 use crate::output::Format;
 
 #[derive(Parser, Debug)]
@@ -20,7 +20,7 @@ pub struct Cli {
 pub struct Global {
     /// answer yes to every question
     #[arg(short, long, global = true)]
-    yes: bool,
+    pub yes: bool,
     /// print JSON instead of text
     #[arg(long, global = true)]
     json: bool,
@@ -56,10 +56,13 @@ pub enum Command {
     /// make a workspace or package here or in a folder, or a node or group here
     #[command(override_usage = "rant new workspace|package [folder] | node|group [name]")]
     New(new::Args),
+    /// build packages in dependency order
+    #[command(override_usage = "rant build [package...]")]
+    Build(build::Args),
 }
 
 /// The headings of the main help, and the commands under each.
-const SECTIONS: &[(&str, &[&str])] = &[("In a workspace", &["init", "new"]), ("On the mesh, anywhere", &[]), ("Setting up", &[])];
+const SECTIONS: &[(&str, &[&str])] = &[("In a workspace", &["init", "new", "build"]), ("On the mesh, anywhere", &[]), ("Setting up", &[])];
 
 const COMMAND_HELP: &str = "{usage-heading} {usage}\n\n{about}\n\n{all-args}";
 const MAIN_HELP: &str = "rant: build, run and inspect Rant nodes\n\n{usage-heading} {usage}\n{before-help}Options:\n{options}\n\n\
