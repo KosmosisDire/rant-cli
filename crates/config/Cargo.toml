@@ -1,0 +1,19 @@
+[package]
+name = "rant-config"
+description = "The config files of rant-cli: workspaces, packages, groups, services and the package database"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+globset = "0.4.20"
+goblin = "0.10.7"
+hcl-edit = "0.9.7"
+hcl-rs = "0.19.8"
+ignore = "0.4.33"
+memchr = "2.8.3"
+regex.workspace = true
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json.workspace = true
+toml = "1.1.7"

@@ -1,0 +1,438 @@
+//! Groups: one file each, a set of nodes and included groups that takes params. Starting
+//! one expands it depth first into a flat plan.
+
+use std::cell::RefCell;
+use std::collections::{BTreeMap, HashMap};
+use std::path::{Path, PathBuf};
+use std::rc::Rc;
+
+use hcl::Value;
+use hcl_edit::structure::{Attribute, Block, Structure};
+
+use crate::argv;
+use crate::diag::Diag;
+use crate::eval::{self, Scope};
+use crate::model::{Model, Package};
+use crate::param::{self, Param};
+use crate::paths;
+use crate::placement::{self, Placement};
+use crate::plan::{self, Instance, Plan, Restart};
+use crate::refs;
+use crate::source::{Fields, Loc, Source, one_label};
+
+/// What makes a file a group: `Nav.run` is the group `Nav`.
+pub const SUFFIX: &str = ".run";
+
+pub(crate) fn is_group_file(path: &Path) -> bool {
+    path.file_name().is_some_and(|n| n.to_string_lossy().ends_with(SUFFIX))
+}
+
+/// A group file and the name it goes by: `package/stem` inside a package, else `stem`.
+#[derive(Debug, Clone)]
+pub struct GroupFile {
+    pub name: String,
+    pub package: Option<String>,
+    pub path: PathBuf,
+}
+
+impl GroupFile {
+    /// The name without its package: `drivers/cameras` is `cameras`.
+    pub fn stem(&self) -> &str {
+        match &self.package {
+            Some(p) => self.name.strip_prefix(p.as_str()).and_then(|s| s.strip_prefix('/')).unwrap_or(&self.name),
+            None => &self.name,
+        }
+    }
+}
+
+/// Names group files after their name without SUFFIX and their package. Two files of one
+/// name are an error, and the second is dropped.
+pub(crate) fn name_files(files: Vec<PathBuf>, packages: &[Package], diags: &mut Vec<Diag>) -> Vec<GroupFile> {
+    let mut out: Vec<GroupFile> = Vec::new();
+    for path in files {
+        let file_name = path.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+        let stem = file_name.strip_suffix(SUFFIX).unwrap_or(&file_name).to_string();
+        let package = packages
+            .iter()
+            .filter(|p| paths::within(&path, &p.dir))
+            .max_by_key(|p| p.dir.components().count())
+            .map(|p| p.name.clone());
+        let name = match &package {
+            Some(p) => format!("{p}/{stem}"),
+            None => stem,
+        };
+        if let Some(other) = out.iter().find(|g| g.name == name) {
+            diags.push(Diag::file(&path, format!("group `{name}` is also defined in {}", other.path.display())));
+            continue;
+        }
+        out.push(GroupFile { name, package, path });
+    }
+    out.sort_by(|a, b| a.name.cmp(&b.name));
+    out
+}
+
+enum Expose {
+    None,
+    All,
+    Only(Vec<String>),
+}
+
+struct Include {
+    group: String,
+    expose: Expose,
+    bindings: Vec<Attribute>,
+    /// domain, prefix and node_prefix for everything the included group runs
+    placement: Vec<Attribute>,
+    restart: Option<Attribute>,
+    at: Loc,
+}
+
+enum Item {
+    Include(Include),
+    Node(Block),
+}
+
+/// The keys a group file, an include and a node block share: where its nodes land and
+/// whether they start again.
+fn shared_keys() -> Vec<&'static str> {
+    [&placement::KEYS[..], &[Restart::KEY][..]].concat()
+}
+
+/// A `restart` value, checked.
+fn read_restart(src: &Source, a: &Attribute, scope: &Scope) -> Result<Restart, Diag> {
+    Restart::parse(&eval::string(src, a, scope)?)
+        .ok_or_else(|| src.diag_at(&a.value, "`restart` is \"never\", \"on-failure\" or \"always\""))
+}
+
+/// A parsed group file. Expressions stay unevaluated until the group is expanded.
+pub(crate) struct GroupDef {
+    pub file: GroupFile,
+    pub description: Option<String>,
+    params: Vec<Param>,
+    items: Vec<Item>,
+    src: Source,
+}
+
+impl GroupDef {
+    fn includes(&self) -> impl Iterator<Item = (usize, &Include)> {
+        self.items.iter().filter_map(|i| if let Item::Include(inc) = i { Some(inc) } else { None }).enumerate()
+    }
+}
+
+fn parse(file: GroupFile, root: &Path) -> Result<GroupDef, Diag> {
+    let src = Source::read(&file.path)?;
+    // the whole file is the group, no block around it
+    let keys = [&["description"][..], &shared_keys()[..]].concat();
+    let fields = Fields::of_body(&src, &src.body, "a group file", &keys, &["param", "include", "node"])?;
+    let dir = src.dir().to_path_buf();
+    let empty = BTreeMap::new();
+    let scope = Scope { params: Some(&empty), file_dir: &dir, package_dir: None, workspace: root };
+    let description = fields.attr("description").map(|a| eval::string(&src, a, &scope)).transpose()?;
+
+    let params = param::parse_all(&src, &fields, &scope)?;
+    if let Some(p) = params.iter().find(|p| shared_keys().contains(&p.name.as_str())) {
+        return Err(p.at.diag(format!("a param cannot be named `{}`", p.name)));
+    }
+
+    let mut items = Vec::new();
+    for s in src.body.iter() {
+        let Structure::Block(b) = s else { continue };
+        match b.ident.as_str() {
+            "include" => items.push(Item::Include(parse_include(&src, b, &scope)?)),
+            "node" => {
+                one_label(&src, b)?;
+                Fields::of(&src, b, &[&["name", "args", "env"][..], &shared_keys()[..]].concat(), &[])?;
+                items.push(Item::Node(b.clone()));
+            }
+            _ => {}
+        }
+    }
+    Ok(GroupDef { file, description, params, items, src })
+}
+
+fn parse_include(src: &Source, b: &Block, scope: &Scope) -> Result<Include, Diag> {
+    let group = one_label(src, b)?.to_string();
+    let mut inc = Include { group, expose: Expose::None, bindings: Vec::new(), placement: Vec::new(), restart: None, at: Loc::of(src, b) };
+    for s in b.body.iter() {
+        match s {
+            Structure::Block(inner) => return Err(src.diag_at(inner, "an include holds only param values, `expose`, placement and `restart`")),
+            Structure::Attribute(a) if placement::KEYS.contains(&a.key.as_str()) => inc.placement.push(a.clone()),
+            Structure::Attribute(a) if a.key.as_str() == Restart::KEY => inc.restart = Some(a.clone()),
+            Structure::Attribute(a) if a.key.as_str() == "expose" => {
+                inc.expose = match eval::value(src, a, scope)? {
+                    Value::Bool(true) => Expose::All,
+                    Value::Bool(false) => Expose::None,
+                    Value::Array(_) => Expose::Only(eval::string_list(src, a, scope)?),
+                    v => return Err(src.diag_at(&a.value, format!("`expose` is true, false or a list of names, not {}", eval::type_name(&v)))),
+                }
+            }
+            Structure::Attribute(a) => inc.bindings.push(a.clone()),
+        }
+    }
+    Ok(inc)
+}
+
+/// The groups of one workspace, each parsed on first use.
+pub(crate) struct Groups<'m> {
+    model: &'m Model,
+    parsed: RefCell<HashMap<String, Rc<GroupDef>>>,
+}
+
+impl<'m> Groups<'m> {
+    pub fn new(model: &'m Model) -> Groups<'m> {
+        Groups { model, parsed: RefCell::new(HashMap::new()) }
+    }
+
+    /// A group by reference. A bare name is looked for in `package` first, then among the
+    /// groups outside any package, then in the one package that has it, as a bare node name is.
+    pub fn find(&self, reference: &str, package: Option<&str>) -> Result<&'m GroupFile, String> {
+        let groups = &self.model.groups;
+        // an exact name first, then one that matches without case or underscores
+        let named = |name: &str| groups.iter().find(|g| g.name == name).or_else(|| groups.iter().find(|g| refs::same_name(&g.name, name)));
+        if reference.contains('/') {
+            return named(reference).ok_or_else(|| self.unknown(reference));
+        }
+        if let Some(p) = package {
+            if let Some(g) = named(&format!("{p}/{reference}")) {
+                return Ok(g);
+            }
+        }
+        if let Some(g) = named(reference) {
+            return Ok(g);
+        }
+        let in_packages: Vec<&'m GroupFile> =
+            groups.iter().filter(|g| g.package.is_some() && refs::same_name(g.stem(), reference)).collect();
+        match in_packages.as_slice() {
+            [one] => Ok(one),
+            [] => Err(format!("no group named `{reference}`")),
+            many => Err(format!(
+                "`{reference}` is a group in several packages, name one: {}",
+                many.iter().map(|g| g.name.as_str()).collect::<Vec<_>>().join(", ")
+            )),
+        }
+    }
+
+    /// The shortest name that finds `file` from `package`: its stem where a bare name lands
+    /// on it, else its full name.
+    pub fn short_name(&self, file: &GroupFile, package: Option<&str>) -> String {
+        match self.find(file.stem(), package) {
+            Ok(g) if g.name == file.name => file.stem().to_string(),
+            _ => file.name.clone(),
+        }
+    }
+
+    fn unknown(&self, reference: &str) -> String {
+        let stem = reference.rsplit('/').next().unwrap_or(reference);
+        let near: Vec<&str> = self.model.groups.iter().filter(|g| refs::same_name(g.stem(), stem)).map(|g| g.name.as_str()).collect();
+        if near.is_empty() {
+            format!("no group named `{reference}`")
+        } else {
+            format!("no group named `{reference}` here, did you mean {}?", near.join(" or "))
+        }
+    }
+
+    pub fn load(&self, file: &GroupFile) -> Result<Rc<GroupDef>, Diag> {
+        if let Some(def) = self.parsed.borrow().get(&file.name) {
+            return Ok(def.clone());
+        }
+        let def = Rc::new(parse(file.clone(), &self.model.settings.root)?);
+        self.parsed.borrow_mut().insert(file.name.clone(), def.clone());
+        Ok(def)
+    }
+
+    /// The groups a group includes, by full name in the order it writes them.
+    pub fn includes(&self, def: &GroupDef) -> Result<Vec<String>, Diag> {
+        def.includes().map(|(_, inc)| Ok(self.included(def, inc)?.file.name.clone())).collect()
+    }
+
+    fn included(&self, def: &GroupDef, inc: &Include) -> Result<Rc<GroupDef>, Diag> {
+        let file = self.find(&inc.group, def.file.package.as_deref()).map_err(|e| inc.at.diag(e))?;
+        self.load(file)
+    }
+
+    /// Own params, then the params each exposing include passes up, in include order.
+    pub fn interface(&self, def: &GroupDef) -> Result<Vec<Param>, Diag> {
+        self.interface_in(def, &mut Vec::new())
+    }
+
+    fn interface_in(&self, def: &GroupDef, stack: &mut Vec<String>) -> Result<Vec<Param>, Diag> {
+        if let Some(i) = stack.iter().position(|n| *n == def.file.name) {
+            let cycle = stack[i..].join(" includes ");
+            return Err(Diag::file(&def.file.path, format!("include cycle: {cycle} includes {}", def.file.name)));
+        }
+        stack.push(def.file.name.clone());
+        let mut params = def.params.clone();
+        for (idx, inc) in def.includes() {
+            let child = self.included(def, inc)?;
+            let child_params = self.interface_in(&child, stack)?;
+            for b in &inc.bindings {
+                if !child_params.iter().any(|p| p.name == b.key.as_str()) {
+                    return Err(def.src.diag_at(b, format!("group `{}` has no param `{}`", child.file.name, b.key.as_str())));
+                }
+            }
+            let unbound: Vec<&Param> = child_params.iter().filter(|p| !inc.bindings.iter().any(|b| b.key.as_str() == p.name)).collect();
+            let exposed: Vec<&Param> = match &inc.expose {
+                Expose::None => Vec::new(),
+                Expose::All => unbound,
+                Expose::Only(names) => {
+                    let mut v = Vec::new();
+                    for n in names {
+                        match unbound.iter().find(|p| p.name == *n) {
+                            Some(p) => v.push(*p),
+                            None => return Err(inc.at.diag(format!("`{}` has no unset param `{n}` to expose", inc.group))),
+                        }
+                    }
+                    v
+                }
+            };
+            for p in exposed {
+                if let Some(other) = params.iter().find(|q| q.name == p.name) {
+                    return Err(inc.at.diag(format!("exposed param `{}` collides with the param declared at {}", p.name, other.at.shown())));
+                }
+                let mut p = p.clone();
+                p.from = Some((child.file.name.clone(), idx));
+                params.push(p);
+            }
+        }
+        stack.pop();
+        Ok(params)
+    }
+
+    /// The flat plan for a group started with `given`. Instances come depth first in the
+    /// order the files write them, and one name twice is merged when both are the same.
+    pub fn plan(&self, def: &GroupDef, given: BTreeMap<String, Value>) -> Result<(Plan, BTreeMap<String, Value>), Diag> {
+        let iface = self.interface(def)?;
+        for name in given.keys() {
+            if !iface.iter().any(|p| p.name == *name) {
+                return Err(Diag::plain(format!("group `{}` has no param `{name}`, see `rant run {} --help`", def.file.name, def.file.name)));
+            }
+        }
+        let help = format!(", see `rant run {} --help`", def.file.name);
+        let values = param::bind(&iface, given, &|m| Diag::plain(format!("{m}{help}")), "")?;
+        let mut found = Vec::new();
+        self.expand(def, &iface, &values, &Placement::default(), Restart::Never, &mut found)?;
+
+        let mut plan = Plan::default();
+        let mut origins: Vec<Loc> = Vec::new();
+        for (inst, at) in found {
+            match plan.instances.iter().position(|i| i.name == inst.name) {
+                Some(i) if same(&plan.instances[i], &inst) => {}
+                Some(i) => {
+                    return Err(at.diag(format!(
+                        "node `{}` is also defined at {} with different settings",
+                        inst.name,
+                        origins[i].shown()
+                    )))
+                }
+                None => {
+                    plan.instances.push(inst);
+                    origins.push(at);
+                }
+            }
+        }
+        Ok((plan, values))
+    }
+
+    /// The instances of a group, depth first. chain is the placement of the groups around
+    /// it, and this group's own goes inside it. restart is what the groups around it set.
+    fn expand(
+        &self,
+        def: &GroupDef,
+        iface: &[Param],
+        values: &BTreeMap<String, Value>,
+        chain: &Placement,
+        restart: Restart,
+        out: &mut Vec<(Instance, Loc)>,
+    ) -> Result<(), Diag> {
+        let dir = def.src.dir().to_path_buf();
+        let package_dir = def.file.package.as_deref().and_then(|p| self.model.package(p)).map(|p| p.dir.clone());
+        let scope = Scope { params: Some(values), file_dir: &dir, package_dir: package_dir.as_deref(), workspace: &self.model.settings.root };
+        let top = Fields::of_body(&def.src, &def.src.body, "a group file", &[&["description"][..], &shared_keys()[..]].concat(), &["param", "include", "node"])?;
+        let chain = chain.inner(&Placement::read(&def.src, &top.attrs, &scope)?);
+        let restart = top.attr(Restart::KEY).map(|a| read_restart(&def.src, a, &scope)).transpose()?.unwrap_or(restart);
+        let mut include_idx = 0;
+        for item in &def.items {
+            match item {
+                Item::Include(inc) => {
+                    let idx = include_idx;
+                    include_idx += 1;
+                    let child = self.included(def, inc)?;
+                    let child_iface = self.interface(&child)?;
+                    let mut given = BTreeMap::new();
+                    // a path this file gives counts from its folder
+                    for b in &inc.bindings {
+                        let v = eval::value(&def.src, b, &scope)?;
+                        let v = match child_iface.iter().find(|p| p.name == b.key.as_str()) {
+                            Some(p) => param::placed(p, v, &dir),
+                            None => v,
+                        };
+                        given.insert(b.key.as_str().to_string(), v);
+                    }
+                    for p in iface.iter().filter(|p| p.from.as_ref().is_some_and(|(g, i)| *g == child.file.name && *i == idx)) {
+                        given.insert(p.name.clone(), values[&p.name].clone());
+                    }
+                    let child_values = param::bind(
+                        &child_iface,
+                        given,
+                        &|m| inc.at.diag(format!("including `{}`: {m}", inc.group)),
+                        ", bind it here or expose it",
+                    )?;
+                    let placed: Vec<&Attribute> = inc.placement.iter().collect();
+                    let child_chain = chain.inner(&Placement::read(&def.src, &placed, &scope)?);
+                    let child_restart = inc.restart.as_ref().map(|a| read_restart(&def.src, a, &scope)).transpose()?.unwrap_or(restart);
+                    self.expand(&child, &child_iface, &child_values, &child_chain, child_restart, out)?;
+                }
+                Item::Node(b) => out.push((self.node(def, b, &scope, &chain, restart)?, Loc::of(&def.src, b))),
+            }
+        }
+        Ok(())
+    }
+
+    fn node(&self, def: &GroupDef, b: &Block, scope: &Scope, chain: &Placement, restart: Restart) -> Result<Instance, Diag> {
+        let src = &def.src;
+        let fields = Fields::of(src, b, &[&["name", "args", "env"][..], &shared_keys()[..]].concat(), &[])?;
+        // the label says what runs, `name` what the running node is called, its own name by default
+        let reference = one_label(src, b)?;
+        let node = refs::resolve(self.model, reference, scope.file_dir).map_err(|e| src.diag_at(b, e))?;
+        plan::runnable(&node).map_err(|e| src.diag_at(b, e))?;
+        let name = match fields.attr("name") {
+            Some(a) => eval::string(src, a, scope)?,
+            None => node.name.clone(),
+        };
+        if name.is_empty() {
+            return Err(src.diag_at(b, "a node name cannot be empty"));
+        }
+        let mut argv = node.run.clone();
+        if let Some(a) = fields.attr("args") {
+            match eval::value(src, a, scope)? {
+                Value::String(s) => argv.extend(argv::split(&s).map_err(|e| src.diag_at(&a.value, format!("`args`: {e}")))?),
+                Value::Array(items) => argv.extend(items.iter().map(param::text)),
+                v => return Err(src.diag_at(&a.value, format!("`args` must be a string or a list, found {}", eval::type_name(&v)))),
+            }
+        }
+        let mut env = BTreeMap::new();
+        if let Some(a) = fields.attr("env") {
+            match eval::value(src, a, scope)? {
+                Value::Object(map) => {
+                    for (k, v) in map {
+                        if matches!(v, Value::Array(_) | Value::Object(_)) {
+                            return Err(src.diag_at(&a.value, format!("`env` value `{k}` must be text, a number or a bool")));
+                        }
+                        env.insert(k, param::text(&v));
+                    }
+                }
+                v => return Err(src.diag_at(&a.value, format!("`env` must be an object, found {}", eval::type_name(&v)))),
+            }
+        }
+        // the shell, workspace and package, then the groups, then the node itself
+        let placed = self.model.placement_of(&node).inner(chain).inner(&Placement::read(src, &fields.attrs, scope)?);
+        let name = placed.apply(&name, &mut env).map_err(|e| src.diag_at(b, e))?;
+        let restart = fields.attr(Restart::KEY).map(|a| read_restart(src, a, scope)).transpose()?.unwrap_or(restart);
+        Ok(Instance { name, cwd: node.cwd.clone(), argv, env, node, group: Some(def.file.name.clone()), restart })
+    }
+}
+
+/// The same node as far as running it goes: what it runs, how, where and whether again.
+fn same(a: &Instance, b: &Instance) -> bool {
+    a.argv == b.argv && a.env == b.env && a.cwd == b.cwd && a.type_ref() == b.type_ref() && a.restart == b.restart
+}

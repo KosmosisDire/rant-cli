@@ -1,7 +1,7 @@
 # config/ is the crate of the C++ build, which leaves with it. The C++ tests build Cargo
 # packages under build/.
 [workspace]
-members = ["crates/cli"]
+members = ["crates/cli", "crates/config"]
 exclude = ["config", "build"]
 resolver = "3"
 
@@ -10,3 +10,7 @@ version = "0.0.36"
 edition = "2024"
 rust-version = "1.85"
 publish = false
+
+[workspace.dependencies]
+regex = "1.13.1"
+serde_json = "1.0.151"
