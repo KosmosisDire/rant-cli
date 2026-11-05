@@ -48,13 +48,12 @@ Code and `~/.agents/skills/rant-skill` for the others. `rant update` keeps it cu
 
 ## Build
 
-Needs CMake 3.21, a C++17 compiler, Rust (stable, through rustup) and git.
+Needs Rust (stable, through rustup) and a C compiler, which builds Rant in.
 
 ```
-cmake --preset windows        # or linux, macos
-cmake --build --preset windows
-ctest --preset windows
+cargo build --release
+cargo test
 ```
 
-The binary lands in `bin/`. The `-local` presets build against `../rant` instead of the
-pinned Rant release.
+The binary lands in `target/release/`. It builds against the Rant checked out beside it, in
+`../rant`.

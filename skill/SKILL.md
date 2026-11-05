@@ -82,8 +82,10 @@ databases = ["someone/rant-packages"]
 | VS Code | `rant install vscode` (`--editor cursor` for another editor, `--profile NAME` for a VS Code profile), `rant remove vscode`. Without `--profile` it takes the profile it went into before, else the one a VS Code terminal's folder opens in, else asks when several profiles have their own extensions. In a remote terminal it installs on that remote. Its Mesh view joins the mesh itself, or through the bridge the setting `rant.bridgeUrl` names |
 
 Values on the command line are forgiving JSON: `{x: 1, y: 2}`, `[1, 2]`, or field words
-like `position.x=1`. Add `--json` to any command for output a program can read, `-y` to
-answer its questions.
+like `position.x=1`. Add `--json` or `--csv` to any command for output a program can read,
+`--lines` for a record a line instead of a view that redraws (run, stop and restart print a
+row per node as it changes), `-y` to answer its questions. stdout carries only that data:
+notes, questions, progress and build output go to stderr.
 
 ## Config files
 

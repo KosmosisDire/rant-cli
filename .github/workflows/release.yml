@@ -1,5 +1,5 @@
-# Builds rant on every platform. Run by hand on main it builds main, and when VERSION has no
-# tag yet it also releases it: a GitHub Release with the binaries and the skill attached.
+# Builds rant on every platform. Run by hand on main it builds main, and when the version has
+# no tag yet it also releases it: a GitHub Release with the binaries and the skill attached.
 name: release
 
 on:
@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 jobs:
-  # Whether this run releases: on main, when no tag v<VERSION> exists yet
+  # Whether this run releases: on main, when no tag v<version> exists yet
   plan:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -21,7 +21,7 @@ jobs:
 
       - id: plan
         run: |
-          v="$(tr -d '\r\n' < VERSION)"
+          v="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
           found=0
           git ls-remote --exit-code --tags origin "refs/tags/v$v" > /dev/null || found=$?
           # 2 is no such tag, anything else a lookup that went wrong
@@ -33,50 +33,56 @@ jobs:
 
   build:
     name: build ${{ matrix.name }}
+    needs: plan
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { os: ubuntu-latest,  preset: linux,   name: linux-x64 }
-          - { os: windows-latest, preset: windows, name: win-x64 }
-          - { os: macos-15,       preset: macos,   name: osx-arm64 }
+          # static, so it runs on any Linux whatever its libc
+          - { os: ubuntu-latest,  target: x86_64-unknown-linux-musl, name: linux-x64 }
+          - { os: windows-latest, target: x86_64-pc-windows-msvc,    name: win-x64 }
+          - { os: macos-15,       target: aarch64-apple-darwin,      name: osx-arm64 }
     steps:
       - uses: actions/checkout@v7
 
-      - name: Ninja
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+          components: clippy
+
+      - name: musl
         if: runner.os == 'Linux'
-        run: sudo apt-get install -y ninja-build
+        run: sudo apt-get install -y musl-tools
 
-      - name: Ninja
-        if: runner.os == 'macOS'
-        run: brew install ninja
-
-      - name: Build
-        run: |
-          cmake --preset ${{ matrix.preset }}
-          cmake --build --preset ${{ matrix.preset }}
+      - name: Lint
+        run: cargo clippy --locked --release --target ${{ matrix.target }} --workspace --all-targets -- -D warnings
 
       # The end to end tests need a Rant mesh, which a runner's network may not carry.
       - name: Unit tests
         timeout-minutes: 10
-        run: ctest --preset ${{ matrix.preset }} -R "^(unit|config)[.]"
+        run: |
+          cargo test --locked --release --target ${{ matrix.target }} -p rant-config -p rant-process
+          cargo test --locked --release --target ${{ matrix.target }} -p rant-cli --bin rant
+
+      - name: Build
+        run: cargo build --locked --release --target ${{ matrix.target }} --bin rant
 
       - name: Stage
         shell: bash
         run: |
           mkdir -p out
           ext=""
-          if [ -f bin/rant.exe ]; then ext=".exe"; fi
-          cp "bin/rant$ext" "out/rant-$(cat VERSION)-${{ matrix.name }}$ext"
+          if [ "$RUNNER_OS" = Windows ]; then ext=".exe"; fi
+          cp "target/${{ matrix.target }}/release/rant$ext" "out/rant-${{ needs.plan.outputs.version }}-${{ matrix.name }}$ext"
 
       - uses: actions/upload-artifact@v7
         with:
           name: rant-${{ matrix.name }}
           path: out/*
 
-  # The release makes the tag v<VERSION> on this commit, once every build above passed
+  # The release makes the tag v<version> on this commit, once every build above passed
   release:
     needs: [plan, build]
     if: needs.plan.outputs.release == 'true'

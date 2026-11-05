@@ -1,9 +1,9 @@
-# CMake build trees and the built exes
-/build/
-/bin/
-
 # Cargo output
 /target/
+
+# Folders the CMake build wrote, which may still be on disk
+/build/
+/bin/
 /config/target/
 
 # Local notes for agents
@@ -11,9 +11,9 @@ CLAUDE.md
 AGENTS.md
 
 # What an editor's C# or Rust tooling builds inside a test fixture
-/tests/e2e/fixtures/csharp/**/obj/
-/tests/e2e/fixtures/csharp/**/bin/
-/tests/e2e/fixtures/rust/**/target/
+/crates/cli/tests/fixtures/csharp/**/obj/
+/crates/cli/tests/fixtures/csharp/**/bin/
+/crates/cli/tests/fixtures/rust/**/target/
 
 # Editor and OS files
 .vs/

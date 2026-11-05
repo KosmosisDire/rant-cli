@@ -27,8 +27,7 @@ doc = false
 clap = { version = "4.6.7", features = ["derive"] }
 rant-config = { path = "../config" }
 rant-process = { path = "../process" }
-# Rant beside this checkout until its release after the rewrite, which this pins as a tag again
-rant-middleware = { path = "../../../rant/bindings/rust/rant" }
+rant-middleware.workspace = true
 regex.workspace = true
 serde.workspace = true
 serde_json.workspace = true

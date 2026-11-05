@@ -158,9 +158,9 @@ impl Test {
         format!("{}/{relative}", self.scratch)
     }
 
-    /// Copies tests/e2e/fixtures/<name> into the scratch folder, without the state a run left.
+    /// Copies tests/fixtures/<name> into the scratch folder, without the state a run left.
     pub fn use_fixture(&self, name: &str) {
-        let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/e2e/fixtures").join(name);
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures").join(name);
         copy_dir(&fixture, Path::new(&self.scratch), &|p| p.file_name().is_some_and(|n| n == ".rant"));
     }
 

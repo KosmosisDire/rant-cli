@@ -1,4 +1,5 @@
-//! Compiles every file under templates/ into the binary, as the presets of `rant new`.
+//! Compiles every file under templates/ into the binary, as the presets of `rant new`, and
+//! embeds rant's Windows manifest.
 
 use std::fmt::Write;
 use std::path::{Path, PathBuf};
@@ -17,6 +18,13 @@ fn main() {
     out.push_str("];\n");
     let dest = PathBuf::from(std::env::var("OUT_DIR").unwrap()).join("templates.rs");
     std::fs::write(dest, out).unwrap();
+
+    if std::env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("msvc") {
+        let manifest = Path::new(env!("CARGO_MANIFEST_DIR")).join("rant.manifest");
+        println!("cargo:rerun-if-changed={}", manifest.display());
+        println!("cargo:rustc-link-arg-bin=rant=/MANIFEST:EMBED");
+        println!("cargo:rustc-link-arg-bin=rant=/MANIFESTINPUT:{}", manifest.display());
+    }
 }
 
 /// The files under dir, by their path from root. A `.rant` folder is the data an editor
