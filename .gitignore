@@ -2,7 +2,8 @@
 /build/
 /bin/
 
-# Cargo output from a plain cargo build or test in config/
+# Cargo output
+/target/
 /config/target/
 
 # Local notes for agents

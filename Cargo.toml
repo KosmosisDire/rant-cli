@@ -1,0 +1,12 @@
+# config/ is the crate of the C++ build, which leaves with it. The C++ tests build Cargo
+# packages under build/.
+[workspace]
+members = ["crates/cli"]
+exclude = ["config", "build"]
+resolver = "3"
+
+[workspace.package]
+version = "0.0.36"
+edition = "2024"
+rust-version = "1.85"
+publish = false
