@@ -1,11 +1,26 @@
 //! The packages rant install puts in the home's packages folder, each from a repo's releases or
 //! a path that sources.rant or a package database names, with a record beside it.
 
+mod install;
+mod links;
+pub mod skills;
+pub mod sources;
+pub mod vsix;
+pub mod zip;
+
+pub use install::{Update, check, install, remove};
+pub use links::{is_link, make_link, unlink};
+
 use std::path::{Path, PathBuf};
 
 use rant_config::model::{Model, NodeType};
-use rant_config::{Settings, database, package};
-use serde_json::Value;
+use rant_config::{Settings, database, package, paths};
+use serde_json::{Map, Value, json};
+
+use crate::context::Context;
+use crate::failure::{Result, failed};
+use crate::files;
+use crate::github::{self, Asset};
 
 /// The official package database, read after sources.rant.
 pub const OFFICIAL: &str = "KosmosisDire/rant-packages";
@@ -39,8 +54,14 @@ pub struct Source {
 }
 
 /// What the sources named when last read, from the cache, each name from the first list that
-/// names it.
-pub fn cached(home: &Path) -> Vec<Source> {
+/// names it. read lists the sources first when the official database was never read.
+pub fn cached(home: &Path, read: bool) -> Vec<Source> {
+    if read && !cache_file(home, OFFICIAL).exists() {
+        // a broken sources.rant or no network leaves the cache as it is
+        if let Ok(mut s) = sources::Sources::new(home) {
+            let _ = s.offers("");
+        }
+    }
     let mut lists = vec!["sources.rant".to_string(), OFFICIAL.to_string()];
     let file = sources_file(home);
     if let Ok(text) = std::fs::read_to_string(&file)
@@ -57,7 +78,8 @@ pub fn cached(home: &Path) -> Vec<Source> {
                 continue;
             }
             let text = |v: &Value| v.as_str().filter(|s| !s.is_empty()).map(str::to_string);
-            let library = e["library"].as_object().map(|b| package::Library { cmake: text(&b["cmake"]), python: text(&b["python"]), csharp: text(&b["csharp"]), rust: text(&b["rust"]) });
+            let b = &e["library"];
+            let library = b.is_object().then(|| package::Library { cmake: text(&b["cmake"]), python: text(&b["python"]), csharp: text(&b["csharp"]), rust: text(&b["rust"]) });
             let path = PathBuf::from(e["path"].as_str().unwrap_or_default());
             out.push(Source { name: name.to_string(), repo: e["repo"].as_str().unwrap_or_default().to_string(), path, named_by: l.clone(), library });
         }
@@ -108,26 +130,83 @@ pub fn record(home: &Path, name: &str) -> Option<Record> {
     })
 }
 
+/// Writes a package's record beside its folder.
+fn save(home: &Path, r: &Record) -> Result<()> {
+    let mut j = Map::new();
+    let mut put = |k: &str, v: &str| {
+        if !v.is_empty() {
+            j.insert(k.into(), json!(v));
+        }
+    };
+    put("repo", &r.repo);
+    put("path", &paths::slash(&r.path));
+    put("named_by", &r.named_by);
+    put("version", &r.version);
+    if !r.extension.is_empty() {
+        j.insert("extension".into(), json!({"id": r.extension, "editor": paths::slash(&r.editor), "profile": r.profile}));
+    }
+    if !r.skills.is_empty() {
+        j.insert("skills".into(), json!(r.skills.iter().map(|l| paths::slash(l)).collect::<Vec<_>>()));
+    }
+    let file = record_file(home, &r.name);
+    std::fs::write(&file, serde_json::to_string_pretty(&Value::Object(j)).unwrap_or_default() + "\n").map_err(|e| failed(format!("cannot write {}: {e}", paths::slash(&file))))
+}
+
+/// The packages in rant's home, by folder or record, by name.
+pub fn installed(home: &Path) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for e in std::fs::read_dir(dir(home)).into_iter().flatten().flatten() {
+        let p = e.path();
+        let mut name = e.file_name().to_string_lossy().into_owned();
+        if name.is_empty() || name.starts_with('.') {
+            continue;
+        }
+        if p.extension().is_some_and(|x| x == "json") {
+            name = p.file_stem().unwrap_or_default().to_string_lossy().into_owned();
+        } else if !p.is_dir() {
+            continue;
+        }
+        if !out.contains(&name) {
+            out.push(name);
+        }
+    }
+    out.sort();
+    out
+}
+
+/// A release file downloaded into rant's cache, gone with this. An empty path for no file.
+pub struct Download {
+    pub path: PathBuf,
+}
+
+impl Download {
+    pub fn new(ctx: &Context, home: &Path, a: Option<&Asset>) -> Result<Download> {
+        let Some(a) = a else { return Ok(Download { path: PathBuf::new() }) };
+        ctx.out.note(&format!("downloading {}", a.name));
+        let d = Download { path: home.join("cache").join(format!("{}-{}", files::stamp(), a.name)) };
+        github::download(&a.url, &d.path, false)?;
+        Ok(d)
+    }
+
+    /// The file, None for no file.
+    pub fn file(&self) -> Option<&Path> {
+        (!self.path.as_os_str().is_empty()).then_some(self.path.as_path())
+    }
+}
+
+impl Drop for Download {
+    fn drop(&mut self) {
+        if let Some(f) = self.file() {
+            let _ = std::fs::remove_file(f);
+        }
+    }
+}
+
 /// A node an installed package declares, as rant's home sees it.
 pub fn installed_node(home: &Path, package: &str, node: &str) -> Option<NodeType> {
     let (model, _) = Model::load(Settings::home(home).ok()?, home);
     let p = model.packages.into_iter().find(|p| p.installed && p.name == package)?;
     p.nodes.into_iter().find(|n| n.name == node)
-}
-
-/// Whether p is a symbolic link or, on Windows, a junction, as a package from a local build
-/// folder is.
-pub fn is_link(p: &Path) -> bool {
-    #[cfg(windows)]
-    {
-        use std::os::windows::fs::MetadataExt;
-        const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
-        std::fs::symlink_metadata(p).is_ok_and(|m| m.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0)
-    }
-    #[cfg(not(windows))]
-    {
-        std::fs::symlink_metadata(p).is_ok_and(|m| m.file_type().is_symlink())
-    }
 }
 
 #[cfg(test)]
@@ -144,7 +223,7 @@ mod tests {
             {"name": "explorer", "repo": "KosmosisDire/rant-explorer"}]"#;
         std::fs::write(home.join("cache/sources/KosmosisDire+rant-packages.json"), official).unwrap();
         std::fs::write(home.join("cache/sources/sources.rant.json"), r#"[{"name": "explorer", "path": "/w/explorer"}]"#).unwrap();
-        let s = cached(&home);
+        let s = cached(&home, false);
         assert_eq!(s.iter().map(|s| (s.name.as_str(), s.named_by.as_str())).collect::<Vec<_>>(), [("explorer", "sources.rant"), ("rant", OFFICIAL)]);
         let lib = s[1].library.as_ref().unwrap();
         assert_eq!((lib.cmake.as_deref(), lib.python.as_deref()), (Some("rant::rant_host"), None));

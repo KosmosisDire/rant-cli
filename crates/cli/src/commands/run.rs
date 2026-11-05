@@ -266,7 +266,7 @@ fn run_services(ctx: &mut Context, args: &Args) -> Result<()> {
         }
         let ran = check.checked.map_err(Failure::from).and_then(|c| run_group(ctx, &c.full, &c.words, args));
         if let Err(f) = ran {
-            f.messages().iter().for_each(|m| ctx.out.error(m));
+            ctx.out.failure(&f);
             failure.get_or_insert(Failure::Reported);
         }
     }
@@ -383,7 +383,7 @@ pub fn in_each(ctx: &mut Context, roots: &[PathBuf], mut act: impl FnMut(&mut Co
         if let Err(f) = act(ctx, &shown) {
             match first {
                 None => first = Some(f),
-                Some(_) => f.messages().iter().for_each(|m| ctx.out.error(m)),
+                Some(_) => ctx.out.failure(&f),
             }
         }
     }

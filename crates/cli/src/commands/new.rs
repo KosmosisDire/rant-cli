@@ -1,7 +1,8 @@
 //! `rant new`: a workspace or package goes in the folder named, here by default, and takes
 //! its name. A node or group is a file here, named as asked or after this folder.
 
-use std::path::PathBuf;
+use std::collections::BTreeSet;
+use std::path::{Path, PathBuf};
 
 use rant_config::paths;
 use rant_config::python::Folder;
@@ -10,8 +11,11 @@ use rant_process::{Command, find_program, output};
 use super::{Added, Made};
 use crate::cmake;
 use crate::context::Context;
-use crate::failure::{Result, failed, usage};
+use crate::failure::{Failure, Result, failed, usage};
+use crate::github;
+use crate::library::{self, DEFAULT_LIBRARY, Kind};
 use crate::names::pascal;
+use crate::packages::sources::Sources;
 use crate::scaffold::{self, Values};
 
 #[derive(clap::Args, Debug)]
@@ -32,7 +36,7 @@ pub struct Args {
 const KINDS: [&str; 4] = ["workspace", "package", "node", "group"];
 const LANGUAGES: [&str; 4] = ["cpp", "python", "csharp", "rust"];
 
-pub fn run(ctx: &mut Context, args: &Args) -> Result<Made> {
+pub fn run(ctx: &mut Context, args: &Args) -> Result<()> {
     let Some(kind) = args.kind.as_deref().filter(|k| KINDS.contains(k)) else {
         return Err(usage("say what to make: `rant new workspace`, `rant new package`, `rant new node` or `rant new group`"));
     };
@@ -55,8 +59,10 @@ pub fn run(ctx: &mut Context, args: &Args) -> Result<Made> {
         name = pascal(&name);
     }
     // a Rust node is a src/bin file of the Cargo package around it, which Cargo finds itself
+    let mut krate = None;
     if preset == "node-rust" {
         dest = cargo_package(ctx, &name)?;
+        krate = Some(dest.clone());
     }
     let mut values = Values::from([("name", name.clone()), ("Name", pascal(&name))]);
     if preset.contains("csharp") {
@@ -65,16 +71,59 @@ pub fn run(ctx: &mut Context, args: &Args) -> Result<Made> {
     let files = scaffold::plan(&preset, &dest, &values)?;
 
     // a C++ node joins the CMake project around it, which refuses a second target of its name
-    let added = if preset == "node-cpp" {
-        let project = cmake_project(ctx, &name)?;
-        let source = paths::relative(&files[0].0, project.parent().unwrap_or(&project));
-        cmake::add_node(&project, &name, &source)?;
-        Some(Added { node: name, to: paths::slash(&project) })
-    } else {
-        None
-    };
+    let project = if preset == "node-cpp" { Some(cmake_project(ctx, &name)?) } else { None };
+    if let Some(project) = &project {
+        let source = paths::relative(&files[0].0, project.parent().unwrap_or(project));
+        cmake::add_node(project, &name, &source)?;
+    }
     scaffold::write(&files)?;
-    Ok(Made { created: files.iter().map(|(p, _)| paths::slash(p)).collect(), added })
+    let added = project.as_ref().map(|p| Added { node: name.clone(), to: paths::slash(p) });
+    ctx.show(&Made { created: files.iter().map(|(p, _)| paths::slash(p)).collect(), added });
+
+    // every folder given a build file, and the CMake project or Cargo package a node joined, takes
+    // the newest Rant as `rant add` adds it, since the presets name no version
+    let build_file = |p: &Path| p.extension().is_some_and(|x| x == "csproj") || p.file_name().is_some_and(|n| ["CMakeLists.txt", "pyproject.toml", "Cargo.toml"].iter().any(|f| n == *f));
+    let mut needs: BTreeSet<PathBuf> = files.iter().filter(|(p, _)| build_file(p)).filter_map(|(p, _)| p.parent().map(Path::to_path_buf)).collect();
+    if needs.is_empty() && project.is_none() && krate.is_none() {
+        return Ok(());
+    }
+    let added = add_rant(ctx, &mut needs, project.as_deref().and_then(Path::parent), krate.as_deref());
+    let ok = added.unwrap_or_else(|e| {
+        ctx.out.warn(&format!("Rant was not added: {}", e.messages().join(", ")));
+        false
+    });
+    if !ok {
+        ctx.out.note(&format!("add it later with `rant add rant {}`", ctx.shown(&dest)));
+        return Err(Failure::Reported);
+    }
+    Ok(())
+}
+
+/// Adds Rant to each folder that needs it, and to the CMake project or Cargo package a node
+/// joined unless it has Rant already. False when one failed, after a warning.
+fn add_rant(ctx: &Context, needs: &mut BTreeSet<PathBuf>, project: Option<&Path>, krate: Option<&Path>) -> Result<bool> {
+    let home = ctx.home()?.to_path_buf();
+    let mut sources = Sources::new(&home)?;
+    let lib = match library::known(&home).into_iter().find(|l| l.name == DEFAULT_LIBRARY) {
+        Some(lib) => lib,
+        None => library::find(ctx, &mut sources, DEFAULT_LIBRARY)?,
+    };
+    for (dir, kind) in [(project, Kind::CMake), (krate, Kind::Rust)] {
+        if let Some(dir) = dir
+            && !library::in_folder(dir, std::slice::from_ref(&lib), false).iter().any(|u| u.kind == kind)
+        {
+            needs.insert(dir.to_path_buf());
+        }
+    }
+    if needs.is_empty() {
+        return Ok(true);
+    }
+    let r = github::release(&lib.repo, "")?;
+    let mut ok = true;
+    for dir in needs.iter() {
+        ok &= library::add(ctx, &home, dir, &lib, &r, false)?;
+    }
+    Ok(ok)
 }
 
 /// The preset a command line asks for, once the tools of its language are here.
@@ -190,20 +239,11 @@ fn require_tools(ctx: &mut Context, lang: &str, venv: bool) -> Result<()> {
     if missing.is_empty() {
         return Ok(());
     }
-    let mut message = format!("{shown} needs {}, nothing was made", spoken(&missing));
+    let mut message = format!("{shown} needs {}, nothing was made", crate::output::spoken(&missing));
     if cfg!(target_os = "linux") {
         message += &format!(". On Ubuntu: `sudo apt install {apt}`");
     }
     Err(failed(message))
-}
-
-/// "a", "a and b", "a, b and c"
-fn spoken(items: &[&str]) -> String {
-    match items {
-        [] => String::new(),
-        [one] => one.to_string(),
-        [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
-    }
 }
 
 /// The newest target framework the installed .NET SDKs build, such as net10.0, from lines
@@ -219,12 +259,6 @@ mod tests {
     use super::*;
     use std::path::Path;
 
-    #[test]
-    fn lists_read_as_spoken() {
-        assert_eq!(spoken(&["cmake"]), "cmake");
-        assert_eq!(spoken(&["cmake", "git"]), "cmake and git");
-        assert_eq!(spoken(&["cmake", "git", "a C++ compiler"]), "cmake, git and a C++ compiler");
-    }
 
     #[test]
     fn a_relative_source_has_forward_slashes() {

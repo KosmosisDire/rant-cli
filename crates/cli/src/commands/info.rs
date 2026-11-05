@@ -18,6 +18,7 @@ use crate::mesh::{Client, FULL_SETTLE, Peer, kind_name, schema_text, standard_ty
 use crate::nodes::managed_peers;
 use crate::output::{Data, Style, Text, Yaml};
 use crate::packages;
+use crate::packages::sources::{self, Sources};
 use crate::state::{Instance, RootKind, State};
 
 #[derive(clap::Args, Debug)]
@@ -111,6 +112,26 @@ pub fn run(ctx: &mut Context, args: &Args) -> Result<()> {
     };
     if let Some(mesh) = &client {
         mesh_answers(mesh, kind, name, &st, &mut answers);
+    }
+    // a package rant install could install, only when asked for a package, since it costs a fetch
+    if answers.is_empty()
+        && kind == Some(Kind::Package)
+        && let Some(s) = Sources::new(ctx.home()?)?.find(name)?
+    {
+        let about = sources::about(&s)?;
+        let mut a = Answer::new(Kind::Package);
+        a.set("package", name.as_str());
+        if !about.description.is_empty() {
+            a.set("description", about.description);
+        }
+        a.set("source", if s.repo.is_empty() { rant_config::paths::slash(&s.path) } else { s.repo.clone() });
+        if !about.version.is_empty() {
+            a.set("latest", about.version);
+        }
+        a.set("files", json!(about.files));
+        a.set("installed", false);
+        answers.push(a);
+        ctx.out.note(&format!("`rant install {name}` installs it"));
     }
     if answers.is_empty() {
         return Err(failed(match kind {

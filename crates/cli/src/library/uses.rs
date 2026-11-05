@@ -10,6 +10,7 @@ use rant_config::scan::NodeKind;
 use regex::Regex;
 
 use super::{DEFAULT_LIBRARY, Kind, Library};
+use crate::cmake;
 
 /// One place a package takes a library from. how says which, such as "CPM", "venv" or "Cargo
 /// workspace", and so whether rant can move it.
@@ -59,126 +60,19 @@ fn read(p: &Path) -> String {
 
 // ---- CMake ----
 
-/// One command call: its name, the text between its parentheses, and where it ends.
-pub(super) struct Call {
-    pub name: String,
-    pub args_begin: usize,
-    pub args_end: usize,
-}
-
-impl Call {
-    pub fn args<'t>(&self, text: &'t str) -> &'t str {
-        &text[self.args_begin..self.args_end]
-    }
-
-    pub fn named(&self, names: &[&str]) -> bool {
-        names.iter().any(|n| self.name.eq_ignore_ascii_case(n))
-    }
-}
-
-/// The length of a bracket opening such as `[[` or `[==[` at i, and its count of `=`.
-fn bracket_open(t: &[u8], i: usize) -> Option<(usize, usize)> {
-    if t.get(i) != Some(&b'[') {
-        return None;
-    }
-    let eqs = t[i + 1..].iter().take_while(|&&c| c == b'=').count();
-    (t.get(i + 1 + eqs) == Some(&b'[')).then_some((eqs + 2, eqs))
-}
-
-/// The offset past a bracket argument or comment opened at i.
-fn skip_bracket(t: &str, i: usize, (len, eqs): (usize, usize)) -> usize {
-    let close = format!("]{}]", "=".repeat(eqs));
-    t[i + len..].find(&close).map_or(t.len(), |k| i + len + k + close.len())
-}
-
-fn line_end(t: &str, from: usize) -> usize {
-    t[from..].find('\n').map_or(t.len(), |k| from + k)
-}
-
-/// Every command call, past comments, quoted and bracket arguments.
-pub(super) fn cmake_calls(t: &str) -> Vec<Call> {
-    let b = t.as_bytes();
-    let mut calls = Vec::new();
-    let mut i = 0;
-    while i < b.len() {
-        let c = b[i];
-        if c == b'#' {
-            i = match bracket_open(b, i + 1) {
-                Some(open) => skip_bracket(t, i + 1, open),
-                None => line_end(t, i),
-            };
-            continue;
-        }
-        if !(c.is_ascii_alphabetic() || c == b'_') {
-            i += 1;
-            continue;
-        }
-        let start = i;
-        while i < b.len() && (b[i].is_ascii_alphanumeric() || b[i] == b'_') {
-            i += 1;
-        }
-        let mut j = i;
-        while j < b.len() && (b[j] == b' ' || b[j] == b'\t') {
-            j += 1;
-        }
-        if b.get(j) != Some(&b'(') {
-            continue;
-        }
-        let open = j + 1;
-        let (mut k, mut depth) = (open, 1);
-        while k < b.len() && depth > 0 {
-            match b[k] {
-                b'(' => depth += 1,
-                b')' => depth -= 1,
-                b'"' => {
-                    k += 1;
-                    while k < b.len() && b[k] != b'"' {
-                        k += if b[k] == b'\\' { 2 } else { 1 };
-                    }
-                }
-                b'#' => {
-                    k = match bracket_open(b, k + 1) {
-                        Some(o) => skip_bracket(t, k + 1, o),
-                        None => line_end(t, k),
-                    } - 1
-                }
-                b'[' => {
-                    if let Some(o) = bracket_open(b, k) {
-                        k = skip_bracket(t, k, o) - 1;
-                    }
-                }
-                _ => {}
-            }
-            k += 1;
-        }
-        let end = k.min(b.len());
-        // an unclosed call runs to the end of the text
-        let args_end = if depth == 0 { end - 1 } else { b.len() };
-        calls.push(Call { name: t[start..i].to_string(), args_begin: open, args_end: args_end.max(open) });
-        i = end;
-    }
-    calls
-}
-
-pub(super) fn first_arg(args: &str) -> &str {
-    let a = args.trim_start();
-    let a = &a[..a.find([' ', '\t', '\r', '\n', ')']).unwrap_or(a.len())];
-    a.strip_prefix('"').and_then(|x| x.strip_suffix('"')).unwrap_or(a)
-}
-
-pub(super) fn is_fetch(c: &Call) -> bool {
+pub(super) fn is_fetch(c: &cmake::Call) -> bool {
     c.named(&["CPMAddPackage", "CPMFindPackage", "CPMDeclarePackage", "FetchContent_Declare"])
 }
 
 /// A fetch of the library: named after it, or pointing at its repo.
-pub(super) fn fetches(text: &str, c: &Call, lib: &Library) -> bool {
+pub(super) fn fetches(text: &str, c: &cmake::Call, lib: &Library) -> bool {
     if !is_fetch(c) {
         return false;
     }
     let args = c.args(text);
     let name = icase(&format!(r"\bNAME\s+{}(?:[^\w-]|$)", regex::escape(&lib.name)));
     let repo = icase(&format!(r#"(?:^|[/:"\s]){}(?:\.git)?(?:[^\w.-]|$)"#, regex::escape(&lib.repo)));
-    repo.is_match(args) || first_arg(args).eq_ignore_ascii_case(&lib.name) || name.is_match(args)
+    repo.is_match(args) || cmake::first_arg(args).eq_ignore_ascii_case(&lib.name) || name.is_match(args)
 }
 
 /// Where a version sits in a fetch: after GIT_TAG or VERSION, after @ in the CPM short form,
@@ -189,7 +83,7 @@ pub(super) fn version_pattern() -> Regex {
 
 pub fn cmake_use(text: &str, lib: &Library) -> Option<Use> {
     let installed = Regex::new(r"^\s*\S+\s+(\d[^\s)]*)").expect("valid");
-    for c in cmake_calls(text) {
+    for c in cmake::calls(text) {
         let args = c.args(text);
         if fetches(text, &c, lib) {
             let how = if c.name.to_lowercase().starts_with("cpm") { "CPM" } else { "FetchContent" };
@@ -197,7 +91,7 @@ pub fn cmake_use(text: &str, lib: &Library) -> Option<Use> {
             u.version = version_pattern().captures(args).map(|m| m[3].to_string());
             return Some(u);
         }
-        if c.named(&["find_package"]) && first_arg(args).eq_ignore_ascii_case(&lib.name) {
+        if c.named(&["find_package"]) && cmake::first_arg(args).eq_ignore_ascii_case(&lib.name) {
             let mut u = Use::of(lib, Kind::CMake, "find_package");
             u.version = installed.captures(args).map(|m| m[1].to_string());
             return Some(u);
@@ -206,38 +100,12 @@ pub fn cmake_use(text: &str, lib: &Library) -> Option<Use> {
     None
 }
 
-/// The words of a call's arguments: quoted ones whole and unquoted, bracket arguments left out.
-fn cmake_words(args: &str) -> Vec<&str> {
-    let b = args.as_bytes();
-    let mut out = Vec::new();
-    let mut i = 0;
-    while i < b.len() {
-        if b[i].is_ascii_whitespace() {
-            i += 1;
-        } else if b[i] == b'"' {
-            let mut k = i + 1;
-            while k < b.len() && b[k] != b'"' {
-                k += if b[k] == b'\\' { 2 } else { 1 };
-            }
-            out.push(&args[i + 1..k.min(b.len())]);
-            i = k + 1;
-        } else if let Some(open) = bracket_open(b, i) {
-            i = skip_bracket(args, i, open);
-        } else {
-            let k = i + b[i..].iter().take_while(|c| !c.is_ascii_whitespace()).count();
-            out.push(&args[i..k]);
-            i = k;
-        }
-    }
-    out
-}
-
 /// The first source a CMakeLists gives target, as written: from add_executable, else
 /// target_sources. Variables and generator expressions are passed over.
 pub fn cmake_source(text: &str, target: &str) -> Option<String> {
     let source = icase(r"\.(c|cc|cpp|cxx|c\+\+|cu|m|mm)$");
-    for c in cmake_calls(text).iter().filter(|c| c.named(&["add_executable", "target_sources"])) {
-        let words = cmake_words(c.args(text));
+    for c in cmake::calls(text).iter().filter(|c| c.named(&["add_executable", "target_sources"])) {
+        let words = cmake::words(c.args(text));
         if words.first() != Some(&target) {
             continue;
         }
@@ -435,7 +303,7 @@ pub(super) fn cargo_entry(text: &str, lib: &Library) -> Option<(usize, usize)> {
     let mut table: Option<(usize, String)> = None;
     let mut at = 0;
     loop {
-        let end = line_end(text, at);
+        let end = cmake::line_end(text, at);
         let line = &text[at..end];
         let trimmed = line.trim_start_matches([' ', '\t']);
         let header = trimmed.starts_with('[');
@@ -555,8 +423,9 @@ pub fn under(start: &Path, libs: &[Library]) -> Vec<Use> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
     use super::*;
+    use crate::scratch::Scratch;
     use rant_config::package;
 
     fn lib(name: &str, repo: &str, cmake: &str, python: &str, csharp: &str, rust: &str) -> Library {
@@ -564,12 +433,12 @@ mod tests {
         Library { name: name.into(), repo: repo.into(), names }
     }
 
-    fn rant() -> Library {
+    pub fn rant() -> Library {
         lib("rant", "KosmosisDire/Rant", "rant::rant_host", "rant-middleware", "Rant", "rant-middleware")
     }
 
     /// Names that start as Rant's do, so a match must end where the name does.
-    fn extra() -> Library {
+    pub fn extra() -> Library {
         lib("extra", "KosmosisDire/Rant-extra", "extra::extra", "rant-middleware-extra", "Rant.Extra", "rant-middleware-extra")
     }
 
@@ -644,7 +513,7 @@ mod tests {
         assert_eq!(cmake_source(text, "arm").as_deref(), Some("src/arm.cpp"));
         assert_eq!(cmake_source(text, "util"), None);
         assert_eq!(cmake_source("# add_executable(cam main.cpp)\n", "cam"), None);
-        assert_eq!(cmake_calls("set(x [==[ ) ]==] y)\nfoo(").len(), 2, "a bracket argument and an unclosed call");
+        assert_eq!(cmake::calls("set(x [==[ ) ]==] y)\nfoo(").len(), 2, "a bracket argument and an unclosed call");
     }
 
     #[test]
@@ -652,30 +521,6 @@ mod tests {
         assert!(csharp_main("class P { static void Main(string[] a) {} }"));
         assert!(csharp_main("public static async Task<int> Main() => 0;"));
         assert!(!csharp_main("var node = new Rant.Node(\"panel\");"));
-    }
-
-    /// A scratch folder, removed with everything in it.
-    struct Scratch(PathBuf);
-
-    impl Scratch {
-        fn new(name: &str) -> Scratch {
-            let root = std::env::temp_dir().join(format!("rant-uses-{name}-{}", std::process::id()));
-            let _ = std::fs::remove_dir_all(&root);
-            std::fs::create_dir_all(&root).unwrap();
-            Scratch(root)
-        }
-
-        fn write(&self, rel: &str, text: &str) {
-            let p = self.0.join(rel);
-            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
-            std::fs::write(p, text).unwrap();
-        }
-    }
-
-    impl Drop for Scratch {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.0);
-        }
     }
 
     #[test]

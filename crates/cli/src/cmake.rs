@@ -1,19 +1,150 @@
-//! Edits of a CMakeLists.txt that keep the rest as written, through the calls in it, found
-//! past comments, quoted arguments and bracket arguments.
+//! A CMakeLists.txt as text: the calls in it, found past comments, quoted arguments and bracket
+//! arguments, and edits that keep the rest as written.
 
-use std::ops::Range;
 use std::path::Path;
 
-use rant_config::paths;
-
 use crate::failure::{Result, failed};
+use crate::files;
+
+/// One command call: its name, where its arguments are, and the offset past its `)`.
+pub struct Call {
+    pub name: String,
+    pub args_begin: usize,
+    pub args_end: usize,
+    pub end: usize,
+}
+
+impl Call {
+    pub fn args<'t>(&self, text: &'t str) -> &'t str {
+        &text[self.args_begin..self.args_end]
+    }
+
+    pub fn named(&self, names: &[&str]) -> bool {
+        names.iter().any(|n| self.name.eq_ignore_ascii_case(n))
+    }
+}
+
+/// Every command call. An unclosed one runs to the end of the text.
+pub fn calls(t: &str) -> Vec<Call> {
+    let b = t.as_bytes();
+    let mut calls = Vec::new();
+    let mut i = 0;
+    while i < b.len() {
+        let c = b[i];
+        if c == b'#' {
+            i = match bracket_open(b, i + 1) {
+                Some(open) => skip_bracket(t, i + 1, open),
+                None => line_end(t, i),
+            };
+            continue;
+        }
+        if !(c.is_ascii_alphabetic() || c == b'_') {
+            i += 1;
+            continue;
+        }
+        let start = i;
+        while i < b.len() && (b[i].is_ascii_alphanumeric() || b[i] == b'_') {
+            i += 1;
+        }
+        let mut j = i;
+        while j < b.len() && (b[j] == b' ' || b[j] == b'\t') {
+            j += 1;
+        }
+        if b.get(j) != Some(&b'(') {
+            continue;
+        }
+        let open = j + 1;
+        let (mut k, mut depth) = (open, 1);
+        while k < b.len() && depth > 0 {
+            match b[k] {
+                b'(' => depth += 1,
+                b')' => depth -= 1,
+                b'"' => {
+                    k += 1;
+                    while k < b.len() && b[k] != b'"' {
+                        k += if b[k] == b'\\' { 2 } else { 1 };
+                    }
+                }
+                b'#' => {
+                    k = match bracket_open(b, k + 1) {
+                        Some(o) => skip_bracket(t, k + 1, o),
+                        None => line_end(t, k),
+                    } - 1
+                }
+                b'[' => {
+                    if let Some(o) = bracket_open(b, k) {
+                        k = skip_bracket(t, k, o) - 1;
+                    }
+                }
+                _ => {}
+            }
+            k += 1;
+        }
+        let end = k.min(b.len());
+        let args_end = if depth == 0 { end - 1 } else { b.len() };
+        calls.push(Call { name: t[start..i].to_string(), args_begin: open, args_end: args_end.max(open), end });
+        i = end;
+    }
+    calls
+}
+
+/// The length of a bracket opening such as `[[` or `[==[` at i, and its count of `=`.
+fn bracket_open(t: &[u8], i: usize) -> Option<(usize, usize)> {
+    if t.get(i) != Some(&b'[') {
+        return None;
+    }
+    let eqs = t[i + 1..].iter().take_while(|&&c| c == b'=').count();
+    (t.get(i + 1 + eqs) == Some(&b'[')).then_some((eqs + 2, eqs))
+}
+
+/// The offset past a bracket argument or comment opened at i.
+fn skip_bracket(t: &str, i: usize, (len, eqs): (usize, usize)) -> usize {
+    let close = format!("]{}]", "=".repeat(eqs));
+    t[i + len..].find(&close).map_or(t.len(), |k| i + len + k + close.len())
+}
+
+/// The offset of the line break that ends the line at from, or the end of the text.
+pub fn line_end(t: &str, from: usize) -> usize {
+    t[from..].find('\n').map_or(t.len(), |k| from + k)
+}
+
+/// The first word of a call's arguments, without its quotes.
+pub fn first_arg(args: &str) -> &str {
+    let a = args.trim_start();
+    let a = &a[..a.find([' ', '\t', '\r', '\n', ')']).unwrap_or(a.len())];
+    a.strip_prefix('"').and_then(|x| x.strip_suffix('"')).unwrap_or(a)
+}
+
+/// The words of a call's arguments: quoted ones whole and unquoted, bracket arguments left out.
+pub fn words(args: &str) -> Vec<&str> {
+    let b = args.as_bytes();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < b.len() {
+        if b[i].is_ascii_whitespace() {
+            i += 1;
+        } else if b[i] == b'"' {
+            let mut k = i + 1;
+            while k < b.len() && b[k] != b'"' {
+                k += if b[k] == b'\\' { 2 } else { 1 };
+            }
+            out.push(&args[i + 1..k.min(b.len())]);
+            i = k + 1;
+        } else if let Some(open) = bracket_open(b, i) {
+            i = skip_bracket(args, i, open);
+        } else {
+            let k = i + b[i..].iter().take_while(|c| !c.is_ascii_whitespace()).count();
+            out.push(&args[i..k]);
+            i = k;
+        }
+    }
+    out
+}
 
 /// Adds a node's target after the last target of a CMakeLists.txt. Refused when it has a
 /// target of that name.
 pub fn add_node(file: &Path, name: &str, source: &str) -> Result<()> {
-    let text = std::fs::read_to_string(file).map_err(|e| failed(format!("cannot read {}: {e}", paths::slash(file))))?;
-    let changed = with_node(&text, name, source)?;
-    std::fs::write(file, changed).map_err(|e| failed(format!("cannot write {}: {e}", paths::slash(file))))
+    files::edit(file, |text| with_node(text, name, source))
 }
 
 fn with_node(text: &str, name: &str, source: &str) -> Result<String> {
@@ -22,7 +153,7 @@ fn with_node(text: &str, name: &str, source: &str) -> Result<String> {
         if !c.named(&["add_executable", "add_library", "target_link_libraries"]) {
             continue;
         }
-        if !c.named(&["target_link_libraries"]) && first_arg(&text[c.args.clone()]) == name {
+        if !c.named(&["target_link_libraries"]) && first_arg(c.args(text)) == name {
             return Err(failed(format!("CMakeLists.txt has a target `{name}` already, nothing was written")));
         }
         after = Some(c.end);
@@ -38,108 +169,6 @@ fn with_node(text: &str, name: &str, source: &str) -> Result<String> {
     let at = out[after..].find('\n').map_or(out.len(), |k| after + k + 1);
     out.insert_str(at, &lines);
     Ok(out)
-}
-
-/// One command call: its name, where its arguments are, and the offset past its `)`.
-struct Call {
-    name: String,
-    args: Range<usize>,
-    end: usize,
-}
-
-impl Call {
-    fn named(&self, names: &[&str]) -> bool {
-        names.iter().any(|n| n.eq_ignore_ascii_case(&self.name))
-    }
-}
-
-fn calls(text: &str) -> Vec<Call> {
-    let t = text.as_bytes();
-    let mut calls = Vec::new();
-    let mut i = 0;
-    while i < t.len() {
-        let c = t[i];
-        if c == b'#' {
-            i = match bracket_open(t, i + 1) {
-                Some(open) => skip_bracket(t, i + 1, open),
-                None => line_end(t, i),
-            };
-            continue;
-        }
-        if !(c.is_ascii_alphabetic() || c == b'_') {
-            i += 1;
-            continue;
-        }
-        let start = i;
-        while i < t.len() && (t[i].is_ascii_alphanumeric() || t[i] == b'_') {
-            i += 1;
-        }
-        let mut j = i;
-        while j < t.len() && (t[j] == b' ' || t[j] == b'\t') {
-            j += 1;
-        }
-        if j >= t.len() || t[j] != b'(' {
-            continue;
-        }
-        let open = j + 1;
-        let mut k = open;
-        let mut depth = 1;
-        while k < t.len() && depth > 0 {
-            match t[k] {
-                b'(' => depth += 1,
-                b')' => depth -= 1,
-                b'"' => {
-                    k += 1;
-                    while k < t.len() && t[k] != b'"' {
-                        k += if t[k] == b'\\' { 2 } else { 1 };
-                    }
-                }
-                b'#' => {
-                    k = match bracket_open(t, k + 1) {
-                        Some(b) => skip_bracket(t, k + 1, b),
-                        None => line_end(t, k),
-                    } - 1;
-                }
-                b'[' => {
-                    if let Some(b) = bracket_open(t, k) {
-                        k = skip_bracket(t, k, b) - 1;
-                    }
-                }
-                _ => {}
-            }
-            k += 1;
-        }
-        let end = k.min(t.len());
-        calls.push(Call { name: text[start..i].to_string(), args: open..end.saturating_sub(1).max(open), end });
-        i = end;
-    }
-    calls
-}
-
-/// A bracket opening such as `[[` or `[==[` at i: its length and its count of `=`.
-fn bracket_open(t: &[u8], i: usize) -> Option<(usize, usize)> {
-    if t.get(i) != Some(&b'[') {
-        return None;
-    }
-    let eqs = t[i + 1..].iter().take_while(|c| **c == b'=').count();
-    (t.get(i + 1 + eqs) == Some(&b'[')).then_some((eqs + 2, eqs))
-}
-
-/// The offset past a bracket argument or comment opened at i.
-fn skip_bracket(t: &[u8], i: usize, (len, eqs): (usize, usize)) -> usize {
-    let close = [b"]".as_slice(), &vec![b'='; eqs], b"]"].concat();
-    t[i + len..].windows(close.len()).position(|w| w == close).map_or(t.len(), |k| i + len + k + close.len())
-}
-
-fn line_end(t: &[u8], i: usize) -> usize {
-    t[i..].iter().position(|c| *c == b'\n').map_or(t.len(), |k| i + k)
-}
-
-/// The first word of a call's arguments, without its quotes.
-fn first_arg(args: &str) -> &str {
-    let a = args.trim_start_matches([' ', '\t', '\r', '\n']);
-    let a = &a[..a.find([' ', '\t', '\r', '\n', ')']).unwrap_or(a.len())];
-    a.strip_prefix('"').and_then(|s| s.strip_suffix('"')).unwrap_or(a)
 }
 
 #[cfg(test)]
@@ -161,11 +190,12 @@ mod tests {
     #[test]
     fn calls_are_found_past_comments_quotes_and_brackets() {
         let text = "# add_executable(x)\nset(A \"add_executable(y)\")\n#[[ add_library(z) ]]\nset(B [=[ ) ]=])\nadd_executable( \"real\" r.cpp)";
-        let found: Vec<(String, &str)> = calls(text).into_iter().map(|c| (c.name, &text[c.args])).collect();
+        let found: Vec<(String, &str)> = calls(text).into_iter().map(|c| (c.name.clone(), c.args(text))).collect();
         assert_eq!(
             found,
             [("set".to_string(), "A \"add_executable(y)\""), ("set".to_string(), "B [=[ ) ]=]"), ("add_executable".to_string(), " \"real\" r.cpp")]
         );
         assert_eq!(first_arg(" \"real\" r.cpp"), "real");
+        assert_eq!(words(" \"my app\" [[skip]] main.cpp"), ["my app", "main.cpp"]);
     }
 }

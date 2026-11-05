@@ -8,10 +8,11 @@ pub fn rant_home() -> Option<PathBuf> {
 }
 
 /// HOME, else USERPROFILE on Windows.
-fn home_dir() -> Option<PathBuf> {
+pub fn home_dir() -> Option<PathBuf> {
     env_path("HOME").or_else(|| if cfg!(windows) { env_path("USERPROFILE") } else { None })
 }
 
-fn env_path(name: &str) -> Option<PathBuf> {
+/// A variable naming a path, None when unset or empty.
+pub fn env_path(name: &str) -> Option<PathBuf> {
     std::env::var_os(name).filter(|v| !v.is_empty()).map(PathBuf::from)
 }

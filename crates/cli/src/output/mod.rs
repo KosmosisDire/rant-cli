@@ -53,6 +53,24 @@ fn paint(color: bool, s: Style, text: &str) -> String {
     if !color || s == Style::Plain { text.to_string() } else { format!("\x1b[{}m{text}\x1b[0m", s.code()) }
 }
 
+/// Items as a sentence lists them: "a", "a and b", "a, b and c".
+pub fn spoken(items: &[impl AsRef<str>]) -> String {
+    listed(items, "and")
+}
+
+/// Items as a sentence offers them: "a", "a or b", "a, b or c".
+pub fn alternatives(items: &[impl AsRef<str>]) -> String {
+    listed(items, "or")
+}
+
+fn listed(items: &[impl AsRef<str>], word: &str) -> String {
+    match items {
+        [] => String::new(),
+        [one] => one.as_ref().to_string(),
+        [rest @ .., last] => format!("{} {word} {}", rest.iter().map(AsRef::as_ref).collect::<Vec<_>>().join(", "), last.as_ref()),
+    }
+}
+
 /// How data is written: as text for a person, or as JSON or CSV for a program.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Format {
@@ -213,6 +231,11 @@ impl Output {
         self.say(&format!("{} {text}", paint(self.color_err, Style::Red, "error:")));
     }
 
+    /// Each error of a failure, for a command that goes on past it.
+    pub fn failure(&self, f: &crate::failure::Failure) {
+        f.messages().iter().for_each(|m| self.error(m));
+    }
+
     pub fn warn(&self, text: &str) {
         self.say(&format!("{} {text}", paint(self.color_err, Style::Amber, "warning:")));
     }
@@ -302,6 +325,14 @@ fn escapes(_: Stream) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn lists_read_as_spoken() {
+        assert_eq!(spoken(&["cmake"]), "cmake");
+        assert_eq!(spoken(&["cmake", "git"]), "cmake and git");
+        assert_eq!(spoken(&["cmake".to_string(), "git".into(), "a C++ compiler".into()]), "cmake, git and a C++ compiler");
+        assert_eq!(alternatives(&["CMakeLists.txt", "C# project", "Cargo.toml"]), "CMakeLists.txt, C# project or Cargo.toml");
+    }
 
     #[test]
     fn a_path_is_shown_from_where_rant_runs_when_that_is_shorter() {

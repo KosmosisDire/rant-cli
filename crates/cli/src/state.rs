@@ -107,6 +107,11 @@ fn is_zero(n: &u32) -> bool {
 }
 
 impl Instance {
+    /// Whether its working folder or a path in its command line lies in folder.
+    pub fn runs_from(&self, folder: &Path) -> bool {
+        std::iter::once(&self.cwd).chain(&self.argv).any(|p| rant_config::paths::within(Path::new(p), folder))
+    }
+
     pub fn tracking(&self) -> Tracking {
         Tracking { pid: self.pid, start_time: self.start_time, job: self.job.clone() }
     }

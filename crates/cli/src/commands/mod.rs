@@ -1,22 +1,26 @@
 //! Every command, a file each. A command returns its data and the output layer prints it.
 
+pub mod add;
 pub mod build;
 pub mod call;
 pub mod calls;
 pub mod explore;
 pub mod info;
 pub mod init;
+pub mod install;
 pub mod kinds;
 pub mod log;
 pub mod ls;
 pub mod new;
 pub mod publish;
+pub mod remove;
 pub mod restart;
 pub mod run;
 pub mod stop;
 pub mod stream;
 pub mod sub;
 pub mod summary;
+pub mod update;
 
 use std::path::Path;
 
@@ -30,7 +34,7 @@ use crate::output::{Data, Text};
 pub fn run(ctx: &mut Context, command: Command) -> Result<()> {
     match command {
         Command::Init(a) => init::run(ctx, &a).map(|d| ctx.show(&d)),
-        Command::New(a) => new::run(ctx, &a).map(|d| ctx.show(&d)),
+        Command::New(a) => new::run(ctx, &a),
         Command::Build(a) => build::run(ctx, &a).map(|d| ctx.show(&d)),
         // these print as they go
         Command::Run(a) => run::run(ctx, &a),
@@ -43,6 +47,10 @@ pub fn run(ctx: &mut Context, command: Command) -> Result<()> {
         Command::Pub(a) => publish::run(ctx, &a),
         Command::Call(a) => call::run(ctx, &a),
         Command::Explore(a) => explore::run(ctx, &a),
+        Command::Install(a) => install::run(ctx, &a),
+        Command::Remove(a) => remove::run(ctx, &a),
+        Command::Update(a) => update::run(ctx, &a),
+        Command::Add(a) => add::run(ctx, &a),
     }
 }
 

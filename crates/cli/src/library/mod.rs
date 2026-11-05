@@ -1,8 +1,11 @@
 //! Libraries packages build on, such as Rant: which ones the sources name, and where each
 //! package takes them from.
 
+mod edit;
+mod moves;
 mod uses;
 
+pub use moves::{add, all, find, update};
 pub use uses::{Use, in_folder, node_source, under};
 
 use std::path::Path;
@@ -57,8 +60,9 @@ impl Library {
     }
 }
 
-/// The libraries the sources named when last read, so showing what packages use needs no network.
+/// The libraries the sources named when last read, so showing what packages use needs the
+/// network only when the databases were never read.
 pub fn known(home: &Path) -> Vec<Library> {
-    let named = packages::cached(home).into_iter().filter(|s| !s.repo.is_empty());
+    let named = packages::cached(home, true).into_iter().filter(|s| !s.repo.is_empty());
     named.filter_map(|s| Some(Library { names: s.library?, name: s.name, repo: s.repo })).collect()
 }

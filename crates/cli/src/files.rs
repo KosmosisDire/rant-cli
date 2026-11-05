@@ -1,7 +1,26 @@
-//! File helpers the state, the logs and the service process share.
+//! File helpers the state, the logs, the service process and the build file edits share.
 
 use std::path::Path;
 use std::time::{Duration, Instant};
+
+use rant_config::paths;
+
+use crate::failure::{Result, failed};
+
+/// Changes a text file through change, writing it only when that changed it.
+pub fn edit(file: &Path, change: impl FnOnce(&str) -> Result<String>) -> Result<()> {
+    let text = std::fs::read_to_string(file).map_err(|e| failed(format!("cannot read {}: {e}", paths::slash(file))))?;
+    let changed = change(&text)?;
+    if changed != text {
+        std::fs::write(file, changed).map_err(|e| failed(format!("cannot write {}: {e}", paths::slash(file))))?;
+    }
+    Ok(())
+}
+
+/// The time in nanoseconds, which tells one name made now from any made before.
+pub fn stamp() -> u128 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos())
+}
 
 /// A stable name for a path: 16 hex digits of FNV-1a over it, without case on Windows.
 pub fn path_key(p: &Path) -> String {

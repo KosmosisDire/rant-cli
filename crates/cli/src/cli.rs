@@ -4,7 +4,7 @@ use std::ffi::OsString;
 
 use clap::{Arg, ArgAction, Args, CommandFactory, FromArgMatches, Parser, Subcommand};
 
-use crate::commands::{build, call, explore, info, init, kinds, log, ls, new, publish, restart, run, stop, sub};
+use crate::commands::{add, build, call, explore, info, init, install, kinds, log, ls, new, publish, remove, restart, run, stop, sub, update};
 use crate::output::Format;
 
 #[derive(Parser, Debug)]
@@ -87,13 +87,25 @@ pub enum Command {
     /// call a function and print the reply, or run a task
     #[command(override_usage = "rant call <function|task> [value]")]
     Call(call::Args),
+    /// install packages, or another release of one, by name from ~/.rant/sources.rant and the package databases, `rant ls sources` shows where it looks, or from any GitHub repo as owner/name or its link. With none named, pick them from a list
+    #[command(override_usage = "rant install [package|repo...]")]
+    Install(install::Args),
+    /// remove installed packages, or the skill rant add gave a library, a linked build folder stays as it is
+    #[command(override_usage = "rant remove <package>...")]
+    Remove(remove::Args),
+    /// update rant-cli and the installed packages, then the libraries this workspace's packages use. With names, only those
+    #[command(override_usage = "rant update [package|library...]")]
+    Update(update::Args),
+    /// add a library to the package here or in folder, Rant when none is named, or move it to another release
+    #[command(override_usage = "rant add [library [folder]]")]
+    Add(add::Args),
     /// open the explorer, which `rant install explorer` installs
     #[command(override_usage = "rant explore", alias = "explorer")]
     Explore(explore::Args),
 }
 
 /// The headings of the main help, and the commands under each.
-const SECTIONS: &[(&str, &[&str])] = &[("In a workspace", &["init", "new", "build", "run", "stop", "restart", "log"]), ("On the mesh, anywhere", &["ls", "info", "sub", "pub", "call"]), ("Setting up", &["explore"])];
+const SECTIONS: &[(&str, &[&str])] = &[("In a workspace", &["init", "new", "build", "run", "stop", "restart", "log"]), ("On the mesh, anywhere", &["ls", "info", "sub", "pub", "call"]), ("Setting up", &["install", "remove", "update", "add", "explore"])];
 
 const COMMAND_HELP: &str = "{usage-heading} {usage}\n\n{about}\n\n{all-args}{after-help}";
 const MAIN_HELP: &str = "rant: build, run and inspect Rant nodes\n\n{usage-heading} {usage}\n{before-help}Options:\n{options}\n\n\

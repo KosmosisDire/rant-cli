@@ -2,7 +2,7 @@
 //! one, and matching the mesh's nodes to the instances rant started.
 
 use std::collections::BTreeMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use rant_config::Settings;
@@ -13,7 +13,7 @@ use crate::failure::{Result, failed};
 use crate::files::path_key;
 use crate::mesh::Client;
 use crate::services;
-use crate::state::{self, Instance, State, Store};
+use crate::state::{self, Instance, Root, State, Store};
 
 /// How long a node gets to stop on its own before it is killed.
 pub const GRACE: Duration = Duration::from_secs(3);
@@ -152,6 +152,78 @@ pub fn hand_over(home: &Path, data: &Path, mut started: Vec<Instance>) -> Result
         }
     }
     Ok(started)
+}
+
+/// A node stopped for a while, such as while its package is replaced.
+pub struct Paused {
+    pub data: PathBuf,
+    pub rec: Instance,
+}
+
+/// Stops every node any workspace started from inside folder, last started first, and drops it
+/// from its state until resume.
+pub fn pause_from(home: &Path, folder: &Path) -> Result<Vec<Paused>> {
+    let mut out = Vec::new();
+    for data in state::remembered(home) {
+        let mut s = Session::open(home, &data)?;
+        let held: Vec<Instance> = s.state().instances.iter().rev().filter(|i| i.runs_from(folder)).cloned().collect();
+        for rec in held {
+            halt(home, &rec);
+            s.state().forget(&rec.name);
+            out.push(Paused { data: data.clone(), rec });
+        }
+        s.save()?;
+    }
+    Ok(out)
+}
+
+/// Starts paused nodes again in their first order, under their names and roots, leaving one a
+/// command started meanwhile be. Returns why each that did not start failed.
+pub fn resume(home: &Path, paused: &[Paused]) -> Vec<String> {
+    let mut failures = Vec::new();
+    let mut folders: Vec<&PathBuf> = Vec::new();
+    for p in paused {
+        if !folders.contains(&&p.data) {
+            folders.push(&p.data);
+        }
+    }
+    for data in folders {
+        let mut started = Vec::new();
+        let mut store = match Store::open(data, true) {
+            Ok(store) => store,
+            Err(e) => {
+                failures.extend(e.messages());
+                continue;
+            }
+        };
+        let st = store.state();
+        for p in paused.iter().rev().filter(|p| &p.data == data) {
+            if st.instance(&p.rec.name).is_some() {
+                continue;
+            }
+            let mut rec = Instance { pid: 0, start_time: 0, job: String::new(), ..p.rec.clone() };
+            // it goes back to its session when the service process there runs
+            let there = rec.session != services::session() && services::running_in(home, rec.session);
+            if !there {
+                rec.session = services::session();
+                let begun = if rec.restart != Restart::Never { services::ensure_running(home) } else { start(data, &rec).map(|c| rec.track(c.tracking())) };
+                if let Err(e) = begun {
+                    failures.push(format!("{}: {}", rec.name, e.messages().join(", ")));
+                    continue;
+                }
+            }
+            let own = format!("node {}", rec.name);
+            if rec.roots.contains(&own) && st.root(&own).is_none() {
+                st.roots.push(Root::node(&rec.name));
+            }
+            st.instances.push(rec.clone());
+            started.push(rec);
+        }
+        if let Err(e) = store.save().and_then(|_| hand_over(home, data, started)) {
+            failures.extend(e.messages());
+        }
+    }
+    failures
 }
 
 /// An instance that exited, and how long after the watch began it was seen gone.

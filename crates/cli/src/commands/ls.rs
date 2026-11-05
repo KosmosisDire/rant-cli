@@ -8,7 +8,7 @@ use rant::Entity;
 use rant_config::model::NodeType;
 use rant_config::param;
 use serde::Serialize;
-use serde_json::{Map, Value};
+use serde_json::{Map, Value, json};
 
 use crate::commands::kinds::Kind;
 use crate::commands::run::snapshot;
@@ -20,6 +20,7 @@ use crate::names::matches;
 use crate::nodes::managed_peers;
 use crate::output::{Data, Format, Style, Table, Text, columns};
 use crate::packages;
+use crate::packages::sources::Sources;
 use crate::state::{Instance, RootKind, State};
 
 #[derive(clap::Args, Debug)]
@@ -50,8 +51,17 @@ pub fn run(ctx: &mut Context, args: &Args) -> Result<()> {
     if args.no_mesh && kind != Kind::Node {
         return Err(usage("--no-mesh goes with `rant ls nodes`"));
     }
-    if args.available || matches!(kind, Kind::Source | Kind::Service) {
+    if kind == Kind::Service {
         return Err(failed(format!("`rant ls {}` comes with a later step of the rewrite", args.words.join(" "))));
+    }
+    if kind == Kind::Source {
+        if !pattern.is_empty() {
+            return Err(usage("ls sources takes no pattern"));
+        }
+        return list_sources(ctx);
+    }
+    if args.available {
+        return list_available(ctx, kind, pattern);
     }
     match kind {
         Kind::Node => {
@@ -502,6 +512,93 @@ impl Data for Libraries {
         }
         section(t, "LIBRARIES", table.lines("  "))
     }
+}
+
+/// Where rant install looks, in order: the paths and repos sources.rant lists, the official
+/// database, then the databases sources.rant adds.
+#[derive(Serialize)]
+#[serde(transparent)]
+struct SourceList(Vec<Value>);
+
+impl Data for SourceList {
+    fn text(&self, t: &Text) -> String {
+        let dim = |s: &str| t.paint(Style::Dim, s);
+        let mut table = Table::default();
+        for r in &self.0 {
+            let (place, what) = ["path", "repo", "database"].iter().find_map(|k| Some((r[*k].as_str()?, *k))).unwrap_or_default();
+            let official = if r["official"] == Value::Bool(true) { dim("official") } else { String::new() };
+            table.row(vec![place.to_string(), dim(what), official]);
+        }
+        section(t, "SOURCES", table.lines("  "))
+    }
+}
+
+fn list_sources(ctx: &mut Context) -> Result<()> {
+    let home = ctx.home()?.to_path_buf();
+    let sources = Sources::new(&home)?;
+    let local = sources.local();
+    let mut rows: Vec<Value> = local.paths.iter().map(|p| json!({"path": rant_config::paths::slash(p)})).collect();
+    rows.extend(local.repos.iter().map(|r| json!({"repo": r})));
+    rows.extend(sources.databases().iter().map(|d| json!({"database": d, "official": d == packages::OFFICIAL})));
+    let none = local.paths.is_empty() && local.repos.is_empty() && local.databases.is_empty();
+    ctx.show(&SourceList(rows));
+    if none && ctx.out.format() == Format::Text {
+        ctx.out.note(&format!("list your own in {}", rant_config::paths::slash(&packages::sources_file(&home))));
+    }
+    Ok(())
+}
+
+/// What `rant install` or `rant add` can take, from sources.rant and the package databases.
+#[derive(Serialize)]
+#[serde(transparent)]
+struct Available {
+    rows: Vec<Value>,
+    #[serde(skip)]
+    lines: Vec<[String; 4]>,
+}
+
+impl Data for Available {
+    fn text(&self, t: &Text) -> String {
+        let dim = |s: &str| t.paint(Style::Dim, s);
+        let mut table = Table::default();
+        for [name, from, state, description] in &self.lines {
+            table.row(vec![name.clone(), dim(from), dim(state), description.clone()]);
+        }
+        section(t, "AVAILABLE", table.lines("  "))
+    }
+}
+
+fn list_available(ctx: &mut Context, kind: Kind, pattern: &str) -> Result<()> {
+    let mut sources = Sources::new(ctx.home()?)?;
+    let offers = sources.offers(pattern)?;
+    sources.problems().iter().for_each(|p| ctx.out.warn(p));
+    let mut out = Available { rows: Vec::new(), lines: Vec::new() };
+    for o in offers.into_iter().filter(|o| o.source.library.is_some() == (kind == Kind::Library)) {
+        let s = &o.source;
+        let from = if s.repo.is_empty() { rant_config::paths::slash(&s.path) } else { s.repo.clone() };
+        if let Some(b) = &s.library {
+            let languages: Vec<&str> = [("cmake", &b.cmake), ("python", &b.python), ("csharp", &b.csharp), ("rust", &b.rust)].into_iter().filter(|(_, n)| n.is_some()).map(|(k, _)| k).collect();
+            out.rows.push(json!({"name": s.name, "repo": s.repo, "description": o.description, "languages": languages}));
+            out.lines.push([s.name.clone(), from, languages.join(" "), o.description.clone()]);
+            continue;
+        }
+        let installed = match &o.record {
+            None => Value::Bool(false),
+            Some(r) if r.version.is_empty() => Value::Bool(true),
+            Some(r) => json!(r.version),
+        };
+        let state = match &installed {
+            Value::String(v) => format!("installed {v}"),
+            Value::Bool(true) => "installed".into(),
+            _ => String::new(),
+        };
+        let mut row = json!({"name": s.name, "description": o.description, "installed": installed});
+        row[if s.repo.is_empty() { "path" } else { "repo" }] = json!(from);
+        out.rows.push(row);
+        out.lines.push([s.name.clone(), from, state, o.description.clone()]);
+    }
+    ctx.show(&out);
+    Ok(())
 }
 
 /// Every use of a library the sources name under the workspace, else under here.

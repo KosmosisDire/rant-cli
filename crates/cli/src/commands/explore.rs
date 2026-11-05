@@ -1,6 +1,5 @@
 //! `rant explore`: opens the explorer that `rant install explorer` installs.
 
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use rant_process::Command;
 
@@ -28,7 +27,7 @@ pub fn run(ctx: &mut Context, args: &Args) -> Result<()> {
         argv.extend(["--domain".to_string(), domain.to_string()]);
     }
     // a job name of its own each time, since several explorers may run at once
-    let stamp = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_nanos());
+    let stamp = crate::files::stamp();
     let c = Command { argv: argv.clone(), cwd: node.cwd.clone(), ..Command::default() };
     rant_process::start_child(&c, &home.join("explorer.log"), &format!("Local\\rant-explorer-{stamp}")).map_err(|e| failed(e.to_string()))?;
     ctx.out.note(&format!("started {}", argv[0]));

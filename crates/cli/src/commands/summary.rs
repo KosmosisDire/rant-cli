@@ -282,15 +282,6 @@ fn secs(s: f64, decimals: usize) -> String {
     if t.contains('.') { t.trim_end_matches('0').trim_end_matches('.').to_string() } else { t }
 }
 
-/// "a, b and c".
-fn listed(items: &[String]) -> String {
-    match items {
-        [] => String::new(),
-        [one] => one.clone(),
-        [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
-    }
-}
-
 /// Waits for started nodes to show on the mesh, then watches them a moment, since one that
 /// crashes at once otherwise looks started. group is what `rant log` shows when several failed.
 pub fn bring_up(ctx: &mut Context, summary: &mut Summary, data: &Path, started: Vec<Instance>, group: &str, verb: &str, w: &Watch) -> Result<()> {
@@ -382,7 +373,7 @@ pub fn bring_up(ctx: &mut Context, summary: &mut Summary, data: &Path, started: 
         let rows = &summary.report.rows;
         let running = rows.iter().filter(|r| matches!(r.state, RowState::Running | RowState::Starting)).count();
         let target = if exited.len() + late.len() == 1 || group.is_empty() { exited.keys().next().unwrap_or_else(|| &late[0]).clone() } else { group.to_string() };
-        summary.report.closing = format!("{running} of {} running, {}. `rant log {target}` shows why", rows.len(), listed(&bad));
+        summary.report.closing = format!("{running} of {} running, {}. `rant log {target}` shows why", rows.len(), crate::output::spoken(&bad));
         summary.failed = true;
     }
     summary.show(ctx);
@@ -406,7 +397,6 @@ mod tests {
         assert_eq!(secs(2.0, 2), "2");
         assert_eq!(secs(0.4, 1), "0.4");
         assert_eq!(secs(1.25, 2), "1.25");
-        assert_eq!(listed(&["a".into(), "b".into(), "c".into()]), "a, b and c");
         assert!(seconds("-1").is_err() && seconds("x").is_err() && seconds("0.5") == Ok(0.5));
     }
 

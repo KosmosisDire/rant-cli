@@ -1,11 +1,13 @@
 //! rant-cli: build, run and inspect Rant nodes.
 
+mod agents;
 mod cli;
 mod cmake;
 mod commands;
 mod context;
 mod failure;
 mod files;
+mod github;
 mod home;
 mod interrupt;
 mod library;
@@ -19,6 +21,8 @@ mod packages;
 mod pick;
 mod prompt;
 mod scaffold;
+#[cfg(test)]
+mod scratch;
 mod services;
 mod state;
 

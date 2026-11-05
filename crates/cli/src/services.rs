@@ -98,7 +98,7 @@ pub fn ensure_running(home: &Path) -> Result<()> {
         return Ok(());
     }
     let _ = std::fs::create_dir_all(home.join("logs"));
-    let job = format!("Local\\rant-services-{}-{}", home_key(home), stamp_nanos());
+    let job = format!("Local\\rant-services-{}-{}", home_key(home), crate::files::stamp());
     let me = std::env::current_exe().map_err(|e| failed(format!("cannot find rant itself: {e}")))?;
     rant_process::start_detached(&Command::new([me.to_string_lossy().into_owned(), "__services".into()], home), &log_file(home), &job)
         .map_err(|e| failed(e.to_string()))?;
@@ -106,10 +106,6 @@ pub fn ensure_running(home: &Path) -> Result<()> {
         return Ok(());
     }
     Err(failed(format!("rant's service process did not start, see {}", log_file(home).display())))
-}
-
-fn stamp_nanos() -> u128 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos())
 }
 
 /// A workspace rant enable enabled, or the rant home outside one, whose services the service
@@ -214,7 +210,7 @@ fn start_enabled(home: &Path, when: When) {
         if let Some(d) = e.domain {
             argv.extend(["--domain".into(), d.to_string()]);
         }
-        let job = format!("Local\\rant-services-{}-start-{}", home_key(home), stamp_nanos());
+        let job = format!("Local\\rant-services-{}-start-{}", home_key(home), crate::files::stamp());
         let word = if when == When::Boot { "boot" } else { "login" };
         say(home, &format!("at {word}, starting the services of {folder}"));
         let c = Command { argv, cwd: e.folder.clone(), env: e.env.clone(), base: None };
