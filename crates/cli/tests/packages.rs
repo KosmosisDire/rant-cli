@@ -109,6 +109,20 @@ fn packages() {
     expect_match(&r.out, r"Tool:\n +worker\n");
     t.rant(&["stop", "Tool"]).ok();
 
+    // So does one the service process runs, which it starts again.
+    write(&format!("{build}/Kept.run"), "restart = \"always\"\nnode \"tool/worker\" {}\n");
+    tar(&build, "czf", &t.path("tool.tar.gz"), &["package.rant", "Tool.run", "Kept.run", "bin"], None);
+    t.rant(&["update", "tool", "-y"]).ok();
+    t.rant(&["run", "Kept", "--watch", "0"]).ok();
+    sleep(1.1);
+    touch(&t.path("tool.tar.gz"));
+    let r = t.rant(&["update", "tool", "-y"]).ok();
+    expect_match(&r.err, "stopped worker while tool changes.*installed tool from.*started worker again");
+    let r = t.rant(&["ls", "nodes", "--no-mesh"]).ok();
+    expect_match(&r.out, r"Kept:\n +worker\n");
+    t.rant(&["stop", "Kept"]).ok();
+    t.wait_for_service_log(r"stopped, nothing to watch\n$");
+
     // What --from installed stays until rant install says otherwise.
     t.rant(&["install", "tool", "--from", "tool-build"]).ok();
     let r = t.rant(&["update", "tool"]).ok();

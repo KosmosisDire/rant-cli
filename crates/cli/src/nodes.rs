@@ -219,7 +219,10 @@ pub fn resume(home: &Path, paused: &[Paused]) -> Vec<String> {
             st.instances.push(rec.clone());
             started.push(rec);
         }
-        if let Err(e) = store.save().and_then(|_| hand_over(home, data, started)) {
+        let saved = store.save();
+        // hand_over waits for the lock, and the service process needs it to start them
+        drop(store);
+        if let Err(e) = saved.and_then(|_| hand_over(home, data, started)) {
             failures.extend(e.messages());
         }
     }
