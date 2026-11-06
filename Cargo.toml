@@ -3,14 +3,14 @@ members = ["crates/cli", "crates/config", "crates/process"]
 resolver = "3"
 
 [workspace.package]
-version = "0.0.38"
+version = "0.0.39"
 edition = "2024"
 rust-version = "1.89"
 publish = false
 
 [workspace.dependencies]
 libc = "0.2"
-rant-middleware = { git = "https://github.com/KosmosisDire/Rant.git", tag = "crate-v0.0.42" }
+rant-middleware = { git = "https://github.com/KosmosisDire/Rant.git", tag = "crate-v0.0.43" }
 regex = "1.13.1"
 serde = { version = "1.0.229", features = ["derive"] }
 # preserve_order keeps fields in the order a command writes them
