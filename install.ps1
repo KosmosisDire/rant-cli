@@ -1,7 +1,7 @@
 # Installs rant-cli, the command line tool for Rant, on Windows:
 #   irm https://raw.githubusercontent.com/KosmosisDire/rant-cli/main/install.ps1 | iex
 # RANT_VERSION picks a release instead of the newest, RANT_HOME the folder instead of
-# ~\.rant, and RANT_YES=1 answers yes and skips the package list.
+# ~\.rant, and RANT_YES=1 installs rant-cli alone without the checklist.
 # It runs in the caller's session through iex, so everything stays in a scope of its own.
 & {
     $ErrorActionPreference = 'Stop'
@@ -29,14 +29,6 @@
     }
     function Short($path) {
         if ($path.StartsWith($env:USERPROFILE)) { '~' + $path.Substring($env:USERPROFILE.Length) } else { $path }
-    }
-    # Yes when answered yes or left empty, and at once with RANT_YES.
-    function Ask($question) {
-        if ($yes) { return $true }
-        Say '? ' 'Red'; Say "$question " 'White'; Say '[Y/n] ' 'DarkGray'
-        $answer = Read-Host
-        Write-Host ''
-        return $answer -in @('', 'y', 'Y', 'yes', 'Yes')
     }
     # A native command's output, stderr included, as text lines, and whether it succeeded.
     function Capture([scriptblock]$command) {
@@ -85,29 +77,48 @@
     Say '    - ' 'DarkGray'; Write-Host "download rant-cli to $(Short $exe)"
     if (-not $on_path) { Say '    - ' 'DarkGray'; Write-Host "put $(Short $bin) on your user PATH" }
     Say '    - ' 'DarkGray'; Write-Host 'set up tab completion for PowerShell'
-    if (-not $yes) { Say '    - ' 'DarkGray'; Write-Host 'let you pick packages to install' }
+    if (-not $yes) { Say '    - ' 'DarkGray'; Write-Host 'install what you tick below' }
     Write-Host ''
 
-    if (-not (Ask 'Install?')) {
-        Write-Host '  nothing was installed'
-        return
+    # The checklist runs from a download outside the folder, so cancelling it leaves this
+    # machine as it was.
+    $staging = Join-Path ([IO.Path]::GetTempPath()) "rant-install-$([guid]::NewGuid().ToString('N'))"
+    New-Item -ItemType Directory -Force $staging | Out-Null
+    $staged = Join-Path $staging 'rant.exe'
+    Say '  downloading ' 'DarkGray'; Write-Host $url
+    try {
+        Invoke-WebRequest -UseBasicParsing $url -OutFile $staged
+    } catch {
+        Remove-Item -Recurse -Force $staging -ErrorAction SilentlyContinue
+        Fail "cannot download ${url}: $($_.Exception.Message)"
+    }
+    if (-not (Capture { & $staged --version }).ok) {
+        Remove-Item -Recurse -Force $staging -ErrorAction SilentlyContinue
+        Fail 'the downloaded rant-cli does not run here'
+    }
+
+    if (-not $yes) {
+        Write-Host ''
+        & $staged install
+        # 130 is the checklist cancelled
+        if ($LASTEXITCODE -eq 130) {
+            Remove-Item -Recurse -Force $staging -ErrorAction SilentlyContinue
+            Write-Host '  nothing was installed'
+            Write-Host ''
+            return
+        }
+        if ($LASTEXITCODE -ne 0) { Warn 'a package did not install, fix what rant said above, then run `rant install <package>`' }
+        Write-Host ''
     }
 
     New-Item -ItemType Directory -Force $bin | Out-Null
-    $part = "$exe.part"
-    Say '  downloading ' 'DarkGray'; Write-Host $url
-    try {
-        Invoke-WebRequest -UseBasicParsing $url -OutFile $part
-    } catch {
-        Fail "cannot download ${url}: $($_.Exception.Message)"
-    }
     # a running rant.exe cannot be replaced but can be renamed out of the way
     if (Test-Path $exe) {
         Remove-Item "$exe.old" -Force -ErrorAction SilentlyContinue
         Move-Item -Force $exe "$exe.old"
     }
-    Move-Item -Force $part $exe
-    if (-not (Capture { & $exe --version }).ok) { Fail 'the downloaded rant-cli does not run here' }
+    Move-Item -Force $staged $exe
+    Remove-Item -Recurse -Force $staging -ErrorAction SilentlyContinue
     Step "installed $(Short $exe)"
 
     if (-not $on_path) {
@@ -125,12 +136,6 @@
     # loads even where the execution policy refuses script files, and so the profile.
     $hook = Join-Path $home_dir 'completions\rant.ps1'
     if (Test-Path $hook) { Invoke-Expression (Get-Content -Raw $hook) }
-
-    if (-not $yes) {
-        Write-Host ''
-        & $exe install
-        if ($LASTEXITCODE -ne 0) { Warn 'a package did not install, fix what rant said above, then run `rant install <package>`' }
-    }
 
     # Windows Security can take an unsigned program away after it first ran
     $now = Capture { & $exe --version }

@@ -2,7 +2,7 @@
 # Installs rant-cli, the command line tool for Rant, on Linux and macOS:
 #   curl -fsSL https://raw.githubusercontent.com/KosmosisDire/rant-cli/main/install.sh | sh
 # RANT_VERSION picks a release instead of the newest, RANT_HOME the folder instead of
-# ~/.rant, and -y or RANT_YES=1 answers yes and skips the package list.
+# ~/.rant, and -y or RANT_YES=1 installs rant-cli alone without the checklist.
 set -eu
 
 repo="KosmosisDire/rant-cli"
@@ -38,17 +38,9 @@ short() { case "$1" in "$HOME"/*) echo "~${1#"$HOME"}" ;; *) echo "$1" ;; esac; 
 # stdin is the script itself when it comes through a pipe, so questions go to the terminal
 has_tty() { [ -r /dev/tty ] && { : < /dev/tty; } 2> /dev/null; }
 
-# Yes when answered yes or left empty, and at once with -y or with no terminal to ask.
-ask() {
-    if [ -n "$yes" ] || ! has_tty; then return 0; fi
-    printf '%s?%s %s%s%s %s[Y/n]%s ' "$accent" "$reset" "$bold" "$1" "$reset" "$faint" "$reset"
-    read -r answer < /dev/tty || answer=""
-    echo
-    case "$answer" in
-        "" | y | Y | yes | Yes) return 0 ;;
-        *) return 1 ;;
-    esac
-}
+# the checklist needs a person at the terminal, which a pipe or -y says there is not
+pick=""
+[ -z "$yes" ] && has_tty && pick=1
 
 printf '\n%srant%s%s-cli installer%s\n\n' "$accent$bold" "$reset" "$bold" "$reset"
 
@@ -100,20 +92,36 @@ printf '  It will:\n'
 printf '    %s-%s download rant-cli to %s\n' "$faint" "$reset" "$(short "$bin/rant")"
 printf '    %s-%s put %s on PATH in %s\n' "$faint" "$reset" "$(short "$bin")" "$rc_names"
 printf '    %s-%s set up tab completion for your shells\n' "$faint" "$reset"
-[ -z "$yes" ] && has_tty && printf '    %s-%s let you pick packages to install\n' "$faint" "$reset"
+[ -n "$pick" ] && printf '    %s-%s install what you tick below\n' "$faint" "$reset"
 echo
 
-if ! ask "Install?"; then
-    echo "  nothing was installed"
-    exit 1
+# The checklist runs from a download outside the folder, so cancelling it leaves this machine
+# as it was.
+staging=$(mktemp -d) || fail "cannot make a temporary folder"
+staged="$staging/rant"
+unstage() { rm -f "$staged"; rmdir "$staging" 2> /dev/null || true; }
+printf '  %sdownloading%s %s\n' "$dim" "$reset" "$url"
+curl -fSL --progress-bar -o "$staged" "$url" || { unstage; fail "cannot download $url"; }
+chmod +x "$staged"
+"$staged" --version > /dev/null || { unstage; fail "the downloaded rant-cli does not run here"; }
+
+if [ -n "$pick" ]; then
+    echo
+    code=0
+    "$staged" install < /dev/tty || code=$?
+    # 130 is the checklist cancelled
+    if [ "$code" -eq 130 ]; then
+        unstage
+        printf '  nothing was installed\n\n'
+        exit 1
+    fi
+    [ "$code" -ne 0 ] && warn "a package did not install, fix what rant said above, then run \`rant install <package>\`"
+    echo
 fi
 
 mkdir -p "$bin"
-printf '  %sdownloading%s %s\n' "$dim" "$reset" "$url"
-curl -fSL --progress-bar -o "$bin/rant.part" "$url" || fail "cannot download $url"
-chmod +x "$bin/rant.part"
-mv -f "$bin/rant.part" "$bin/rant"
-"$bin/rant" --version > /dev/null || fail "the downloaded rant-cli does not run here"
+mv -f "$staged" "$bin/rant"
+unstage
 step "installed $(short "$bin/rant")"
 
 line="export PATH=\"$bin:\$PATH\"    # rant-cli"
@@ -135,17 +143,10 @@ else
 fi
 printf '%s\n' "$setup" | sed "s/^/      $faint/; s/\$/$reset/"
 
-# the picker needs a person at the terminal, which a pipe or -y says there is not
-if [ -z "$yes" ] && has_tty; then
-    echo
-    PATH="$bin:$PATH" "$bin/rant" install < /dev/tty ||
-        warn "a package did not install, fix what rant said above, then run \`rant install <package>\`"
-fi
-
 # a script run through sh cannot change the shell that started it, so only a new one has
 # rant on PATH and tab completion
 echo
 printf '%sDone.%s %s is installed.\n' "$green$bold" "$reset" "$("$bin/rant" --version)"
 printf '  Open a new shell to use it, then try %srant --help%s.\n' "$bold" "$reset"
-[ -n "$yes" ] && printf '  %srant install%s picks packages to add.\n' "$bold" "$reset"
+[ -z "$pick" ] && printf '  %srant install%s picks packages to add.\n' "$bold" "$reset"
 echo

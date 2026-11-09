@@ -12,6 +12,8 @@ pub enum Failure {
     Diags(Vec<Diag>),
     /// What went wrong is in the data a command showed already, exit code 1.
     Reported,
+    /// The user gave up a question that says so itself, exit code 130 as for Ctrl-C.
+    Cancelled,
 }
 
 pub type Result<T> = std::result::Result<T, Failure>;
@@ -21,6 +23,7 @@ impl Failure {
         match self {
             Failure::Usage(_) => 2,
             Failure::Failed(_) | Failure::Diags(_) | Failure::Reported => 1,
+            Failure::Cancelled => 130,
         }
     }
 
@@ -29,7 +32,7 @@ impl Failure {
         match self {
             Failure::Usage(m) | Failure::Failed(m) => vec![m.clone()],
             Failure::Diags(d) => d.iter().map(Diag::to_string).collect(),
-            Failure::Reported => Vec::new(),
+            Failure::Reported | Failure::Cancelled => Vec::new(),
         }
     }
 }

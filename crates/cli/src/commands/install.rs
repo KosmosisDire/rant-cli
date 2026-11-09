@@ -135,7 +135,7 @@ fn auto_skills(setting: Option<AgentSkills>) -> Choice {
 /// auto skills setting, those of TICKED not installed ticked but an editor extension with no
 /// editor found.
 fn pick(ctx: &mut Context, args: &Args) -> Result<()> {
-    if ctx.yes || !std::io::stdin().is_terminal() || args.version.is_some() || args.from.is_some() {
+    if ctx.yes || !std::io::stdin().is_terminal() || !ctx.out.terminal_err() || args.version.is_some() || args.from.is_some() {
         return Err(usage("install needs a package, `rant ls packages --available` lists them"));
     }
     ctx.out.note("looking up the packages");
@@ -158,7 +158,8 @@ fn pick(ctx: &mut Context, args: &Args) -> Result<()> {
     let home = ctx.home()?.to_path_buf();
     let setting = home::read(&home)?.agent_skills;
     let choices = std::iter::once(cli_skill()).chain(packages).chain([auto_skills(setting)]).collect();
-    let Some(ticked) = pick::pick(&ctx.out, "To install", "Install", choices) else { return Ok(()) };
+    // the installers read the exit code to tell a cancel from a confirm
+    let Some(ticked) = pick::pick(&ctx.out, "To install", "Install", choices) else { return Err(Failure::Cancelled) };
     let auto = if ticked.contains(&(offers.len() + 1)) { AgentSkills::Auto } else { AgentSkills::Ask };
     if setting != Some(auto) {
         home::set_agent_skills(&home, auto)?;

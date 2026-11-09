@@ -11,9 +11,9 @@ curl -fsSL https://raw.githubusercontent.com/KosmosisDire/rant-cli/main/install.
 irm https://raw.githubusercontent.com/KosmosisDire/rant-cli/main/install.ps1 | iex                     # Windows
 ```
 
-Each lists what it will do and asks first: the `rant` command goes to `~/.rant/bin`, that
-folder onto PATH, then `rant setup` adds tab completion and `rant install` lets you pick
-packages and which of them run at every boot. Later, `rant update` moves it and
+Each lists what it will do, then a checklist of the CLI's skill and the packages to install,
+which is the only question: the `rant` command goes to `~/.rant/bin`, that folder onto PATH, and
+`rant setup` adds tab completion. Later, `rant update` moves it and
 the installed packages to their newest releases, and `rant uninstall` removes all of it again,
 leaving workspaces as they are.
 
