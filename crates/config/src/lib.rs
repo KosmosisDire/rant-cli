@@ -1,5 +1,5 @@
 //! The config files of rant-cli: workspaces, their packages, node types, groups and services,
-//! and the package database. `Workspace` is where commands start.
+//! the package database and the config of rant's home. `Workspace` is where commands start.
 
 mod argv;
 pub mod build_plan;
@@ -9,6 +9,7 @@ pub mod discover;
 mod eval;
 mod filter;
 pub mod group;
+pub mod home;
 pub mod manifest;
 pub mod model;
 pub mod package;

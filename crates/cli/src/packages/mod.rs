@@ -1,5 +1,5 @@
 //! The packages rant install puts in the home's packages folder, each from a repo's releases or
-//! a path that sources.rant or a package database names, with a record beside it.
+//! a path that config.rant or a package database names, with a record beside it.
 
 mod install;
 mod links;
@@ -14,7 +14,7 @@ pub use links::{is_link, make_link, unlink};
 use std::path::{Path, PathBuf};
 
 use rant_config::model::{Model, NodeType};
-use rant_config::{Settings, database, package, paths};
+use rant_config::{Settings, home, package, paths};
 use serde_json::{Map, Value, json};
 
 use crate::context::Context;
@@ -22,7 +22,7 @@ use crate::failure::{Result, failed};
 use crate::files;
 use crate::github::{self, Asset};
 
-/// The official package database, read after sources.rant.
+/// The official package database, read after the lists of config.rant.
 pub const OFFICIAL: &str = "KosmosisDire/rant-packages";
 
 /// Undoes every link among the packages, so removing the folder never reaches a linked build.
@@ -38,11 +38,6 @@ pub fn dir(home: &Path) -> PathBuf {
     home.join("packages")
 }
 
-/// sources.rant, which the user writes.
-pub fn sources_file(home: &Path) -> PathBuf {
-    home.join("sources.rant")
-}
-
 /// What a list of sources named when last read, in a file its key cannot clash in.
 fn cache_file(home: &Path, named_by: &str) -> PathBuf {
     home.join("cache").join("sources").join(format!("{}.json", named_by.replace('/', "+")))
@@ -56,7 +51,7 @@ pub struct Source {
     pub repo: String,
     /// A local build folder or a .tar.gz archive.
     pub path: PathBuf,
-    /// "sources.rant", a database's repo, "link" or "--from".
+    /// "config.rant", a database's repo, "link" or "--from".
     pub named_by: String,
     /// Set for a library, which rant add takes instead.
     pub library: Option<package::Library>,
@@ -66,17 +61,14 @@ pub struct Source {
 /// names it. read lists the sources first when the official database was never read.
 pub fn cached(home: &Path, read: bool) -> Vec<Source> {
     if read && !cache_file(home, OFFICIAL).exists() {
-        // a broken sources.rant or no network leaves the cache as it is
+        // a broken config.rant or no network leaves the cache as it is
         if let Ok(mut s) = sources::Sources::new(home) {
             let _ = s.offers("");
         }
     }
-    let mut lists = vec!["sources.rant".to_string(), OFFICIAL.to_string()];
-    let file = sources_file(home);
-    if let Ok(text) = std::fs::read_to_string(&file)
-        && let Ok(db) = database::parse(&file, text, true)
-    {
-        lists.extend(db.databases);
+    let mut lists = vec![home::CONFIG_FILE.to_string(), OFFICIAL.to_string()];
+    if let Ok(c) = home::read(home) {
+        lists.extend(c.sources.databases);
     }
     let mut out: Vec<Source> = Vec::new();
     for l in lists {
@@ -232,9 +224,9 @@ mod tests {
         let official = r#"[{"name": "rant", "repo": "KosmosisDire/Rant", "library": {"cmake": "rant::rant_host", "python": "", "csharp": "Rant", "rust": "rant-middleware"}},
             {"name": "explorer", "repo": "KosmosisDire/rant-explorer"}]"#;
         std::fs::write(home.join("cache/sources/KosmosisDire+rant-packages.json"), official).unwrap();
-        std::fs::write(home.join("cache/sources/sources.rant.json"), r#"[{"name": "explorer", "path": "/w/explorer"}]"#).unwrap();
+        std::fs::write(home.join("cache/sources/config.rant.json"), r#"[{"name": "explorer", "path": "/w/explorer"}]"#).unwrap();
         let s = cached(&home, false);
-        assert_eq!(s.iter().map(|s| (s.name.as_str(), s.named_by.as_str())).collect::<Vec<_>>(), [("explorer", "sources.rant"), ("rant", OFFICIAL)]);
+        assert_eq!(s.iter().map(|s| (s.name.as_str(), s.named_by.as_str())).collect::<Vec<_>>(), [("explorer", "config.rant"), ("rant", OFFICIAL)]);
         let lib = s[1].library.as_ref().unwrap();
         assert_eq!((lib.cmake.as_deref(), lib.python.as_deref()), (Some("rant::rant_host"), None));
 

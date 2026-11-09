@@ -35,7 +35,7 @@ pub struct Args {
     /// with nodes: only what this workspace declares and started, without joining the mesh
     #[arg(long)]
     pub no_mesh: bool,
-    /// with packages or libraries: what `rant install` or `rant add` can take, from sources.rant and the package databases
+    /// with packages or libraries: what `rant install` or `rant add` can take, from config.rant and the package databases
     #[arg(long)]
     pub available: bool,
 }
@@ -561,8 +561,8 @@ impl Data for Libraries {
     }
 }
 
-/// Where rant install looks, in order: the paths and repos sources.rant lists, the official
-/// database, then the databases sources.rant adds.
+/// Where rant install looks, in order: the paths and repos config.rant lists, the official
+/// database, then the databases config.rant adds.
 #[derive(Serialize)]
 #[serde(transparent)]
 struct SourceList(Vec<Value>);
@@ -590,12 +590,12 @@ fn list_sources(ctx: &mut Context) -> Result<()> {
     let none = local.paths.is_empty() && local.repos.is_empty() && local.databases.is_empty();
     ctx.show(&SourceList(rows));
     if none && ctx.out.format() == Format::Text {
-        ctx.out.note(&format!("list your own in {}", rant_config::paths::slash(&packages::sources_file(&home))));
+        ctx.out.note(&format!("list your own in {}", rant_config::paths::slash(&rant_config::home::file(&home))));
     }
     Ok(())
 }
 
-/// What `rant install` or `rant add` can take, from sources.rant and the package databases.
+/// What `rant install` or `rant add` can take, from config.rant and the package databases.
 #[derive(Serialize)]
 #[serde(transparent)]
 struct Available {

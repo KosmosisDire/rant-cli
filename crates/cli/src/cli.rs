@@ -102,7 +102,7 @@ pub enum Command {
     /// set up tab completion for your shells, or the named ones, and `skill` gives rant-cli's skill to the AI coding agents found
     #[command(override_usage = "rant setup [shell...|skill]")]
     Setup(setup::Args),
-    /// install packages, or another release of one, by name from ~/.rant/sources.rant and the package databases, `rant ls sources` shows where it looks, or from any GitHub repo as owner/name or its link. With none named, pick them from a list
+    /// install packages, or another release of one, by name from ~/.rant/config.rant and the package databases, `rant ls sources` shows where it looks, or from any GitHub repo as owner/name or its link. With none named, pick them from a list
     #[command(override_usage = "rant install [package|repo...]")]
     Install(install::Args),
     /// remove installed packages, or the skill rant add gave a library, a linked build folder stays as it is

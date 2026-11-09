@@ -64,10 +64,10 @@ fn packages() {
     let left = list(&format!("{home}/packages"));
     assert!(left.is_empty(), "remove left {left:?}");
 
-    // sources.rant lists local build folders, relative to itself, which are linked, never copied,
+    // config.rant lists local build folders, relative to itself, which are linked, never copied,
     // each named by its package.rant.
     write(&t.path("nameless/package.rant"), "description = \"No name\"\n");
-    write(&format!("{home}/sources.rant"), "paths     = [\"../../tool-build\", \"../../nameless\"]\ndatabases = [\"someone/packages\"]\n");
+    write(&format!("{home}/config.rant"), "paths     = [\"../../tool-build\", \"../../nameless\"]\ndatabases = [\"someone/packages\"]\n");
     let r = t.rant(&["ls", "sources"]).ok();
     expect_match(&r.out, r"^SOURCES\n  [^\n]*/tool-build +path *\n  [^\n]*/nameless +path *\n  KosmosisDire/rant-packages +database +official\n  someone/packages +database *\n");
     let r = t.rant(&["install", "tool"]).ok();
@@ -82,13 +82,13 @@ fn packages() {
     t.rant(&["remove", "tool"]).ok();
     assert!(exists(&format!("{build}/package.rant")) && exists(&format!("{build}/bin")), "removing a linked package reached into its folder");
 
-    // Update finds a linked folder current by itself, and follows sources.rant to an archive,
+    // Update finds a linked folder current by itself, and follows config.rant to an archive,
     // then takes the archive again once it changes.
-    write(&format!("{home}/sources.rant"), "paths = [\"../../tool-build\"]\n");
+    write(&format!("{home}/config.rant"), "paths = [\"../../tool-build\"]\n");
     t.rant(&["install", "tool"]).ok();
     let r = t.rant(&["update", "tool"]).ok();
     expect_match(&r.out, r"^tool is up to date\n$");
-    write(&format!("{home}/sources.rant"), "paths = [\"../../tool.tar.gz\"]\n");
+    write(&format!("{home}/config.rant"), "paths = [\"../../tool.tar.gz\"]\n");
     let r = t.rant(&["update", "tool", "-y"]).ok();
     expect_match(&r.out, r"This updates:\n  tool, from [^\n]*tool[.]tar[.]gz\n");
     expect_match(&r.err, "installed tool from");
@@ -138,16 +138,16 @@ fn packages() {
     expect_match(&r.err, r"tool is installed from someone/tool, `rant remove tool` first to install it from [^\n]*tool-build");
     t.rant(&["remove", "tool"]).ok();
 
-    // A broken sources.rant says where.
-    write(&format!("{home}/sources.rant"), "paths = [\"\"]\n");
+    // A broken config.rant says where.
+    write(&format!("{home}/config.rant"), "paths = [\"\"]\n");
     let r = t.rant(&["install", "tool"]).fails();
-    expect_match(&r.err, "sources[.]rant:1:[0-9]+: a path must name a folder or an archive");
+    expect_match(&r.err, "config[.]rant:1:[0-9]+: a path must name a folder or an archive");
     let r = t.rant(&["ls", "sources"]).fails();
     expect_match(&r.err, "a path must name a folder or an archive");
 
     // A package's skill folder is linked for each AI coding agent found, and goes with it. A
     // package that is more than a skill asks first, until its skill is given.
-    remove(&format!("{home}/sources.rant"));
+    remove(&format!("{home}/config.rant"));
     write(&format!("{build}/skill/SKILL.md"), "---\nname: tool\ndescription: Use the tool\n---\n");
     let r = t.rant(&["install", "tool", "--from", "tool-build"]).ok();
     expect_match(&r.err, "found no AI coding agent here to give the skill of tool to");
@@ -166,6 +166,14 @@ fn packages() {
         assert!(!exists(&gone), "remove left {gone}");
     }
     assert!(exists(&format!("{build}/skill/SKILL.md")), "remove reached into the skill's folder");
+
+    // With agent_skills auto in config.rant it gives the skill without asking.
+    write(&format!("{home}/config.rant"), "agent_skills = \"auto\"\n");
+    let r = t.rant(&["install", "tool", "--from", "tool-build"]).ok();
+    expect_no_match(&r.err, "Also give");
+    expect_match(&r.err, r"linked the skill of tool for Claude Code as ");
+    t.rant(&["remove", "tool"]).ok();
+    remove(&format!("{home}/config.rant"));
 
     // A package that is only a skill gives it without asking, linked with each _ as -.
     write(&t.path("lore/package.rant"), "name = \"lore_skill\"\n");

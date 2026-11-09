@@ -1,5 +1,5 @@
-//! The package database, `packages.rant` in the rant-packages repo, and the user's own
-//! `sources.rant` in rant's home, which may also list folders, archives and more databases.
+//! The package database, `packages.rant` in the rant-packages repo, and the lists the user's
+//! config.rant in rant's home holds, which may also name folders, archives and more databases.
 
 use std::path::{Path, PathBuf};
 
@@ -9,7 +9,7 @@ use crate::diag::Diag;
 use crate::paths;
 use crate::source::{Fields, Source};
 
-/// What a database file lists. Only sources.rant lists paths and databases.
+/// What a database file lists. Only config.rant lists paths and databases.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Database {
     /// GitHub repos as owner/name, each releasing one package.
@@ -20,15 +20,17 @@ pub struct Database {
     pub databases: Vec<String>,
 }
 
-/// Reads a database's text, sources.rant when local. file only names it in errors, and a
-/// relative path in sources.rant is from the file's folder.
-pub fn parse(file: &Path, text: String, local: bool) -> Result<Database, Diag> {
+/// Reads a package database's text. file only names it in errors.
+pub fn parse(file: &Path, text: String) -> Result<Database, Diag> {
     let src = Source::parse(file, text)?;
-    let what = if local { "sources.rant" } else { "the package database" };
-    let keys: &[&str] = if local { &["repos", "paths", "databases"] } else { &["repos"] };
-    let fields = Fields::of_body(&src, &src.body, what, keys, &[])?;
-    let mut out = Database { repos: repo_list(&src, &fields, "repos")?, databases: repo_list(&src, &fields, "databases")?, ..Default::default() };
-    for (s, at) in plain_list(&src, &fields, "paths")? {
+    let fields = Fields::of_body(&src, &src.body, "the package database", &["repos"], &[])?;
+    lists(&src, &fields)
+}
+
+/// The lists fields hold, a relative path from the file's folder.
+pub(crate) fn lists(src: &Source, fields: &Fields) -> Result<Database, Diag> {
+    let mut out = Database { repos: repo_list(src, fields, "repos")?, databases: repo_list(src, fields, "databases")?, ..Default::default() };
+    for (s, at) in plain_list(src, fields, "paths")? {
         if s.is_empty() {
             return Err(src.diag_at(at, "a path must name a folder or an archive"));
         }
@@ -102,11 +104,7 @@ mod tests {
     use super::*;
 
     fn read(text: &str) -> Result<Database, Diag> {
-        parse(Path::new("packages.rant"), text.to_string(), false)
-    }
-
-    fn sources(text: &str) -> Result<Database, Diag> {
-        parse(Path::new("home/sources.rant"), text.to_string(), true)
+        parse(Path::new("packages.rant"), text.to_string())
     }
 
     #[test]
@@ -151,37 +149,6 @@ mod tests {
         ];
         for (text, message) in cases {
             let err = read(text).err().unwrap_or_else(|| panic!("{text} was read"));
-            assert!(err.message.contains(message), "{text}: {}", err.message);
-        }
-    }
-
-    #[test]
-    fn sources_list_repos_paths_and_more_databases() {
-        let db = sources(
-            "repos     = [\"https://github.com/me/tool\"]\npaths     = [\"builds/explorer\", \"tool-1.0-win-x64.tar.gz\"]\n\
-             databases = [\"me/packages\", \"team/packages\"]\n",
-        )
-        .unwrap();
-        assert_eq!(db.repos, ["me/tool"]);
-        assert_eq!(db.paths, [paths::normalize(Path::new("home/builds/explorer")), paths::normalize(Path::new("home/tool-1.0-win-x64.tar.gz"))]);
-        assert_eq!(db.databases, ["me/packages", "team/packages"], "in the order written");
-        let absolute = if cfg!(windows) { "C:/builds/explorer" } else { "/builds/explorer" };
-        let db = sources(&format!("paths = [\"{absolute}\"]\n")).unwrap();
-        assert_eq!(db.paths, [PathBuf::from(absolute)]);
-    }
-
-    #[test]
-    fn sources_refuse_what_they_cannot_use() {
-        let cases = [
-            ("paths = [\"\"]\n", "must name a folder or an archive"),
-            ("paths = [\"a\", \"./a\"]\n", "listed twice"),
-            ("databases = [\"nope\"]\n", "is no GitHub repo"),
-            ("databases = [\"a/b\", \"a/b\"]\n", "listed twice"),
-            ("database \"a/b\" {}\n", "unknown block `database`"),
-            ("repo = \"c/d\"\n", "unknown attribute `repo`"),
-        ];
-        for (text, message) in cases {
-            let err = sources(text).err().unwrap_or_else(|| panic!("{text} was read"));
             assert!(err.message.contains(message), "{text}: {}", err.message);
         }
     }

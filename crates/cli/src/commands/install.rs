@@ -4,6 +4,7 @@
 use std::io::IsTerminal;
 
 use rant_config::database;
+use rant_config::home::{self, AgentSkills};
 
 use crate::agents;
 use crate::context::Context;
@@ -62,7 +63,7 @@ fn source_of(ctx: &Context, args: &Args, sources: &mut Option<Sources>, word: &s
         Some(s) => Ok(s),
         None => {
             sources.problems().iter().for_each(|p| ctx.out.warn(p));
-            Err(failed(format!("no package `{word}` in sources.rant or the package databases, `rant ls packages --available` lists them")))
+            Err(failed(format!("no package `{word}` in config.rant or the package databases, `rant ls packages --available` lists them")))
         }
     }
 }
@@ -82,7 +83,7 @@ fn install_all(ctx: &Context, args: &Args, words: &[String]) -> Result<(Vec<Stri
     for word in words {
         let one = source_of(ctx, args, &mut sources, word).and_then(|s| {
             if args.version.is_some() && s.repo.is_empty() {
-                return Err(usage(format!("--version picks a release, and {word} comes from {} in sources.rant", rant_config::paths::slash(&s.path))));
+                return Err(usage(format!("--version picks a release, and {word} comes from {} in config.rant", rant_config::paths::slash(&s.path))));
             }
             packages::install(ctx, &home, &s, args.version.as_deref().unwrap_or_default(), &wanted).map(|_| s.name)
         });
@@ -124,8 +125,15 @@ fn cli_skill() -> Choice {
     Choice { label: "Rant Cli Skill".into(), note: format!("{state}teaches AI coding agents to use rant-cli"), checked: found && !given }
 }
 
-/// With no names on a terminal: a checklist of the CLI's skill and every package there is,
-/// those of TICKED not installed ticked but an editor extension with no editor found.
+/// The checklist's last row, the agent_skills setting of config.rant, ticked unless it says ask.
+fn auto_skills(setting: Option<AgentSkills>) -> Choice {
+    let note = "gives the skill a package or library carries to AI coding agents without asking";
+    Choice { label: "Auto install agent skills".into(), note: note.into(), checked: setting != Some(AgentSkills::Ask) }
+}
+
+/// With no names on a terminal: a checklist of the CLI's skill, every package there is and the
+/// auto skills setting, those of TICKED not installed ticked but an editor extension with no
+/// editor found.
 fn pick(ctx: &mut Context, args: &Args) -> Result<()> {
     if ctx.yes || !std::io::stdin().is_terminal() || args.version.is_some() || args.from.is_some() {
         return Err(usage("install needs a package, `rant ls packages --available` lists them"));
@@ -147,16 +155,24 @@ fn pick(ctx: &mut Context, args: &Args) -> Result<()> {
             };
             Choice { label: o.source.name.clone(), note: state + &o.description, checked: o.record.is_none() && !skip && TICKED.contains(&o.source.name.as_str()) }
         });
-    let choices = std::iter::once(cli_skill()).chain(packages).collect();
+    let home = ctx.home()?.to_path_buf();
+    let setting = home::read(&home)?.agent_skills;
+    let choices = std::iter::once(cli_skill()).chain(packages).chain([auto_skills(setting)]).collect();
     let Some(ticked) = pick::pick(&ctx.out, "To install", "Install", choices) else { return Ok(()) };
+    let auto = if ticked.contains(&(offers.len() + 1)) { AgentSkills::Auto } else { AgentSkills::Ask };
+    if setting != Some(auto) {
+        home::set_agent_skills(&home, auto)?;
+        let word = if auto == AgentSkills::Auto { "auto" } else { "ask" };
+        ctx.out.note(&format!("set agent_skills = \"{word}\" in {}", rant_config::paths::slash(&home::file(&home))));
+    }
     let mut skill_failed = false;
     if ticked.first() == Some(&0)
-        && let Err(e) = skills::give_cli(ctx, ctx.home()?)
+        && let Err(e) = skills::give_cli(ctx, &home)
     {
         ctx.out.failure(&e);
         skill_failed = true;
     }
-    let names: Vec<String> = ticked.iter().filter(|&&i| i > 0).map(|&i| offers[i - 1].source.name.clone()).collect();
+    let names: Vec<String> = ticked.iter().filter(|&&i| i > 0 && i <= offers.len()).map(|&i| offers[i - 1].source.name.clone()).collect();
     let (_, any_failed) = install_all(ctx, args, &names)?;
     if any_failed || skill_failed { Err(Failure::Reported) } else { Ok(()) }
 }

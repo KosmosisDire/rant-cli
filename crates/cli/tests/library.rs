@@ -54,16 +54,16 @@ fn library() {
     // only from a repo's releases.
     write(&t.path("geometry/package.rant"), "name = \"geometry\"\nlibrary {\n  cmake = \"geometry\"\n}\n");
     write(&t.path("kit/package.rant"), "name = \"kit\"\n");
-    write(&format!("{home}/sources.rant"), &format!("paths = [\"{s}/geometry\", \"{s}/kit\"]\n", s = t.scratch));
+    write(&format!("{home}/config.rant"), &format!("paths = [\"{s}/geometry\", \"{s}/kit\"]\n", s = t.scratch));
     let r = t.rant(&["install", "geometry"]).fails();
     expect_match(&r.err, "geometry is a library, add it to a package with `rant add geometry`");
     let r = t.rant(&["add", "kit"]).fails();
     expect_match(&r.err, "kit is a package, install it with `rant install kit`");
     let r = t.rant(&["add", "geometry", "tool"]).fails();
-    expect_match(&r.err, "geometry is a folder in sources[.]rant, and a library comes from a repo's releases");
+    expect_match(&r.err, "geometry is a folder in config[.]rant, and a library comes from a repo's releases");
 
     // The rest reads Rant's package.rant and its releases from GitHub, so it needs the network.
-    write(&format!("{home}/sources.rant"), "repos = [\"KosmosisDire/Rant\"]\n");
+    write(&format!("{home}/config.rant"), "repos = [\"KosmosisDire/Rant\"]\n");
     let r = t.rant(&["add", "rant", "tool", "--version", "0.0.17"]).any();
     if r.code != 0 && pattern("cannot reach|rate limit").is_match(&r.err) {
         eprintln!("SKIPPED: GitHub is not reachable: {}", r.err);

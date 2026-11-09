@@ -3,6 +3,7 @@
 
 use std::path::{Path, PathBuf};
 
+use rant_config::home::{self, AgentSkills};
 use rant_config::paths;
 use serde_json::{Value, json};
 
@@ -33,15 +34,20 @@ fn none_found(ctx: &Context, name: &str) {
     ctx.out.note(&format!("found no AI coding agent here to give the skill of {name} to"));
 }
 
-/// Whether to give the skill of name to the agents found, which the user answers. False with
-/// none found, after a note saying so.
+/// Whether to give the skill of name to the agents found, which the user answers unless
+/// config.rant says auto. False with none found, after a note saying so.
 pub fn ask(ctx: &Context, name: &str) -> bool {
     let names: Vec<String> = readers().into_iter().map(|(_, n)| n).collect();
     if names.is_empty() {
         none_found(ctx, name);
         return false;
     }
-    ctx.confirm(&format!("Also give the skill of {name} to {}?", names.join(", ")))
+    auto(ctx) || ctx.confirm(&format!("Also give the skill of {name} to {}?", names.join(", ")))
+}
+
+/// Whether config.rant gives skills unasked. One that cannot be read asks.
+fn auto(ctx: &Context) -> bool {
+    ctx.home().is_ok_and(|h| home::read(h).is_ok_and(|c| c.agent_skills == Some(AgentSkills::Auto)))
 }
 
 /// Links skill into each agent's folder under its name, each underscore a hyphen as skill names

@@ -1,14 +1,15 @@
-//! Where packages come from: sources.rant, the official database, then the databases sources.rant
-//! names, the first naming a package winning. Each list is read once a run and cached.
+//! Where packages come from: the lists of config.rant, the official database, then the databases
+//! config.rant names, the first naming a package winning. Each list is read once a run and cached.
 
 use std::path::{Path, PathBuf};
 
 use rant_config::database::{self, Database};
+use rant_config::home;
 use rant_config::package::{self, PACKAGE_FILE, PackageBlock};
 use rant_config::paths;
 use serde_json::{Map, Value, json};
 
-use super::{OFFICIAL, Record, Source, cache_file, record, sources_file};
+use super::{OFFICIAL, Record, Source, cache_file, record};
 use crate::failure::{Failure, Result, failed};
 use crate::github::{self, Asset, Release};
 use crate::names;
@@ -102,28 +103,24 @@ fn database_of(repo: &str) -> Result<Database> {
     let Some(text) = github::fetch(&github::raw_url(repo, "HEAD", "packages.rant"))? else {
         return Err(failed(format!("{repo} holds no packages.rant, so it is no package database")));
     };
-    Ok(database::parse(Path::new(&format!("{repo}/packages.rant")), text, false)?)
+    Ok(database::parse(Path::new(&format!("{repo}/packages.rant")), text)?)
 }
 
 impl Sources {
-    /// The lists, none read yet. A broken sources.rant fails here.
+    /// The lists, none read yet. A broken config.rant fails here.
     pub fn new(home: &Path) -> Result<Sources> {
-        let file = sources_file(home);
-        let local = match std::fs::read_to_string(&file) {
-            Ok(text) => database::parse(&file, text, true)?,
-            Err(_) => Database::default(),
-        };
-        let mut lists = vec![List { named_by: "sources.rant".into(), found: None }, List { named_by: OFFICIAL.into(), found: None }];
+        let local = home::read(home)?.sources;
+        let mut lists = vec![List { named_by: home::CONFIG_FILE.into(), found: None }, List { named_by: OFFICIAL.into(), found: None }];
         lists.extend(local.databases.iter().filter(|d| !d.eq_ignore_ascii_case(OFFICIAL)).map(|d| List { named_by: d.clone(), found: None }));
         Ok(Sources { home: home.to_path_buf(), local, lists, problems: Vec::new() })
     }
 
-    /// What sources.rant lists itself: its paths and repos.
+    /// What config.rant lists itself: its paths and repos.
     pub fn local(&self) -> &Database {
         &self.local
     }
 
-    /// The databases read after sources.rant, the official one first.
+    /// The databases read after the lists of config.rant, the official one first.
     pub fn databases(&self) -> Vec<String> {
         self.lists[1..].iter().map(|l| l.named_by.clone()).collect()
     }
@@ -287,7 +284,7 @@ mod tests {
     use crate::scratch::Scratch;
 
     #[test]
-    fn sources_rant_names_folders_and_archives() {
+    fn config_rant_names_folders_and_archives() {
         let t = Scratch::new("sources-paths");
         t.write("build/package.rant", "name = \"tool\"\ndescription = \"A tool\"\n");
         t.write("lib/package.rant", "name = \"geo\"\nlibrary {\n  cmake = \"geo\"\n}\n");
@@ -295,7 +292,7 @@ mod tests {
         t.write("Bad-1.tar.gz", "x");
         t.write("nameless/package.rant", "description = \"none\"\n");
         let home = t.path("home");
-        t.write("home/sources.rant", "paths = [\"../build\", \"../lib\", \"../tool-0.1.0-win-x64.tar.gz\", \"../Bad-1.tar.gz\", \"../nameless\", \"../gone\"]\n");
+        t.write("home/config.rant", "paths = [\"../build\", \"../lib\", \"../tool-0.1.0-win-x64.tar.gz\", \"../Bad-1.tar.gz\", \"../nameless\", \"../gone\"]\n");
         let mut s = Sources::new(&home).unwrap();
         let found = s.found(0).unwrap().to_vec();
         assert_eq!(found.iter().map(|f| (f.source.name.as_str(), f.description.as_str())).collect::<Vec<_>>(), [("tool", "A tool"), ("geo", "")]);
@@ -304,15 +301,15 @@ mod tests {
         for p in ["also names the package tool", "Bad-1.tar.gz is no archive named", "nameless gives no name", "no folder or archive"] {
             assert!(problems.contains(p), "{p} in {problems}");
         }
-        assert_eq!(s.find("geo").unwrap().map(|s| s.named_by), Some("sources.rant".into()));
+        assert_eq!(s.find("geo").unwrap().map(|s| s.named_by), Some("config.rant".into()));
         let cached = super::super::cached(&home, false);
         assert_eq!(cached.iter().map(|s| s.name.as_str()).collect::<Vec<_>>(), ["tool", "geo"]);
     }
 
     #[test]
-    fn a_broken_sources_rant_says_where() {
+    fn a_broken_config_rant_says_where() {
         let t = Scratch::new("sources-broken");
-        t.write("home/sources.rant", "paths = [\"\"]\n");
+        t.write("home/config.rant", "paths = [\"\"]\n");
         let e = Sources::new(&t.path("home")).err().unwrap();
         assert!(e.messages()[0].contains("a path must name a folder or an archive"), "{:?}", e.messages());
     }

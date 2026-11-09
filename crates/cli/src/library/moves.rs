@@ -20,7 +20,7 @@ use crate::packages::{Source, skills};
 fn of(s: &Source) -> Result<Library> {
     let Some(names) = &s.library else { return Err(failed(format!("{} is a package, install it with `rant install {}`", s.name, s.name))) };
     if s.repo.is_empty() {
-        return Err(failed(format!("{} is a folder in sources.rant, and a library comes from a repo's releases", s.name)));
+        return Err(failed(format!("{} is a folder in config.rant, and a library comes from a repo's releases", s.name)));
     }
     Ok(Library { name: s.name.clone(), repo: s.repo.clone(), names: names.clone() })
 }
@@ -38,7 +38,7 @@ pub fn find(ctx: &Context, sources: &mut Sources, word: &str) -> Result<Library>
         Some(s) => of(&s),
         None => {
             sources.problems().iter().for_each(|p| ctx.out.warn(p));
-            Err(failed(format!("no library `{word}` in sources.rant or the package databases, `rant ls libraries --available` lists them")))
+            Err(failed(format!("no library `{word}` in config.rant or the package databases, `rant ls libraries --available` lists them")))
         }
     }
 }
