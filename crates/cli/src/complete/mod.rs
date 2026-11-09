@@ -243,7 +243,7 @@ fn offers(command: &str, r: &mut Request) -> Candidates {
         "log" => words(r.groups().into_iter().chain(r.logged_nodes()).chain(w.is_empty().then(|| "node".to_string())).collect()),
         "ls" if w.is_empty() => words(kinds::words(true)),
         "new" if w.is_empty() => words(crate::commands::new::KINDS.map(String::from).to_vec()),
-        "setup" => words(shells::SHELLS.iter().map(|s| s.name.to_string()).collect()),
+        "setup" => words(shells::SHELLS.iter().map(|s| s.name.to_string()).chain(["skill".to_string()]).collect()),
         "run" if w.is_empty() => words(r.groups().into_iter().chain(["node".to_string()]).collect()),
         "run" if first == Some("node") => words(if w.len() == 1 { r.node_types() } else { Vec::new() }),
         "stop" if w.is_empty() => words(r.running_groups().into_iter().chain(r.running_nodes()).chain(["node".to_string()]).collect()),

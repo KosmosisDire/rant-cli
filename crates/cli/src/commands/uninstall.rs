@@ -180,6 +180,7 @@ pub fn run(ctx: &mut Context, args: &Args) -> Result<()> {
     for s in skills::skills(&home) {
         links(&mut steps, &s.links, &s.name);
     }
+    links(&mut steps, &skills::cli_links(), "rant-cli");
     if entry::present(When::Login, &home) {
         let h = home.clone();
         steps.push(step(PathBuf::new(), "the login entry that starts what rant enable named".into(), move || entry::remove(When::Login, &h)));

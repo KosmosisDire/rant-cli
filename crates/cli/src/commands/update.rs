@@ -137,6 +137,11 @@ fn update_programs(ctx: &Context, home: &Path, sources: &mut Sources, named: &[S
             ctx.out.warn(&format!("tab completion for {shell} was not updated, run `rant setup {shell}`"));
         }
     }
+    // and its own skill, given again where it was
+    let setup = Command::new([me.to_string_lossy().into_owned(), "setup".into(), "skill".into()], std::env::temp_dir());
+    if !skills::cli_links().is_empty() && rant_process::run(&setup) != Ok(0) {
+        ctx.out.warn("the skill of rant-cli was not updated, run `rant setup skill`");
+    }
     Ok(ok)
 }
 

@@ -72,11 +72,16 @@ fn complete() {
     let r = t.rant(&["setup", "tcsh"]).fails();
     expect_match(&r.err, "unknown shell `tcsh`");
 
-    // Setup points the agents found to the rant skill, which a package carries.
+    // Setup points the agents found to the skill built into rant, and gives it when named.
     mkdir(&format!("{}/.claude", t.home));
     mkdir(&format!("{}/.cursor", t.home));
     let r = t.rant(&["setup", "bash"]).ok();
-    expect_match(&r.err, "`rant install rant_skill` teaches Claude Code, Cursor to use Rant");
-    let r = t.rant(&["setup", "skill"]).fails();
-    expect_match(&r.err, "unknown shell `skill`");
+    expect_match(&r.err, "`rant setup skill` teaches Claude Code, Cursor to use rant-cli");
+    t.rant(&["setup", "skill"]).ok();
+    for link in [".claude/skills/rant-cli", ".agents/skills/rant-cli"] {
+        let skill = read(&format!("{}/{link}/SKILL.md", t.home));
+        assert!(skill.contains("name: rant-cli"), "{link} holds no rant-cli skill:\n{skill}");
+    }
+    let r = t.rant(&["setup", "bash"]).ok();
+    assert!(!r.err.contains("rant setup skill"), "setup offers a skill already given:\n{}", r.err);
 }

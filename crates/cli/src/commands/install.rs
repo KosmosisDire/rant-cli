@@ -5,12 +5,13 @@ use std::io::IsTerminal;
 
 use rant_config::database;
 
+use crate::agents;
 use crate::context::Context;
 use crate::failure::{Failure, Result, failed, usage};
 use crate::github;
 use crate::packages::sources::{Offer, Sources, carried, from_repo};
 use crate::packages::vsix::{self, Wanted};
-use crate::packages::{self, Source};
+use crate::packages::{self, Source, skills};
 use crate::pick::{self, Choice};
 
 #[derive(clap::Args, Debug)]
@@ -116,8 +117,15 @@ fn extensions(ctx: &Context, offers: &[Offer]) -> Vec<bool> {
 /// The packages the checklist ticks while they are not installed.
 const TICKED: [&str; 2] = ["explorer", "vscode"];
 
-/// With no names on a terminal: a checklist of every package there is, those of TICKED not
-/// installed ticked but an editor extension with no editor found.
+/// The checklist's row for the CLI's own skill, ticked while an agent is found that has it not.
+fn cli_skill() -> Choice {
+    let (found, given) = (!agents::detected().is_empty(), !skills::cli_links().is_empty());
+    let state = if given { "installed, " } else if found { "" } else { "no AI coding agent found, " };
+    Choice { label: "Rant Cli Skill".into(), note: format!("{state}teaches AI coding agents to use rant-cli"), checked: found && !given }
+}
+
+/// With no names on a terminal: a checklist of the CLI's skill and every package there is,
+/// those of TICKED not installed ticked but an editor extension with no editor found.
 fn pick(ctx: &mut Context, args: &Args) -> Result<()> {
     if ctx.yes || !std::io::stdin().is_terminal() || args.version.is_some() || args.from.is_some() {
         return Err(usage("install needs a package, `rant ls packages --available` lists them"));
@@ -127,7 +135,7 @@ fn pick(ctx: &mut Context, args: &Args) -> Result<()> {
     let offers: Vec<Offer> = sources.offers("")?.into_iter().filter(|o| o.source.library.is_none()).collect();
     sources.problems().iter().for_each(|p| ctx.out.warn(p));
     let skipped = if vsix::editor_found(ctx, &args.wanted()) { vec![false; offers.len()] } else { extensions(ctx, &offers) };
-    let choices = offers
+    let packages = offers
         .iter()
         .zip(&skipped)
         .map(|(o, &skip)| {
@@ -138,12 +146,19 @@ fn pick(ctx: &mut Context, args: &Args) -> Result<()> {
                 None => String::new(),
             };
             Choice { label: o.source.name.clone(), note: state + &o.description, checked: o.record.is_none() && !skip && TICKED.contains(&o.source.name.as_str()) }
-        })
-        .collect();
-    let Some(ticked) = pick::pick(&ctx.out, "Packages to install", "Install", choices).filter(|t| !t.is_empty()) else { return Ok(()) };
-    let names: Vec<String> = ticked.iter().map(|&i| offers[i].source.name.clone()).collect();
+        });
+    let choices = std::iter::once(cli_skill()).chain(packages).collect();
+    let Some(ticked) = pick::pick(&ctx.out, "To install", "Install", choices) else { return Ok(()) };
+    let mut skill_failed = false;
+    if ticked.first() == Some(&0)
+        && let Err(e) = skills::give_cli(ctx, ctx.home()?)
+    {
+        ctx.out.failure(&e);
+        skill_failed = true;
+    }
+    let names: Vec<String> = ticked.iter().filter(|&&i| i > 0).map(|&i| offers[i - 1].source.name.clone()).collect();
     let (_, any_failed) = install_all(ctx, args, &names)?;
-    if any_failed { Err(Failure::Reported) } else { Ok(()) }
+    if any_failed || skill_failed { Err(Failure::Reported) } else { Ok(()) }
 }
 
 pub fn run(ctx: &mut Context, args: &Args) -> Result<()> {

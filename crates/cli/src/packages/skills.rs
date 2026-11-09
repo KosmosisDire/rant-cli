@@ -154,6 +154,27 @@ pub fn give(ctx: &Context, home: &Path, name: &str, repo: &str, r: &Release, may
     save(home, &Skill { name: name.into(), repo: repo.into(), version: r.version.clone(), links })
 }
 
+/// The CLI's own skill, built into rant so it always matches this binary.
+const CLI_SKILL: &str = include_str!("../../../../skill/SKILL.md");
+
+/// The CLI skill's folder in rant's home, and its name where it is linked.
+pub const CLI_NAME: &str = "rant-cli";
+
+/// The CLI skill's links in the folders of the agents found.
+pub fn cli_links() -> Vec<PathBuf> {
+    readers().into_iter().map(|(folder, _)| folder.join(CLI_NAME)).filter(|l| is_link(l)).collect()
+}
+
+/// Writes the CLI's skill into rant's home and links it for each agent found.
+pub fn give_cli(ctx: &Context, home: &Path) -> Result<()> {
+    let folder = skills_dir(home).join(CLI_NAME);
+    std::fs::create_dir_all(&folder)
+        .and_then(|_| std::fs::write(folder.join("SKILL.md"), CLI_SKILL))
+        .map_err(|e| failed(format!("cannot write {}: {e}", paths::slash(&folder))))?;
+    let target = std::path::absolute(&folder).unwrap_or(folder);
+    link(ctx, CLI_NAME, &target, &cli_links()).map(|_| ())
+}
+
 /// Drops a library skill's links, its folder and its record.
 pub fn remove(ctx: &Context, home: &Path, s: &Skill) -> Result<()> {
     for l in s.links.iter().filter(|l| is_link(l)) {
