@@ -3,10 +3,8 @@
 
 use std::io::IsTerminal;
 
-use rant_config::{Settings, Workspace, database};
+use rant_config::database;
 
-use crate::commands::enable;
-use crate::commands::summary::Watch;
 use crate::context::Context;
 use crate::failure::{Failure, Result, failed, usage};
 use crate::github;
@@ -99,38 +97,6 @@ fn install_all(ctx: &Context, args: &Args, words: &[String]) -> Result<(Vec<Stri
     Ok((done, any_failed))
 }
 
-/// After the checklist: one more of the groups the packages just installed bring, to run at
-/// every boot. Fails, reported, when one did not enable.
-fn offer_boot(ctx: &mut Context, installed: &[String]) -> Result<()> {
-    let (cwd, home) = (ctx.cwd()?.to_path_buf(), ctx.home()?.to_path_buf());
-    // read afresh, since the packages just installed were not there before
-    let Ok(settings) = Settings::find(&cwd, &home) else { return Ok(()) };
-    let ws = Workspace::load(settings, &cwd, &home).0;
-    let brought = |full: &str| full.split_once('/').is_some_and(|(package, _)| installed.iter().any(|i| i == package));
-    let (names, choices): (Vec<String>, Vec<Choice>) = ws
-        .group_names()
-        .iter()
-        .filter(|g| brought(&g.file.name))
-        .map(|g| {
-            let note = ws.group(&g.file.name).ok().and_then(|i| i.description).unwrap_or_default();
-            (g.short.clone(), Choice { label: g.short.clone(), note, checked: false })
-        })
-        .unzip();
-    if choices.is_empty() {
-        return Ok(());
-    }
-    let Some(ticked) = pick::pick(&ctx.out, "Run at every boot", "Enable", choices) else { return Ok(()) };
-    let mut any_failed = false;
-    for i in ticked {
-        let args = enable::Args { words: vec![names[i].clone()], login: false, dry_run: false, watch: Watch::default() };
-        if let Err(e) = enable::run(ctx, &args) {
-            ctx.out.failure(&e);
-            any_failed = true;
-        }
-    }
-    if any_failed { Err(Failure::Reported) } else { Ok(()) }
-}
-
 /// Whether each offer is a VS Code extension its latest release carries, all false when that
 /// cannot be told.
 fn extensions(ctx: &Context, offers: &[Offer]) -> Vec<bool> {
@@ -147,8 +113,11 @@ fn extensions(ctx: &Context, offers: &[Offer]) -> Vec<bool> {
     out
 }
 
-/// With no names on a terminal: a checklist of every package there is, those not installed
-/// ticked but an editor extension with no editor found.
+/// The packages the checklist ticks while they are not installed.
+const TICKED: [&str; 2] = ["explorer", "vscode"];
+
+/// With no names on a terminal: a checklist of every package there is, those of TICKED not
+/// installed ticked but an editor extension with no editor found.
 fn pick(ctx: &mut Context, args: &Args) -> Result<()> {
     if ctx.yes || !std::io::stdin().is_terminal() || args.version.is_some() || args.from.is_some() {
         return Err(usage("install needs a package, `rant ls packages --available` lists them"));
@@ -168,14 +137,13 @@ fn pick(ctx: &mut Context, args: &Args) -> Result<()> {
                 None if skip => "no editor found, ".to_string(),
                 None => String::new(),
             };
-            Choice { label: o.source.name.clone(), note: state + &o.description, checked: o.record.is_none() && !skip }
+            Choice { label: o.source.name.clone(), note: state + &o.description, checked: o.record.is_none() && !skip && TICKED.contains(&o.source.name.as_str()) }
         })
         .collect();
     let Some(ticked) = pick::pick(&ctx.out, "Packages to install", "Install", choices).filter(|t| !t.is_empty()) else { return Ok(()) };
     let names: Vec<String> = ticked.iter().map(|&i| offers[i].source.name.clone()).collect();
-    let (done, any_failed) = install_all(ctx, args, &names)?;
-    let offered = offer_boot(ctx, &done);
-    if any_failed { Err(Failure::Reported) } else { offered }
+    let (_, any_failed) = install_all(ctx, args, &names)?;
+    if any_failed { Err(Failure::Reported) } else { Ok(()) }
 }
 
 pub fn run(ctx: &mut Context, args: &Args) -> Result<()> {
