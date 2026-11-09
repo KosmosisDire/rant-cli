@@ -119,7 +119,7 @@ fn offer_boot(ctx: &mut Context, installed: &[String]) -> Result<()> {
     if choices.is_empty() {
         return Ok(());
     }
-    let Some(ticked) = pick::pick(&ctx.out, "Run at every boot", choices) else { return Ok(()) };
+    let Some(ticked) = pick::pick(&ctx.out, "Run at every boot", "Enable", choices) else { return Ok(()) };
     let mut any_failed = false;
     for i in ticked {
         let args = enable::Args { words: vec![names[i].clone()], login: false, dry_run: false, watch: Watch::default() };
@@ -171,7 +171,7 @@ fn pick(ctx: &mut Context, args: &Args) -> Result<()> {
             Choice { label: o.source.name.clone(), note: state + &o.description, checked: o.record.is_none() && !skip }
         })
         .collect();
-    let Some(ticked) = pick::pick(&ctx.out, "Packages to install", choices).filter(|t| !t.is_empty()) else { return Ok(()) };
+    let Some(ticked) = pick::pick(&ctx.out, "Packages to install", "Install", choices).filter(|t| !t.is_empty()) else { return Ok(()) };
     let names: Vec<String> = ticked.iter().map(|&i| offers[i].source.name.clone()).collect();
     let (done, any_failed) = install_all(ctx, args, &names)?;
     let offered = offer_boot(ctx, &done);

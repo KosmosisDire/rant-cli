@@ -364,11 +364,12 @@ pub fn where_running(ctx: &mut Context, name: &str, node: bool, verb: &str) -> R
             checked: here.as_deref().is_some_and(|h| path_key(h) == path_key(&f.root)),
         })
         .collect();
-    let title = format!("{}{} `{name}` in", verb[..1].to_uppercase(), &verb[1..]);
+    let submit = format!("{}{}", verb[..1].to_uppercase(), &verb[1..]);
+    let title = format!("{submit} `{name}` in");
     if ctx.yes || !std::io::stdin().is_terminal() || !ctx.out.terminal_err() {
         return Err(failed(format!("`{name}` runs in {} workspaces: {}, pick one in a terminal", runs.len(), shown.join(", "))));
     }
-    Ok(pick(&ctx.out, &title, choices).map(|ticked| ticked.into_iter().map(|i| runs[i].root.clone()).collect()))
+    Ok(pick(&ctx.out, &title, &submit, choices).map(|ticked| ticked.into_iter().map(|i| runs[i].root.clone()).collect()))
 }
 
 /// Runs act once in each folder, as if rant ran there, given the folder as shown when it is

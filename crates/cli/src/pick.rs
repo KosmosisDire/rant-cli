@@ -22,9 +22,11 @@ pub enum Key {
     Other,
 }
 
-/// A checklist's state, kept apart from the terminal so a test can drive it.
+/// A checklist's state, kept apart from the terminal so a test can drive it. The row after
+/// the choices is the button that confirms, so a stray Enter only ticks.
 pub struct Checklist {
     title: String,
+    submit: String,
     choices: Vec<Choice>,
     at: usize,
     ended: bool,
@@ -32,24 +34,24 @@ pub struct Checklist {
 }
 
 impl Checklist {
-    pub fn new(title: &str, choices: Vec<Choice>) -> Checklist {
-        Checklist { title: title.to_string(), choices, at: 0, ended: false, confirmed: false }
+    pub fn new(title: &str, submit: &str, choices: Vec<Choice>) -> Checklist {
+        Checklist { title: title.to_string(), submit: submit.to_string(), choices, at: 0, ended: false, confirmed: false }
     }
 
-    /// Moves, ticks or ends. False once Enter or Quit ended it.
+    /// Moves, ticks or ends. False once the button or Quit ended it.
     pub fn press(&mut self, k: Key) -> bool {
         let n = self.choices.len();
         match k {
             _ if self.ended || n == 0 => self.ended = true,
-            Key::Up => self.at = (self.at + n - 1) % n,
-            Key::Down => self.at = (self.at + 1) % n,
-            Key::Toggle => self.choices[self.at].checked ^= true,
+            Key::Up => self.at = (self.at + n) % (n + 1),
+            Key::Down => self.at = (self.at + 1) % (n + 1),
+            Key::Toggle | Key::Enter if self.at == n => (self.ended, self.confirmed) = (true, true),
+            Key::Toggle | Key::Enter => self.choices[self.at].checked ^= true,
             Key::All => {
                 // all when any is off, else none
                 let all = self.choices.iter().all(|c| c.checked);
                 self.choices.iter_mut().for_each(|c| c.checked = !all);
             }
-            Key::Enter => (self.ended, self.confirmed) = (true, true),
             Key::Quit => self.ended = true,
             Key::Other => {}
         }
@@ -60,8 +62,8 @@ impl Checklist {
         (0..self.choices.len()).filter(|&i| self.choices[i].checked).collect()
     }
 
-    /// The frame to draw: the title, a line of keys, then a row per choice, the current one
-    /// marked. Once ended, one line with what was picked.
+    /// The frame to draw: the title, a line of keys, a row per choice and the button, the
+    /// current row marked. Once ended, one line with what was picked.
     pub fn lines(&self, out: &Output) -> Vec<String> {
         let mark = format!("{} {}", out.paint_err(Style::Accent, "?"), out.paint_err(Style::Bold, &self.title));
         if self.ended {
@@ -69,27 +71,30 @@ impl Checklist {
             let picked = if !self.confirmed { "cancelled".to_string() } else if picked.is_empty() { "none".into() } else { picked.join(", ") };
             return vec![format!("{mark}  {}", out.paint_err(Style::Dim, &picked))];
         }
-        let keys = out.paint_err(Style::Faint, "  up and down move, space ticks, a ticks all, enter confirms, q cancels");
+        let keys = out.paint_err(Style::Faint, &format!("  up and down move, enter ticks, a ticks all, enter on {} confirms, q cancels", self.submit));
         let width = self.choices.iter().map(|c| c.label.chars().count()).max().unwrap_or(0);
+        let lead = |i: usize| if i == self.at { out.paint_err(Style::Accent, "> ") } else { "  ".into() };
         let mut lines = vec![mark, keys];
         for (i, c) in self.choices.iter().enumerate() {
             let label = format!("{:width$}", c.label);
-            let (lead, label) = if i == self.at { (out.paint_err(Style::Accent, "> "), out.paint_err(Style::Accent, &label)) } else { ("  ".into(), label) };
+            let label = if i == self.at { out.paint_err(Style::Accent, &label) } else { label };
             let tick = if c.checked { "[x] " } else { "[ ] " };
-            lines.push(format!("{lead}{tick}{label}  {}", out.paint_err(Style::Faint, &c.note)));
+            lines.push(format!("{}{tick}{label}  {}", lead(i), out.paint_err(Style::Faint, &c.note)));
         }
+        let n = self.choices.len();
+        lines.push(format!("{}{}", lead(n), out.paint_err(if self.at == n { Style::Accent } else { Style::Bold }, &self.submit)));
         lines
     }
 }
 
-/// Asks with a checklist. The ticked indexes, or None when it was given up or stdin or stderr
-/// is no terminal.
-pub fn pick(out: &Output, title: &str, choices: Vec<Choice>) -> Option<Vec<usize>> {
+/// Asks with a checklist confirmed by its submit button. The ticked indexes, or None when it
+/// was given up or stdin or stderr is no terminal.
+pub fn pick(out: &Output, title: &str, submit: &str, choices: Vec<Choice>) -> Option<Vec<usize>> {
     if choices.is_empty() || !out.terminal_err() {
         return None;
     }
     let keys = keys::Reader::new()?;
-    let mut list = Checklist::new(title, choices);
+    let mut list = Checklist::new(title, submit, choices);
     let mut view = LiveView::new();
     view.draw(&list.lines(out));
     while list.press(keys.next()) {
@@ -252,8 +257,8 @@ mod tests {
 
     #[test]
     fn keys_move_tick_and_end_a_checklist() {
-        let mut list = Checklist::new("Pick", choices());
-        for k in [Key::Down, Key::Toggle, Key::Up, Key::Up, Key::Toggle] {
+        let mut list = Checklist::new("Pick", "Go", choices());
+        for k in [Key::Down, Key::Toggle, Key::Up, Key::Up, Key::Up, Key::Enter] {
             assert!(list.press(k));
         }
         assert_eq!(list.ticked(), [1, 2]);
@@ -261,6 +266,7 @@ mod tests {
         assert_eq!(list.ticked(), [0, 1, 2]);
         list.press(Key::All);
         assert!(list.ticked().is_empty());
+        assert!(list.press(Key::Down), "down from the last choice is the button");
         assert!(!list.press(Key::Enter) && list.confirmed);
         assert!(!list.press(Key::Toggle), "an ended list takes no more keys");
     }
@@ -268,12 +274,13 @@ mod tests {
     #[test]
     fn an_ended_checklist_is_one_line_naming_the_picks() {
         let out = Output::new(Format::Text, false);
-        let mut list = Checklist::new("Stop in", choices());
-        assert_eq!(list.lines(&out).len(), 5);
+        let mut list = Checklist::new("Stop in", "Stop", choices());
+        assert_eq!(list.lines(&out).len(), 6);
         list.press(Key::Toggle);
+        list.press(Key::Up);
         list.press(Key::Enter);
         assert!(list.lines(&out)[0].ends_with("  a"));
-        let mut quit = Checklist::new("Stop in", choices());
+        let mut quit = Checklist::new("Stop in", "Stop", choices());
         quit.press(Key::Quit);
         assert!(quit.lines(&out)[0].ends_with("cancelled"));
     }
