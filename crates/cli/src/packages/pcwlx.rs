@@ -10,6 +10,7 @@ use crate::failure::{Result, failed};
 use crate::files;
 
 /// The LibraryPath a User.config sets, None when it sets none.
+#[cfg(any(windows, test))]
 fn library_path(config: &str) -> Option<PathBuf> {
     let start = config.find("<LibraryPath>")? + "<LibraryPath>".len();
     let end = start + config[start..].find("</LibraryPath>")?;
@@ -19,6 +20,7 @@ fn library_path(config: &str) -> Option<PathBuf> {
 
 /// The folders Engineer takes user libraries from: the LibraryPath of each version's settings
 /// under appdata, else its default under Documents. Empty where Engineer cannot run.
+#[cfg(any(windows, test))]
 fn folders_in(appdata: Option<PathBuf>, documents: Option<PathBuf>) -> Vec<PathBuf> {
     let mut out: Vec<PathBuf> = Vec::new();
     let versions = appdata.map(|a| a.join("PHOENIX CONTACT").join("PLCnext Engineer"));

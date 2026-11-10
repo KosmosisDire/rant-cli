@@ -1,8 +1,9 @@
+// PLCnext Engineer runs on Windows only, and elsewhere a library is never placed.
+#![cfg(windows)]
+
 mod common;
 use common::*;
 
-// PLCnext Engineer runs on Windows only, and elsewhere a library is never placed.
-#[cfg(windows)]
 #[test]
 fn pcwlx() {
     let mut t = Test::new("pcwlx", 164);
