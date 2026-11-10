@@ -141,13 +141,21 @@ fn arduino_row() -> Choice {
 /// Installs every library whose latest release carries an Arduino library into the sketchbook,
 /// then offers each one's skill. False when one failed, after a warning.
 fn install_arduino(ctx: &Context, home: &std::path::Path, sources: &mut Sources) -> Result<bool> {
-    let libs: Vec<library::Library> = library::all(sources)?;
-    let latest = github::latest(&libs.iter().map(|l| l.repo.clone()).collect::<Vec<_>>())?;
+    let looked = library::all(sources).and_then(|libs| github::latest(&libs.iter().map(|l| l.repo.clone()).collect::<Vec<_>>()).map(|latest| (libs, latest)));
+    let (libs, latest) = match looked {
+        Ok(found) => found,
+        Err(e) => {
+            ctx.out.failure(&e);
+            return Ok(false);
+        }
+    };
     let mut ok = true;
     for (lib, r) in libs.iter().zip(latest) {
         let Some(r) = r.filter(|r| arduino::carried(r, lib).is_some()) else { continue };
         let placed = arduino::install(ctx, home, lib, &r).and_then(|at| {
-            ctx.out.note(&format!("installed {} {} in {}", lib.name, r.version, rant_config::paths::slash(&at)));
+            if let Some(at) = at {
+                ctx.out.note(&format!("installed {} {} in {}", lib.name, r.version, rant_config::paths::slash(&at)));
+            }
             skills::give(ctx, home, &lib.name, &lib.repo, &r, true)
         });
         if let Err(e) = placed {

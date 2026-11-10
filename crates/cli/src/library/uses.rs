@@ -1,6 +1,7 @@
 //! Where packages take each library from and at which version. Build files are matched by
 //! pattern, never parsed, so hand edits work within reason.
 
+use std::cell::LazyCell;
 use std::path::{Path, PathBuf};
 
 use rant_config::discover;
@@ -9,7 +10,8 @@ use rant_config::python::{self, Folder};
 use rant_config::scan::NodeKind;
 use regex::Regex;
 
-use super::{DEFAULT_LIBRARY, Kind, Library, arduino};
+use super::arduino::Book;
+use super::{DEFAULT_LIBRARY, Kind, Library, arduino, icase, read};
 use crate::cmake;
 
 /// One place a package takes a library from. how says which, such as "CPM", "venv" or "Cargo
@@ -48,14 +50,6 @@ impl Use {
             python: Vec::new(),
         }
     }
-}
-
-fn icase(pattern: &str) -> Regex {
-    Regex::new(&format!("(?i){pattern}")).expect("the patterns here are valid")
-}
-
-fn read(p: &Path) -> String {
-    std::fs::read_to_string(p).unwrap_or_default()
 }
 
 // ---- CMake ----
@@ -362,6 +356,11 @@ pub fn cargo_use(text: &str, lib: &Library) -> Option<Use> {
 /// The uses of each library in one folder. adding counts any Python file, so a library can be
 /// added to it, else Python counts that lists it, holds it, or imports rant for the default.
 pub fn in_folder(dir: &Path, libs: &[Library], adding: bool) -> Vec<Use> {
+    uses_in(dir, libs, adding, &LazyCell::new(Book::load as fn() -> Book))
+}
+
+/// in_folder with the sketchbook read at most once, however many folders share it.
+fn uses_in(dir: &Path, libs: &[Library], adding: bool, book: &LazyCell<Book>) -> Vec<Use> {
     let mut out = Vec::new();
     let mut found = |u: Option<Use>, file: &Path| {
         if let Some(mut u) = u {
@@ -388,7 +387,7 @@ pub fn in_folder(dir: &Path, libs: &[Library], adding: bool) -> Vec<Use> {
         }
     }
     if arduino::is_sketch(dir) {
-        out.extend(libs.iter().filter_map(|lib| arduino::sketchbook_use(dir, lib)));
+        out.extend(libs.iter().filter_map(|lib| book.use_in(dir, lib)));
     }
     let python: Vec<&Library> = libs.iter().filter(|l| l.supports(Kind::Python)).collect();
     python_uses(dir, &python, adding, &mut out);
@@ -400,10 +399,11 @@ pub fn in_folder(dir: &Path, libs: &[Library], adding: bool) -> Vec<Use> {
 pub fn under(start: &Path, libs: &[Library]) -> Vec<Use> {
     let walk = discover::folders(start);
     let mut out: Vec<Use> = Vec::new();
-    let listed = |out: &[Use], held: &Path, lib: &str| out.iter().any(|o| matches!(o.how, "venv" | "sketchbook") && o.file == held && o.library == lib);
+    let book = LazyCell::new(Book::load as fn() -> Book);
+    let listed = |out: &[Use], held: &Path, lib: &str| out.iter().any(|o| (o.kind == Kind::Arduino || o.how == "venv") && o.file == held && o.library == lib);
     for d in &walk.dirs {
-        for mut u in in_folder(d, libs, false) {
-            if u.how == "sketchbook" || (u.how == "venv" && u.venv_exists) {
+        for mut u in uses_in(d, libs, false, &book) {
+            if u.kind == Kind::Arduino || (u.how == "venv" && u.venv_exists) {
                 if listed(&out, &u.file, &u.library) {
                     continue;
                 }
@@ -424,9 +424,8 @@ pub fn under(start: &Path, libs: &[Library]) -> Vec<Use> {
             out.push(u);
         }
     }
-    let libraries = arduino::sketchbook().map(|b| b.join("libraries"));
     for lib in libs {
-        if let Some(u) = libraries.as_deref().and_then(|l| arduino::sketchbook_use(l, lib)).filter(|u| !listed(&out, &u.file, &lib.name)) {
+        if let Some(u) = book.use_in(book.root(), lib).filter(|u| !listed(&out, &u.file, &lib.name)) {
             out.push(u);
         }
     }

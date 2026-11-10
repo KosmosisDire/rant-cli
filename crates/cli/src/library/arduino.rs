@@ -6,21 +6,13 @@ use std::path::{Path, PathBuf};
 use rant_config::paths;
 use regex::Regex;
 
-use super::{Kind, Library, Use};
+use super::{Kind, Library, Use, icase, read};
 use crate::context::Context;
 use crate::failure::{Result, failed};
 use crate::files;
 use crate::github::{Asset, Release};
 use crate::home::{env_path, home_dir};
-use crate::packages::{Download, is_link, unlink, zip};
-
-fn icase(pattern: &str) -> Regex {
-    Regex::new(&format!("(?i){pattern}")).expect("the patterns here are valid")
-}
-
-fn read(p: &Path) -> String {
-    std::fs::read_to_string(p).unwrap_or_default()
-}
+use crate::packages::{Download, is_link, zip};
 
 pub fn zip_name(library: &str, version: &str) -> String {
     format!("{library}-{version}-arduino.zip")
@@ -43,7 +35,7 @@ fn yaml_user(text: &str) -> Option<PathBuf> {
     let mut inside = false;
     for line in text.lines() {
         if !line.starts_with([' ', '\t']) {
-            inside = line.trim_end() == "directories:";
+            inside = line.split('#').next().is_some_and(|l| l.trim_end() == "directories:");
             continue;
         }
         if let Some(v) = line.trim().strip_prefix("user:").map(|v| v.trim().trim_matches(['"', '\''])).filter(|v| inside && !v.is_empty()) {
@@ -53,14 +45,33 @@ fn yaml_user(text: &str) -> Option<PathBuf> {
     None
 }
 
-/// The Arduino IDE's sketchbook: what arduino-cli reads from ARDUINO_DIRECTORIES_USER or the IDE's
-/// arduino-cli.yaml, else its default for this system.
+/// The `sketchbook.path` of an Arduino IDE 1.x preferences.txt.
+fn preferences_path(text: &str) -> Option<PathBuf> {
+    let path = icase(r"(?m)^[ \t]*sketchbook\.path[ \t]*=[ \t]*(.*?)[ \t]*\r?$").captures(text).map(|m| m[1].to_string());
+    path.filter(|p| !p.is_empty()).map(PathBuf::from)
+}
+
+/// Where Arduino IDE 1.x keeps its preferences.
+fn preferences_file(home: &Path) -> PathBuf {
+    #[cfg(windows)]
+    return env_path("LOCALAPPDATA").unwrap_or_else(|| home.join("AppData").join("Local")).join("Arduino15").join("preferences.txt");
+    #[cfg(target_os = "macos")]
+    return home.join("Library").join("Arduino15").join("preferences.txt");
+    #[cfg(not(any(windows, target_os = "macos")))]
+    home.join(".arduino15").join("preferences.txt")
+}
+
+/// The Arduino IDE's sketchbook: what arduino-cli reads from ARDUINO_DIRECTORIES_USER, the IDE 2
+/// arduino-cli.yaml or the IDE 1 preferences.txt, else its default for this system.
 pub fn sketchbook() -> Option<PathBuf> {
     if let Some(p) = env_path("ARDUINO_DIRECTORIES_USER") {
         return Some(p);
     }
     let home = home_dir()?;
     if let Some(p) = yaml_user(&read(&home.join(".arduinoIDE").join("arduino-cli.yaml"))) {
+        return Some(p);
+    }
+    if let Some(p) = preferences_path(&read(&preferences_file(&home))) {
         return Some(p);
     }
     #[cfg(windows)]
@@ -84,26 +95,45 @@ fn is_own(properties: &str, lib: &Library) -> bool {
     url.strip_suffix(".git").unwrap_or(url).eq_ignore_ascii_case(&format!("https://github.com/{}", lib.repo))
 }
 
-/// The folder in the sketchbook holding the library, with its version.
-fn installed(libraries: &Path, lib: &Library) -> Option<(PathBuf, Option<String>)> {
-    let mut dirs: Vec<PathBuf> = std::fs::read_dir(libraries).into_iter().flatten().flatten().map(|e| e.path()).filter(|p| p.is_dir()).collect();
-    dirs.sort();
-    dirs.into_iter().find_map(|d| {
-        let text = read(&d.join("library.properties"));
-        is_own(&text, lib).then(|| (d, property(&text, "version")))
-    })
+/// The libraries folder of the sketchbook read once: each library's folder and its library.properties.
+pub struct Book {
+    root: PathBuf,
+    libraries: Vec<(PathBuf, String)>,
 }
 
-/// The sketchbook's copy of the library as a use of the sketch in dir, or of the sketchbook itself.
-pub fn sketchbook_use(dir: &Path, lib: &Library) -> Option<Use> {
-    let (folder, version) = installed(&sketchbook()?.join("libraries"), lib)?;
-    let mut u = Use::of(lib, Kind::Arduino, "sketchbook");
-    (u.dir, u.file, u.version) = (dir.to_path_buf(), folder, version);
-    Some(u)
+impl Book {
+    pub fn load() -> Book {
+        Book::of(sketchbook().map(|b| b.join("libraries")).as_deref())
+    }
+
+    fn of(libraries: Option<&Path>) -> Book {
+        let mut dirs: Vec<PathBuf> = libraries.and_then(|l| std::fs::read_dir(l).ok()).into_iter().flatten().flatten().map(|e| e.path()).filter(|p| p.is_dir()).collect();
+        dirs.sort();
+        Book { root: libraries.map(Path::to_path_buf).unwrap_or_default(), libraries: dirs.into_iter().map(|d| (d.clone(), read(&d.join("library.properties")))).collect() }
+    }
+
+    /// The sketchbook's libraries folder, empty when there is no sketchbook.
+    pub fn root(&self) -> &Path {
+        &self.root
+    }
+
+    /// The folder holding the library, with its version.
+    fn find(&self, lib: &Library) -> Option<(PathBuf, Option<String>)> {
+        self.libraries.iter().find(|(_, text)| is_own(text, lib)).map(|(d, text)| (d.clone(), property(text, "version")))
+    }
+
+    /// The sketchbook's copy of the library as a use of the sketch in dir, or of the sketchbook itself.
+    pub fn use_in(&self, dir: &Path, lib: &Library) -> Option<Use> {
+        let (folder, version) = self.find(lib)?;
+        let mut u = Use::of(lib, Kind::Arduino, "sketchbook");
+        (u.dir, u.file, u.version) = (dir.to_path_buf(), folder, version);
+        Some(u)
+    }
 }
 
-/// Unpacks the release's library into the sketchbook in place of the copy there. Returns its folder.
-pub fn install(ctx: &Context, home: &Path, lib: &Library, r: &Release) -> Result<PathBuf> {
+/// Unpacks the release's library into the sketchbook in place of the copy there. Returns its folder,
+/// or None when that copy is a link, which rant leaves alone.
+pub fn install(ctx: &Context, home: &Path, lib: &Library, r: &Release) -> Result<Option<PathBuf>> {
     let name = zip_name(&lib.name, &r.version);
     let Some(asset) = carried(r, lib) else { return Err(failed(format!("{} {} carries no {name}", lib.name, r.version))) };
     let Some(book) = sketchbook() else { return Err(failed("cannot tell where the Arduino sketchbook is, set ARDUINO_DIRECTORIES_USER")) };
@@ -112,10 +142,13 @@ pub fn install(ctx: &Context, home: &Path, lib: &Library, r: &Release) -> Result
     let staging = libraries.join(format!(".rant-{}", files::stamp()));
     let placed = place(download.file().expect("a download"), &staging, &libraries, lib, &name);
     let _ = std::fs::remove_dir_all(&staging);
+    if let Ok(None) = placed {
+        ctx.out.note(&format!("the {} in {} is a link, so rant leaves it", lib.name, paths::slash(&libraries)));
+    }
     placed
 }
 
-fn place(zip_file: &Path, staging: &Path, libraries: &Path, lib: &Library, name: &str) -> Result<PathBuf> {
+fn place(zip_file: &Path, staging: &Path, libraries: &Path, lib: &Library, name: &str) -> Result<Option<PathBuf>> {
     zip::extract(zip_file, staging)?;
     let top: Vec<PathBuf> = std::fs::read_dir(staging).into_iter().flatten().flatten().map(|e| e.path()).collect();
     let [unpacked] = top.as_slice() else { return Err(failed(format!("{name} holds more than one folder at its top"))) };
@@ -127,14 +160,40 @@ fn place(zip_file: &Path, staging: &Path, libraries: &Path, lib: &Library, name:
         return Err(failed(format!("{} holds another library, so rant leaves it", paths::slash(&target))));
     }
     // an older release may have unpacked under another folder name
-    let old = installed(libraries, lib).map(|(d, _)| d);
-    for d in old.iter().chain([&target]).filter(|d| d.exists()) {
-        let removed = if is_link(d) { unlink(d) } else { std::fs::remove_dir_all(d).map_err(|e| failed(format!("cannot remove {}: {e}", paths::slash(d)))) };
-        removed?;
+    let mut olds: Vec<PathBuf> = Book::of(Some(libraries)).find(lib).map(|(d, _)| d).into_iter().collect();
+    if target.exists() && !olds.contains(&target) {
+        olds.push(target.clone());
+    }
+    if olds.iter().any(|d| is_link(d)) {
+        return Ok(None);
     }
     std::fs::create_dir_all(libraries).map_err(|e| failed(format!("cannot create {}: {e}", paths::slash(libraries))))?;
-    std::fs::rename(unpacked, &target).map_err(|e| failed(format!("cannot move {} into {}: {e}", lib.name, paths::slash(libraries))))?;
-    Ok(target)
+    // the old copies move aside first, so a failed move in leaves the library as it was
+    let mut aside: Vec<(PathBuf, PathBuf)> = Vec::new();
+    let staged = staging.file_name().expect("a folder").to_string_lossy().into_owned();
+    for (i, d) in olds.iter().enumerate() {
+        let to = libraries.join(format!("{staged}-old{i}"));
+        if let Err(e) = std::fs::rename(d, &to) {
+            restore(&aside);
+            return Err(failed(format!("cannot replace {}: {e}", paths::slash(d))));
+        }
+        aside.push((d.clone(), to));
+    }
+    if let Err(e) = std::fs::rename(unpacked, &target) {
+        restore(&aside);
+        return Err(failed(format!("cannot move {} into {}: {e}", lib.name, paths::slash(libraries))));
+    }
+    for (_, to) in &aside {
+        let _ = std::fs::remove_dir_all(to);
+    }
+    Ok(Some(target))
+}
+
+/// Puts the folders moved aside back where they were.
+fn restore(aside: &[(PathBuf, PathBuf)]) {
+    for (from, to) in aside.iter().rev() {
+        let _ = std::fs::rename(to, from);
+    }
 }
 
 // ---- PlatformIO ----
@@ -175,16 +234,22 @@ fn key_lines(lines: &[&str], section: (usize, usize), key: &str) -> Option<(usiz
     Some((k, last))
 }
 
-/// The sections lib_deps goes in: [env], which every env takes, else each [env:name].
-fn env_sections(lines: &[&str]) -> Vec<(usize, usize)> {
+type Spans = Vec<(usize, usize)>;
+
+/// The sections lib_deps goes in: [env], which every env takes, else each [env:name]. An
+/// [env:name] with a lib_deps of its own overrides [env], so it is the second list's.
+fn env_sections(lines: &[&str]) -> (Spans, Spans) {
     let header = icase(r"^[ \t]*\[([^\]]*)\]");
     let heads: Vec<(usize, String)> = lines.iter().enumerate().filter_map(|(i, l)| header.captures(l).map(|m| (i, m[1].trim().to_lowercase()))).collect();
     let spans: Vec<(usize, usize, &str)> = heads.iter().enumerate().map(|(n, (i, name))| (*i, heads.get(n + 1).map_or(lines.len(), |h| h.0), name.as_str())).collect();
     let common: Vec<(usize, usize)> = spans.iter().filter(|s| s.2 == "env").map(|s| (s.0, s.1)).collect();
-    if !common.is_empty() {
-        return common;
+    let named = spans.iter().filter(|s| s.2.starts_with("env:")).map(|s| (s.0, s.1));
+    if common.is_empty() {
+        return (named.collect(), Vec::new());
     }
-    spans.iter().filter(|s| s.2.starts_with("env:")).map(|s| (s.0, s.1)).collect()
+    // an env taking ${env.lib_deps} inherits the shared list
+    let own = named.filter(|&s| key_lines(lines, s, "lib_deps").is_some_and(|(k, last)| !lines[k..=last].join("\n").contains("${env.lib_deps}")));
+    (common, own.collect())
 }
 
 /// Adds value to a key of the section, as one more indented line, or the key with it when missing.
@@ -207,17 +272,21 @@ fn value_of(lines: &[&str], section: (usize, usize), key: &str) -> String {
 
 /// The text with the library's zip at url in lib_deps, and C++17 for envs that set no standard,
 /// since the stock ESP32 platform builds gnu++11 and Rant's C++ needs 17.
-pub fn pio_add(text: &str, url: &str) -> Result<String> {
+pub fn pio_add(text: &str, lib: &Library, url: &str) -> Result<String> {
     let nl = if text.contains("\r\n") { "\r\n" } else { "\n" };
     let normal = text.replace("\r\n", "\n");
     let lines: Vec<&str> = normal.split('\n').collect();
-    let sections = env_sections(&lines);
+    let (sections, own) = env_sections(&lines);
     if sections.is_empty() {
         return Err(failed("it has no [env] section to add to"));
     }
-    let mut edits = Vec::new();
+    let (mut edits, zip) = (Vec::new(), zip_pattern(lib));
+    for &s in sections.iter().chain(&own) {
+        if !zip.is_match(&value_of(&lines, s, "lib_deps")) {
+            append(&lines, s, "lib_deps", url, &mut edits);
+        }
+    }
     for &s in &sections {
-        append(&lines, s, "lib_deps", url, &mut edits);
         if !value_of(&lines, s, "build_flags").contains("-std=") {
             if !value_of(&lines, s, "build_unflags").contains("-std=gnu++11") {
                 append(&lines, s, "build_unflags", "-std=gnu++11", &mut edits);
@@ -279,13 +348,13 @@ url={url}
         let t = Scratch::new("sketchbook");
         let (libraries, own) = (t.path("book/libraries"), "https://github.com/KosmosisDire/Rant");
         let first = zip_at(&t, "a.zip", "Rant", own, "0.0.42");
-        assert_eq!(place(&first, &t.path("stage1"), &libraries, &rant(), "a.zip").unwrap(), libraries.join("Rant"));
-        assert_eq!(installed(&libraries, &rant()).and_then(|(_, v)| v).as_deref(), Some("0.0.42"));
+        assert_eq!(place(&first, &t.path("stage1"), &libraries, &rant(), "a.zip").unwrap(), Some(libraries.join("Rant")));
+        assert_eq!(Book::of(Some(&libraries)).find(&rant()).and_then(|(_, v)| v).as_deref(), Some("0.0.42"));
         // a later release under another folder name takes the old one's place
         let renamed = zip_at(&t, "b.zip", "Rant_Lib", own, "0.0.43");
         place(&renamed, &t.path("stage2"), &libraries, &rant(), "b.zip").unwrap();
         assert!(!libraries.join("Rant").exists());
-        assert_eq!(installed(&libraries, &rant()), Some((libraries.join("Rant_Lib"), Some("0.0.43".into()))));
+        assert_eq!(Book::of(Some(&libraries)).find(&rant()), Some((libraries.join("Rant_Lib"), Some("0.0.43".into()))));
         t.write("book/libraries/Mine/library.properties", "name=Mine
 url=https://example.com/mine
 ");
@@ -311,18 +380,83 @@ url=https://example.com/mine
         let want = format!(
             "[platformio]\ndefault_envs = s3\n\n[env:s3]\nplatform = espressif32\nlib_deps =\n    fastled/FastLED\n    {URL}\n\nmonitor_speed = 115200\nbuild_unflags =\n    -std=gnu++11\nbuild_flags =\n    -std=gnu++17\n"
         );
-        assert_eq!(pio_add(text, URL).unwrap(), want);
+        assert_eq!(pio_add(text, &rant(), URL).unwrap(), want);
+    }
+
+    #[test]
+    fn an_env_with_its_own_lib_deps_gets_the_pin_too() {
+        let text = "[env]
+framework = arduino
+[env:a]
+board = x
+[env:b]
+lib_deps =
+    fastled/FastLED
+[env:c]
+lib_deps = ${env.lib_deps}
+    other
+";
+        let out = pio_add(text, &rant(), URL).unwrap();
+        // the shared one, and b with its own list, never c which takes the shared one
+        assert_eq!(out.matches(URL).count(), 2, "{out}");
+        assert!(out.contains(&format!("[env]
+framework = arduino
+lib_deps =
+    {URL}
+")), "{out}");
+        assert!(out.contains(&format!("[env:b]
+lib_deps =
+    fastled/FastLED
+    {URL}
+")), "{out}");
+        assert!(out.contains("[env:c]
+lib_deps = ${env.lib_deps}
+    other
+"), "{out}");
+    }
+
+    #[test]
+    fn two_envs_without_a_shared_one_each_get_the_pin() {
+        let out = pio_add("[env:a]
+board = x
+[env:b]
+board = y
+", &rant(), URL).unwrap();
+        assert_eq!(out.matches(URL).count(), 2, "{out}");
+    }
+
+    #[test]
+    fn adding_twice_changes_nothing_and_a_move_reaches_every_pin() {
+        let text = "[env]
+framework = arduino
+[env:a]
+lib_deps = fastled/FastLED
+[env:b]
+board = y
+";
+        let once = pio_add(text, &rant(), URL).unwrap();
+        assert_eq!(pio_add(&once, &rant(), URL).unwrap(), once);
+        let moved = pio_set(&once, &rant(), "0.0.44").unwrap();
+        assert_eq!(moved.matches("0.0.44").count(), 4, "{moved}");
+        assert!(!moved.contains("0.0.43"), "{moved}");
+    }
+
+    #[test]
+    fn the_ide_one_preferences_name_the_sketchbook() {
+        assert_eq!(preferences_path("editor.font=x\r\nsketchbook.path=D:\\Sketches\r\n"), Some(PathBuf::from("D:\\Sketches")));
+        assert_eq!(preferences_path("sketchbook.path=\n"), None);
+        assert_eq!(yaml_user("directories: # where\n    user: /x\n"), Some(PathBuf::from("/x")));
     }
 
     #[test]
     fn a_standard_set_by_hand_stays_and_env_is_shared() {
         let text = "[env]\nframework = arduino\nbuild_flags = -std=gnu++2b\n[env:a]\nboard = x\n[env:b]\nboard = y";
-        assert_eq!(pio_add(text, URL).unwrap(), format!("[env]\nframework = arduino\nbuild_flags = -std=gnu++2b\nlib_deps =\n    {URL}\n[env:a]\nboard = x\n[env:b]\nboard = y\n"));
+        assert_eq!(pio_add(text, &rant(), URL).unwrap(), format!("[env]\nframework = arduino\nbuild_flags = -std=gnu++2b\nlib_deps =\n    {URL}\n[env:a]\nboard = x\n[env:b]\nboard = y\n"));
         let each = "[env:a]\r\nboard = x\r\n\r\n[env:b]\r\nboard = y\r\nbuild_unflags = -std=gnu++11\r\n";
-        let out = pio_add(each, URL).unwrap();
+        let out = pio_add(each, &rant(), URL).unwrap();
         assert_eq!(out.matches(URL).count(), 2);
         assert_eq!(out.matches("-std=gnu++11").count(), 2, "{out}");
         assert!(!out.replace("\r\n", "").contains('\n'), "{out:?}");
-        assert!(pio_add("[platformio]\n", URL).is_err());
+        assert!(pio_add("[platformio]\n", &rant(), URL).is_err());
     }
 }

@@ -6,14 +6,10 @@ use std::path::Path;
 use regex::{NoExpand, Regex};
 
 use super::uses::{cargo_entry, cargo_versions, element_version, fetches, is_fetch, pin_pattern, reference_pattern, version_pattern};
-use super::{DEFAULT_LIBRARY, Kind, Library, arduino};
+use super::{DEFAULT_LIBRARY, Kind, Library, arduino, icase};
 use crate::cmake::{self, Call};
 use crate::failure::{Result, failed};
 use crate::files;
-
-fn icase(pattern: &str) -> Regex {
-    Regex::new(&format!("(?i){pattern}")).expect("the patterns here are valid")
-}
 
 fn git_url(lib: &Library) -> String {
     format!("https://github.com/{}.git", lib.repo)
@@ -61,7 +57,7 @@ pub fn add(kind: Kind, file: &Path, lib: &Library, version: &str, tag: &str) -> 
         })?,
         Kind::CSharp => files::edit(file, |text| csharp_add(text, lib, version))?,
         Kind::Rust => files::edit(file, |text| cargo_add(text, lib, version))?,
-        Kind::PlatformIO => files::edit(file, |text| arduino::pio_add(text, &arduino::zip_url(lib, tag, version)))?,
+        Kind::PlatformIO => files::edit(file, |text| arduino::pio_add(text, lib, &arduino::zip_url(lib, tag, version)))?,
         Kind::Python => return Err(failed(format!("Python gets {} in its venv, not its files", lib.name))),
         Kind::Arduino => return Err(failed(format!("a sketch gets {} in the sketchbook, not its files", lib.name))),
     }

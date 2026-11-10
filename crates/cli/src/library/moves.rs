@@ -153,9 +153,8 @@ fn bring(ctx: &Context, home: &Path, u: &Use, lib: &Library, r: &Release, asked:
         install_python(ctx, u, lib, r)?;
         return Ok(moved);
     }
-    if u.how == "sketchbook" {
-        arduino::install(ctx, home, lib, r)?;
-        return Ok(moved);
+    if u.kind == Kind::Arduino {
+        return Ok(if arduino::install(ctx, home, lib, r)?.is_some() { moved } else { String::new() });
     }
     edit::set_version(&u.file, lib, &r.version)?;
     if u.kind == Kind::CSharp {
@@ -183,11 +182,13 @@ fn missing(dir: &Path, lib: &Library, uses: &[Use], r: &Release) -> Vec<(Kind, P
         out.push((Kind::Rust, cargo));
     }
     let ini = dir.join("platformio.ini");
-    if arduino::carried(r, lib).is_some() && ini.is_file() && !used(&ini) {
+    let zip = arduino::carried(r, lib).is_some();
+    if zip && ini.is_file() && !used(&ini) {
         out.push((Kind::PlatformIO, ini));
     }
-    if arduino::carried(r, lib).is_some() && arduino::is_sketch(dir) && !uses.iter().any(|u| u.kind == Kind::Arduino) {
-        out.push((Kind::Arduino, arduino::sketchbook().unwrap_or_default().join("libraries")));
+    if zip && arduino::is_sketch(dir) && !uses.iter().any(|u| u.kind == Kind::Arduino) {
+        // with no sketchbook the path stays empty and install says so
+        out.push((Kind::Arduino, arduino::sketchbook().map(|b| b.join("libraries")).unwrap_or_default()));
     }
     out
 }
@@ -270,12 +271,13 @@ pub fn add(ctx: &Context, home: &Path, dir: &Path, lib: &Library, r: &Release, a
     }
     for (kind, file) in adds {
         let added = match kind {
-            Kind::Arduino => arduino::install(ctx, home, lib, r).map(|_| String::new()),
-            Kind::CSharp => edit::add(kind, &file, lib, &r.version, &r.tag).and_then(|hint| install_nupkg(ctx, home, lib, r).map(|_| hint)),
-            _ => edit::add(kind, &file, lib, &r.version, &r.tag),
+            Kind::Arduino => arduino::install(ctx, home, lib, r).map(|placed| placed.map(|_| String::new())),
+            Kind::CSharp => edit::add(kind, &file, lib, &r.version, &r.tag).and_then(|hint| install_nupkg(ctx, home, lib, r).map(|_| Some(hint))),
+            _ => edit::add(kind, &file, lib, &r.version, &r.tag).map(Some),
         };
         match added {
-            Ok(hint) => {
+            Ok(None) => {}
+            Ok(Some(hint)) => {
                 report(ctx, dir, kind, &format!("added to {}", ctx.shown(&file)));
                 if !hint.is_empty() {
                     ctx.out.note(&format!("    link it to your target: {hint}"));

@@ -12,9 +12,20 @@ pub use uses::{Use, in_folder, node_source, under};
 use std::path::Path;
 
 use rant_config::package;
+use regex::Regex;
 use serde::Serialize;
 
 use crate::packages;
+
+/// A case insensitive pattern, for the build files matched by pattern.
+fn icase(pattern: &str) -> Regex {
+    Regex::new(&format!("(?i){pattern}")).expect("the patterns here are valid")
+}
+
+/// A file's text, empty when it cannot be read.
+fn read(p: &Path) -> String {
+    std::fs::read_to_string(p).unwrap_or_default()
+}
 
 /// The library added when none is named, the one Rant nodes are built on.
 pub const DEFAULT_LIBRARY: &str = "rant";
