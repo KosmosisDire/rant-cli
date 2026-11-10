@@ -9,6 +9,7 @@ use rant_process::Command;
 
 use super::sources::{Sources, carried, is_archive, named, read_text};
 use super::vsix::{self, Target, Wanted};
+use super::pcwlx;
 use super::{Download, Record, Source, dir, is_link, make_link, record, record_file, save, skills, unlink, zip};
 use crate::context::Context;
 use crate::failure::{Failure, Result, failed};
@@ -164,6 +165,25 @@ fn install_extension(ctx: &Context, home: &Path, t: &Target, file: &Path, rec: &
     Ok(())
 }
 
+/// Places a PLCnext Engineer library where Engineer takes user libraries from, in place of the
+/// copies placed before.
+fn install_library(ctx: &Context, home: &Path, file: &Path, rec: &mut Record) -> Result<()> {
+    let folders = pcwlx::folders();
+    if folders.is_empty() {
+        ctx.out.note(&format!("{} carries a PLCnext Engineer library, which goes only where Engineer runs, on Windows", rec.name));
+        return Ok(());
+    }
+    let had = record(home, &rec.name).map(|h| h.libraries).unwrap_or_default();
+    rec.libraries = pcwlx::install(file, &folders)?;
+    let gone: Vec<PathBuf> = had.into_iter().filter(|h| !rec.libraries.iter().any(|p| paths::same(p, h))).collect();
+    pcwlx::remove(&gone)?;
+    for p in &rec.libraries {
+        let name = p.file_stem().unwrap_or_default().to_string_lossy();
+        ctx.out.note(&format!("installed the PLCnext Engineer library {name} as {}, add it to a project from Engineer's user libraries", paths::slash(p)));
+    }
+    Ok(())
+}
+
 fn no_extension(name: &str) -> Failure {
     failed(format!("{name} is no VS Code extension, so --editor and --profile do not apply"))
 }
@@ -192,8 +212,8 @@ fn install_release(ctx: &Context, home: &Path, s: &Source, version: &str, wanted
     if c.archive.is_none() && !c.platforms.is_empty() {
         return Err(failed(format!("{release} is built for {}, not for {}", c.platforms.join(", "), platform())));
     }
-    if c.archive.is_none() && c.extension.is_none() && c.skill.is_none() {
-        return Err(failed(format!("{release} carries no {prefix}-{}.tar.gz, {prefix}.vsix or {prefix}-skill.zip, so it has nothing to install", platform())));
+    if c.archive.is_none() && c.extension.is_none() && c.library.is_none() && c.skill.is_none() {
+        return Err(failed(format!("{release} carries no {prefix}-{}.tar.gz, {prefix}.vsix, {prefix}.pcwlx or {prefix}-skill.zip, so it has nothing to install", platform())));
     }
     if c.extension.is_none() && wanted.any() {
         return Err(no_extension(&s.name));
@@ -202,9 +222,13 @@ fn install_release(ctx: &Context, home: &Path, s: &Source, version: &str, wanted
     let target = c.extension.as_ref().map(|_| extension_target(ctx, home, &s.name, wanted)).transpose()?;
     let archive = Download::new(ctx, home, c.archive.as_ref())?;
     let extension = Download::new(ctx, home, c.extension.as_ref())?;
+    let library = Download::new(ctx, home, c.library.as_ref())?;
     let skill = Download::new(ctx, home, c.skill.as_ref())?;
     if let (Some(t), Some(file)) = (&target, extension.file()) {
         install_extension(ctx, home, t, file, rec)?;
+    }
+    if let Some(file) = library.file() {
+        install_library(ctx, home, file, rec)?;
     }
     place(home, &s.name, archive.file(), &text.unwrap_or_default(), skill.file())?;
     rec.version = r.version.clone();
@@ -234,10 +258,14 @@ fn install_path(ctx: &Context, home: &Path, s: &Source, wanted: &Wanted, rec: &m
             None if wanted.any() => return Err(no_extension(&s.name)),
             None => {}
         }
+        let library = pcwlx::newest(&s.path);
+        if let Some(file) = &library {
+            install_library(ctx, home, file, rec)?;
+        }
         retire(home, &s.name)?;
         let target = paths::normalize(&std::path::absolute(&s.path).unwrap_or_else(|_| s.path.clone()));
         make_link(&dir(home).join(&s.name), &target)?;
-        let tail = if extension.is_none() { ", so its builds there count at once" } else { "" };
+        let tail = if extension.is_none() && library.is_none() { ", so its builds there count at once" } else { "" };
         ctx.out.note(&format!("linked {} to {from}{tail}", s.name));
         return Ok(());
     }
@@ -258,6 +286,7 @@ fn install_path(ctx: &Context, home: &Path, s: &Source, wanted: &Wanted, rec: &m
 /// Whether a package is more than a skill: an extension or other files beside its skill.
 fn more_than_skill(home: &Path, rec: &Record) -> bool {
     !rec.extension.is_empty()
+        || !rec.libraries.is_empty()
         || std::fs::read_dir(dir(home).join(&rec.name)).into_iter().flatten().flatten().any(|e| {
             let file = e.file_name().to_string_lossy().into_owned();
             file != PACKAGE_FILE && file != "skill" && !file.starts_with('.')
@@ -323,6 +352,9 @@ pub fn remove(ctx: &Context, home: &Path, name: &str) -> Result<()> {
             vsix::remove(&t, &r.extension)?;
         }
     }
+    if let Some(r) = &rec {
+        pcwlx::remove(&r.libraries)?;
+    }
     for l in rec.iter().flat_map(|r| &r.skills).filter(|l| is_link(l)) {
         unlink(l)?;
     }
@@ -370,8 +402,14 @@ pub fn check(ctx: &Context, home: &Path, sources: &mut Sources, name: &str) -> R
     } else if !paths::same(&rec.path, &s.path) {
         u.needed = true;
     } else if s.path.is_dir() {
-        // a linked folder is current by itself, but its extension is built into a file
+        // a linked folder is current by itself, but its extension and library are built into files
         u.needed = !is_link(&target);
+        if !rec.libraries.is_empty() {
+            let Some(file) = pcwlx::newest(&s.path) else {
+                return Err(failed(format!("{} holds no .pcwlx to install, build one there first", paths::slash(&s.path))));
+            };
+            u.needed = u.needed || pcwlx::newer(&file, &rec.libraries);
+        }
         if !rec.extension.is_empty() {
             let Some(file) = newest_vsix(&s.path, name) else {
                 return Err(failed(format!("{} holds no {name}-*.vsix to install, build one there first", paths::slash(&s.path))));

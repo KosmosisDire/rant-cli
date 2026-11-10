@@ -109,7 +109,8 @@ start.
 
 A package others install gives its `name` in package.rant and names its release files by
 rule: `<name>-<version>-<platform>.tar.gz` holds bin/, package.rant and the run files,
-unpacked into `~/.rant/packages/<name>`, `<name>-<version>.vsix` goes into editors, and
+unpacked into `~/.rant/packages/<name>`, `<name>-<version>.vsix` goes into editors,
+`<name>-<version>.pcwlx` into PLCnext Engineer's user libraries on Windows, and
 `<name>-<version>-skill.zip` holds its agent skill, the `skill/` folder of its repo.
 `version` is the release tag without its v, such as 1.2.0 or 1.2.0-beta.1, `platform` one of
 win-x64, win-arm64, linux-x64, linux-arm64, osx-x64 and osx-arm64. A plain install takes the

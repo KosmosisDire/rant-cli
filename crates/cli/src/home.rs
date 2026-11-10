@@ -12,6 +12,13 @@ pub fn home_dir() -> Option<PathBuf> {
     env_path("HOME").or_else(|| if cfg!(windows) { env_path("USERPROFILE") } else { None })
 }
 
+/// The user's Documents folder, where Windows keeps it now, which may be moved or synced.
+#[cfg(windows)]
+pub fn documents() -> Option<PathBuf> {
+    let shell = r"Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders";
+    crate::registry::read(shell, "Personal").map(|(v, _)| PathBuf::from(v)).or_else(|| env_path("USERPROFILE").map(|h| h.join("Documents")))
+}
+
 /// This rant's own program file.
 pub fn program() -> crate::failure::Result<PathBuf> {
     std::env::current_exe().map_err(|e| crate::failure::failed(format!("cannot find rant itself: {e}")))

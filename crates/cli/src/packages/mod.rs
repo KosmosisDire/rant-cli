@@ -3,6 +3,7 @@
 
 mod install;
 mod links;
+pub mod pcwlx;
 pub mod skills;
 pub mod sources;
 pub mod vsix;
@@ -103,6 +104,8 @@ pub struct Record {
     /// And the editor and profile that took it.
     pub editor: PathBuf,
     pub profile: String,
+    /// The PLCnext Engineer libraries it placed.
+    pub libraries: Vec<PathBuf>,
     /// The links that give its skill to AI coding agents.
     pub skills: Vec<PathBuf>,
 }
@@ -127,6 +130,7 @@ pub fn record(home: &Path, name: &str) -> Option<Record> {
         extension: text(&e["id"]),
         editor: PathBuf::from(text(&e["editor"])),
         profile: text(&e["profile"]),
+        libraries: j["engineer_libraries"].as_array().into_iter().flatten().filter_map(Value::as_str).map(PathBuf::from).collect(),
         skills: j["skills"].as_array().into_iter().flatten().filter_map(Value::as_str).map(PathBuf::from).collect(),
     })
 }
@@ -145,6 +149,9 @@ fn save(home: &Path, r: &Record) -> Result<()> {
     put("version", &r.version);
     if !r.extension.is_empty() {
         j.insert("extension".into(), json!({"id": r.extension, "editor": paths::slash(&r.editor), "profile": r.profile}));
+    }
+    if !r.libraries.is_empty() {
+        j.insert("engineer_libraries".into(), json!(r.libraries.iter().map(|l| paths::slash(l)).collect::<Vec<_>>()));
     }
     if !r.skills.is_empty() {
         j.insert("skills".into(), json!(r.skills.iter().map(|l| paths::slash(l)).collect::<Vec<_>>()));

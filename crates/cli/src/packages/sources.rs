@@ -241,6 +241,8 @@ pub fn from_repo(repo: &str) -> Result<Source> {
 pub struct Carried {
     pub archive: Option<Asset>,
     pub extension: Option<Asset>,
+    /// A PLCnext Engineer library.
+    pub library: Option<Asset>,
     pub skill: Option<Asset>,
     pub platforms: Vec<String>,
 }
@@ -251,6 +253,7 @@ pub fn carried(r: &Release, name: &str, platform: &str) -> Carried {
     Carried {
         archive: r.asset(&format!("{prefix}-{platform}.tar.gz")).cloned(),
         extension: r.asset(&format!("{prefix}.vsix")).cloned(),
+        library: r.asset(&format!("{prefix}.pcwlx")).cloned(),
         skill: r.asset(&format!("{prefix}-skill.zip")).cloned(),
         platforms: platforms.collect(),
     }
@@ -272,7 +275,7 @@ pub fn about(s: &Source) -> Result<About> {
     }
     let r = github::release(&s.repo, "")?;
     let c = carried(&r, &s.name, github::platform());
-    let files = [&c.archive, &c.extension, &c.skill].into_iter().flatten().map(|a| a.name.clone()).collect();
+    let files = [&c.archive, &c.extension, &c.library, &c.skill].into_iter().flatten().map(|a| a.name.clone()).collect();
     let text = github::fetch(&github::raw_url(&s.repo, &r.tag, PACKAGE_FILE))?;
     let (_, rel) = named(Path::new(&s.repo), &format!("{} at {}", s.repo, r.tag), text)?;
     Ok(About { version: r.version, files, description: rel.description.unwrap_or_default() })
