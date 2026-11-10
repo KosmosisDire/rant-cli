@@ -15,6 +15,8 @@
     $bin = Join-Path $home_dir 'bin'
     $exe = Join-Path $bin 'rant.exe'
     $yes = [bool]$env:RANT_YES
+    # with no console to ask on, only rant-cli installs
+    $pick = -not $yes -and -not [Console]::IsInputRedirected
 
     # the console's own colors nearest the CLI's palette, none with NO_COLOR
     function Say($text, $color) {
@@ -77,7 +79,7 @@
     Say '    - ' 'DarkGray'; Write-Host "download rant-cli to $(Short $exe)"
     if (-not $on_path) { Say '    - ' 'DarkGray'; Write-Host "put $(Short $bin) on your user PATH" }
     Say '    - ' 'DarkGray'; Write-Host 'set up tab completion for PowerShell'
-    if (-not $yes) { Say '    - ' 'DarkGray'; Write-Host 'install what you tick below' }
+    if ($pick) { Say '    - ' 'DarkGray'; Write-Host 'install what you tick below' }
     Write-Host ''
 
     # The checklist runs from a download outside the folder, so cancelling it leaves this
@@ -97,7 +99,7 @@
         Fail 'the downloaded rant-cli does not run here'
     }
 
-    if (-not $yes) {
+    if ($pick) {
         Write-Host ''
         & $staged install
         # 130 is the checklist cancelled
@@ -146,6 +148,6 @@
     Say 'Done. ' 'Green'; Write-Host "$($now.lines -join '') is installed."
     Write-Host '  This window can use it now, other open ones once restarted. Try ' -NoNewline
     Say 'rant --help' 'White'; Write-Host '.'
-    if ($yes) { Write-Host '  ' -NoNewline; Say 'rant install' 'White'; Write-Host ' picks packages to add.' }
+    if (-not $pick) { Write-Host '  ' -NoNewline; Say 'rant install' 'White'; Write-Host ' picks packages to add.' }
     Write-Host ''
 }

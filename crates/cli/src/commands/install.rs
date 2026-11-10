@@ -14,7 +14,7 @@ use crate::library::{self, arduino};
 use crate::packages::sources::{Offer, Sources, carried, from_repo};
 use crate::packages::vsix::{self, Wanted};
 use crate::packages::{self, Source, skills};
-use crate::pick::{self, Choice};
+use crate::pick::{self, Choice, Picked};
 
 #[derive(clap::Args, Debug)]
 pub struct Args {
@@ -116,7 +116,8 @@ fn extensions(ctx: &Context, offers: &[Offer]) -> Vec<bool> {
     out
 }
 
-/// The packages the checklist ticks while they are not installed.
+/// The packages the checklist ticks while they are not installed. The CLI skill and Arduino rows
+/// have their own rules.
 const TICKED: [&str; 2] = ["explorer", "vscode"];
 
 /// The checklist's row for the CLI's own skill, ticked while an agent is found that has it not.
@@ -164,8 +165,9 @@ fn auto_skills(setting: Option<AgentSkills>) -> Choice {
 }
 
 /// With no names on a terminal: a checklist of the CLI's skill, every package there is, the Arduino
-/// libraries and the auto skills setting, those of TICKED not installed ticked but an editor
-/// extension with no editor found.
+/// libraries and the auto skills setting. Ticked: those of TICKED not installed (an editor extension
+/// with no editor found excepted), the CLI skill when an agent lacks it, the Arduino row when a
+/// sketchbook is there, and the auto skills row unless the setting says ask.
 fn pick(ctx: &mut Context, args: &Args) -> Result<()> {
     if ctx.yes || !std::io::stdin().is_terminal() || !ctx.out.terminal_err() || args.version.is_some() || args.from.is_some() {
         return Err(usage("install needs a package, `rant ls packages --available` lists them"));
@@ -191,7 +193,11 @@ fn pick(ctx: &mut Context, args: &Args) -> Result<()> {
     let setting = home::read(&home)?.agent_skills;
     let choices = std::iter::once(cli_skill()).chain(packages).chain([arduino_row(), auto_skills(setting)]).collect();
     // the installers read the exit code to tell a cancel from a confirm
-    let Some(ticked) = pick::pick(&ctx.out, "To install", "Install", choices) else { return Err(Failure::Cancelled) };
+    let ticked = match pick::pick(&ctx.out, "To install", "Install", choices) {
+        Picked::Ticked(t) => t,
+        Picked::Cancelled => return Err(Failure::Cancelled),
+        Picked::Unavailable => return Err(usage("install needs a package, `rant ls packages --available` lists them")),
+    };
     let (arduino_at, auto_at) = (offers.len() + 1, offers.len() + 2);
     let auto = if ticked.contains(&auto_at) { AgentSkills::Auto } else { AgentSkills::Ask };
     if setting != Some(auto) {

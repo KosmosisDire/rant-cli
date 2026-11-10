@@ -21,7 +21,7 @@ use crate::mesh::{Client, FULL_SETTLE};
 use crate::names::renames;
 use crate::nodes::{self, Session, managed_peers, same_spec, spawn};
 use crate::output::{Data, Format, Style, Table, Text};
-use crate::pick::{Choice, pick};
+use crate::pick::{Choice, Picked, pick};
 use crate::state::{self, Root, RootKind, State, Store};
 
 #[derive(clap::Args, Debug)]
@@ -366,10 +366,15 @@ pub fn where_running(ctx: &mut Context, name: &str, node: bool, verb: &str) -> R
         .collect();
     let submit = format!("{}{}", verb[..1].to_uppercase(), &verb[1..]);
     let title = format!("{submit} `{name}` in");
+    let cannot = || failed(format!("`{name}` runs in {} workspaces: {}, pick one in a terminal", runs.len(), shown.join(", ")));
     if ctx.yes || !std::io::stdin().is_terminal() || !ctx.out.terminal_err() {
-        return Err(failed(format!("`{name}` runs in {} workspaces: {}, pick one in a terminal", runs.len(), shown.join(", "))));
+        return Err(cannot());
     }
-    Ok(pick(&ctx.out, &title, &submit, choices).map(|ticked| ticked.into_iter().map(|i| runs[i].root.clone()).collect()))
+    match pick(&ctx.out, &title, &submit, choices) {
+        Picked::Ticked(ticked) => Ok(Some(ticked.into_iter().map(|i| runs[i].root.clone()).collect())),
+        Picked::Cancelled => Ok(None),
+        Picked::Unavailable => Err(cannot()),
+    }
 }
 
 /// Runs act once in each folder, as if rant ran there, given the folder as shown when it is

@@ -87,13 +87,21 @@ impl Checklist {
     }
 }
 
-/// Asks with a checklist confirmed by its submit button. The ticked indexes, or None when it
-/// was given up or stdin or stderr is no terminal.
-pub fn pick(out: &Output, title: &str, submit: &str, choices: Vec<Choice>) -> Option<Vec<usize>> {
+/// How a checklist ended.
+pub enum Picked {
+    Ticked(Vec<usize>),
+    /// The user gave it up.
+    Cancelled,
+    /// There was nothing to ask, or stdin or stderr is no terminal.
+    Unavailable,
+}
+
+/// Asks with a checklist confirmed by its submit button.
+pub fn pick(out: &Output, title: &str, submit: &str, choices: Vec<Choice>) -> Picked {
     if choices.is_empty() || !out.terminal_err() {
-        return None;
+        return Picked::Unavailable;
     }
-    let keys = keys::Reader::new()?;
+    let Some(keys) = keys::Reader::new() else { return Picked::Unavailable };
     let mut list = Checklist::new(title, submit, choices);
     let mut view = LiveView::new();
     view.draw(&list.lines(out));
@@ -102,7 +110,7 @@ pub fn pick(out: &Output, title: &str, submit: &str, choices: Vec<Choice>) -> Op
     }
     view.draw(&list.lines(out));
     drop(view);
-    list.confirmed.then(|| list.ticked())
+    if list.confirmed { Picked::Ticked(list.ticked()) } else { Picked::Cancelled }
 }
 
 /// Single keys from the terminal on stdin, without echo or line editing, until the Reader
