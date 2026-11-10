@@ -636,7 +636,7 @@ checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
 
 [[package]]
 name = "rant-cli"
-version = "0.0.39"
+version = "0.0.40"
 dependencies = [
  "clap",
  "libc",
@@ -654,7 +654,7 @@ dependencies = [
 
 [[package]]
 name = "rant-config"
-version = "0.0.39"
+version = "0.0.40"
 dependencies = [
  "globset",
  "goblin",
@@ -670,8 +670,8 @@ dependencies = [
 
 [[package]]
 name = "rant-macros"
-version = "0.0.43"
-source = "git+https://github.com/KosmosisDire/Rant.git?tag=crate-v0.0.43#e55423b208d71c3db9a6010af9d5c37a4bff5466"
+version = "0.0.44"
+source = "git+https://github.com/KosmosisDire/Rant.git?tag=crate-v0.0.44#26f6ca4c8beb98e44901fbe06116a47c1c73a33b"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -680,8 +680,8 @@ dependencies = [
 
 [[package]]
 name = "rant-middleware"
-version = "0.0.43"
-source = "git+https://github.com/KosmosisDire/Rant.git?tag=crate-v0.0.43#e55423b208d71c3db9a6010af9d5c37a4bff5466"
+version = "0.0.44"
+source = "git+https://github.com/KosmosisDire/Rant.git?tag=crate-v0.0.44#26f6ca4c8beb98e44901fbe06116a47c1c73a33b"
 dependencies = [
  "cc",
  "rant-macros",
@@ -690,7 +690,7 @@ dependencies = [
 
 [[package]]
 name = "rant-process"
-version = "0.0.39"
+version = "0.0.40"
 dependencies = [
  "libc",
  "windows-sys 0.61.2",
@@ -698,8 +698,8 @@ dependencies = [
 
 [[package]]
 name = "rant-types"
-version = "0.0.43"
-source = "git+https://github.com/KosmosisDire/Rant.git?tag=crate-v0.0.43#e55423b208d71c3db9a6010af9d5c37a4bff5466"
+version = "0.0.44"
+source = "git+https://github.com/KosmosisDire/Rant.git?tag=crate-v0.0.44#26f6ca4c8beb98e44901fbe06116a47c1c73a33b"
 
 [[package]]
 name = "regex"
