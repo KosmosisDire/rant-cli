@@ -1,5 +1,6 @@
 //! Bringing packages to a library's release: a library added to a folder's build files, or every
-//! use in a workspace moved, with the Python wheel and the C# package that need more than an edit.
+//! use in a workspace moved, with the Python wheel, the C# package and the sketchbook copy that need
+//! more than an edit.
 
 use std::path::{Path, PathBuf};
 
@@ -7,7 +8,7 @@ use rant_config::database;
 use rant_process::Command;
 
 use super::edit;
-use super::{Kind, Library, Use, in_folder, uses::dist_name};
+use super::{Kind, Library, Use, arduino, in_folder, uses::dist_name};
 use crate::context::Context;
 use crate::failure::{Result, failed, usage};
 use crate::github::{self, Asset, Release};
@@ -128,9 +129,11 @@ fn install_nupkg(ctx: &Context, home: &Path, lib: &Library, r: &Release) -> Resu
 }
 
 /// A use the release would change. An unpinned pyproject dependency takes what its venv has,
-/// and an unpinned Cargo one what its source has. Only a version asked for moves one back.
+/// and an unpinned Cargo one what its source has, and Arduino needs the release's zip. Only a
+/// version asked for moves one back.
 fn changes(u: &Use, r: &Release, asked: bool) -> bool {
-    if !u.wanted || u.version.as_deref() == Some(r.version.as_str()) || (matches!(u.how, "pyproject" | "Cargo") && u.version.is_none()) {
+    let no_zip = matches!(u.kind, Kind::PlatformIO | Kind::Arduino) && r.asset(&arduino::zip_name(&u.library, &r.version)).is_none();
+    if no_zip || !u.wanted || u.version.as_deref() == Some(r.version.as_str()) || (matches!(u.how, "pyproject" | "Cargo") && u.version.is_none()) {
         return false;
     }
     asked || u.version.as_ref().is_none_or(|v| !github::newer(v, &r.version))
@@ -150,6 +153,10 @@ fn bring(ctx: &Context, home: &Path, u: &Use, lib: &Library, r: &Release, asked:
         install_python(ctx, u, lib, r)?;
         return Ok(moved);
     }
+    if u.how == "sketchbook" {
+        arduino::install(ctx, home, lib, r)?;
+        return Ok(moved);
+    }
     edit::set_version(&u.file, lib, &r.version)?;
     if u.kind == Kind::CSharp {
         install_nupkg(ctx, home, lib, r)?;
@@ -157,8 +164,9 @@ fn bring(ctx: &Context, home: &Path, u: &Use, lib: &Library, r: &Release, asked:
     Ok(moved)
 }
 
-/// The build files in a folder that could take the library but do not name it yet.
-fn missing(dir: &Path, lib: &Library, uses: &[Use]) -> Vec<(Kind, PathBuf)> {
+/// The build files in a folder that could take the library but do not name it yet. A sketch takes
+/// the sketchbook. PlatformIO and Arduino need the release's zip.
+fn missing(dir: &Path, lib: &Library, uses: &[Use], r: &Release) -> Vec<(Kind, PathBuf)> {
     let used = |f: &Path| uses.iter().any(|u| u.file == f);
     let mut out = Vec::new();
     let cmake = dir.join("CMakeLists.txt");
@@ -174,12 +182,19 @@ fn missing(dir: &Path, lib: &Library, uses: &[Use]) -> Vec<(Kind, PathBuf)> {
     if lib.supports(Kind::Rust) && cargo.is_file() && !used(&cargo) {
         out.push((Kind::Rust, cargo));
     }
+    let ini = dir.join("platformio.ini");
+    if arduino::carried(r, lib).is_some() && ini.is_file() && !used(&ini) {
+        out.push((Kind::PlatformIO, ini));
+    }
+    if arduino::carried(r, lib).is_some() && arduino::is_sketch(dir) && !uses.iter().any(|u| u.kind == Kind::Arduino) {
+        out.push((Kind::Arduino, arduino::sketchbook().unwrap_or_default().join("libraries")));
+    }
     out
 }
 
 /// The build files a library goes in, as a sentence names them: "CMakeLists.txt or Cargo.toml".
 fn takes(lib: &Library) -> String {
-    let files = [(Kind::CMake, "CMakeLists.txt"), (Kind::CSharp, "C# project"), (Kind::Rust, "Cargo.toml"), (Kind::Python, "Python file")];
+    let files = [(Kind::CMake, "CMakeLists.txt"), (Kind::CSharp, "C# project"), (Kind::Rust, "Cargo.toml"), (Kind::PlatformIO, "platformio.ini"), (Kind::Arduino, "Arduino sketch"), (Kind::Python, "Python file")];
     alternatives(&files.iter().filter(|(k, _)| lib.supports(*k)).map(|(_, f)| *f).collect::<Vec<_>>())
 }
 
@@ -187,12 +202,30 @@ fn report(ctx: &Context, d: &Path, k: Kind, what: &str) {
     ctx.out.line(&format!("  {} {}: {what}", ctx.shown(d), k.name()));
 }
 
-fn fetch_notes(ctx: &Context, cmake: bool, cargo: bool) {
-    if cmake {
-        ctx.out.note("CMake fetches it on the next configure, which `rant build` runs");
+#[derive(Default)]
+struct Fetches {
+    cmake: bool,
+    cargo: bool,
+    pio: bool,
+}
+
+impl Fetches {
+    fn after(&mut self, k: Kind) {
+        self.cmake |= k == Kind::CMake;
+        self.cargo |= k == Kind::Rust;
+        self.pio |= k == Kind::PlatformIO;
     }
-    if cargo {
-        ctx.out.note("Cargo fetches it on the next build, which `rant build` runs");
+
+    fn notes(&self, ctx: &Context) {
+        if self.cmake {
+            ctx.out.note("CMake fetches it on the next configure, which `rant build` runs");
+        }
+        if self.cargo {
+            ctx.out.note("Cargo fetches it on the next build, which `rant build` runs");
+        }
+        if self.pio {
+            ctx.out.note("PlatformIO fetches it on the next build");
+        }
     }
 }
 
@@ -200,12 +233,20 @@ fn fetch_notes(ctx: &Context, cmake: bool, cargo: bool) {
 /// release, then offers its skill. asked may move one back. False when one failed.
 pub fn add(ctx: &Context, home: &Path, dir: &Path, lib: &Library, r: &Release, asked: bool) -> Result<bool> {
     let uses = in_folder(dir, std::slice::from_ref(lib), true);
-    let adds = missing(dir, lib, &uses);
+    let adds = missing(dir, lib, &uses, r);
     if uses.is_empty() && adds.is_empty() {
+        if arduino::carried(r, lib).is_none() && (dir.join("platformio.ini").is_file() || arduino::is_sketch(dir)) {
+            return Err(failed(format!("{} {} carries no {}, so it has no Arduino library", lib.name, r.version, arduino::zip_name(&lib.name, &r.version))));
+        }
         return Err(failed(format!("no {} in {} to add {} to", takes(lib), ctx.shown(dir), lib.name)));
     }
     let moves: Vec<&Use> = uses.iter().filter(|u| changes(u, r, asked)).collect();
     if adds.is_empty() && moves.is_empty() {
+        let zipless = uses.iter().any(|u| matches!(u.kind, Kind::PlatformIO | Kind::Arduino) && u.version.as_deref() != Some(r.version.as_str())) && arduino::carried(r, lib).is_none();
+        if zipless {
+            ctx.out.note(&format!("{} {} carries no {}, so {} stays as it is", lib.name, r.version, arduino::zip_name(&lib.name, &r.version), ctx.shown(dir)));
+            return Ok(true);
+        }
         match uses.iter().filter_map(|u| u.version.as_ref()).find(|v| **v != r.version) {
             Some(newer) => ctx.out.note(&format!("{} uses {} {newer}, newer than the release {}, so it stays", ctx.shown(dir), lib.name, r.version)),
             None => ctx.out.note(&format!("{} uses {} {} already", ctx.shown(dir), lib.name, r.version)),
@@ -214,13 +255,12 @@ pub fn add(ctx: &Context, home: &Path, dir: &Path, lib: &Library, r: &Release, a
         return Ok(true);
     }
     ctx.out.line(&ctx.out.paint_out(Style::Bold, &format!("{} {}", lib.name, r.version)));
-    let (mut ok, mut cmake, mut cargo) = (true, false, false);
+    let (mut ok, mut fetches) = (true, Fetches::default());
     for u in moves {
         match bring(ctx, home, u, lib, r, asked) {
             Ok(what) => {
                 report(ctx, &u.dir, u.kind, &what);
-                cmake |= u.kind == Kind::CMake;
-                cargo |= u.kind == Kind::Rust;
+                fetches.after(u.kind);
             }
             Err(e) => {
                 ctx.out.warn(&format!("{} {}: {}", ctx.shown(&u.dir), u.kind.name(), e.messages().join(", ")));
@@ -229,15 +269,18 @@ pub fn add(ctx: &Context, home: &Path, dir: &Path, lib: &Library, r: &Release, a
         }
     }
     for (kind, file) in adds {
-        let added = edit::add(kind, &file, lib, &r.version, &r.tag).and_then(|hint| if kind == Kind::CSharp { install_nupkg(ctx, home, lib, r).map(|_| hint) } else { Ok(hint) });
+        let added = match kind {
+            Kind::Arduino => arduino::install(ctx, home, lib, r).map(|_| String::new()),
+            Kind::CSharp => edit::add(kind, &file, lib, &r.version, &r.tag).and_then(|hint| install_nupkg(ctx, home, lib, r).map(|_| hint)),
+            _ => edit::add(kind, &file, lib, &r.version, &r.tag),
+        };
         match added {
             Ok(hint) => {
                 report(ctx, dir, kind, &format!("added to {}", ctx.shown(&file)));
                 if !hint.is_empty() {
                     ctx.out.note(&format!("    link it to your target: {hint}"));
                 }
-                cmake |= kind == Kind::CMake;
-                cargo |= kind == Kind::Rust;
+                fetches.after(kind);
             }
             Err(e) => {
                 ctx.out.warn(&format!("{} {}: {}", ctx.shown(dir), kind.name(), e.messages().join(", ")));
@@ -245,7 +288,7 @@ pub fn add(ctx: &Context, home: &Path, dir: &Path, lib: &Library, r: &Release, a
             }
         }
     }
-    fetch_notes(ctx, cmake, cargo);
+    fetches.notes(ctx);
     skills::give(ctx, home, &lib.name, &lib.repo, r, true)?;
     Ok(ok)
 }
@@ -280,7 +323,7 @@ pub fn update(ctx: &Context, home: &Path, uses: &[Use], libs: &[Library]) -> Res
         return Ok(false);
     }
 
-    let (mut cmake, mut cargo, mut done) = (false, false, 0);
+    let (mut fetches, mut done) = (Fetches::default(), 0);
     for (lib, r) in used.iter().zip(&latest) {
         let Some(r) = r else { continue };
         for u in uses.iter().filter(|u| u.library == lib.name) {
@@ -288,8 +331,7 @@ pub fn update(ctx: &Context, home: &Path, uses: &[Use], libs: &[Library]) -> Res
                 Ok(what) if what.is_empty() => {}
                 Ok(_) => {
                     done += 1;
-                    cmake |= u.kind == Kind::CMake;
-                    cargo |= u.kind == Kind::Rust;
+                    fetches.after(u.kind);
                 }
                 Err(e) => {
                     ctx.out.warn(&format!("{} {}: {}", ctx.shown(&u.dir), u.kind.name(), e.messages().join(", ")));
@@ -301,7 +343,7 @@ pub fn update(ctx: &Context, home: &Path, uses: &[Use], libs: &[Library]) -> Res
     if done > 0 {
         ctx.out.line(&format!("updated {done} {}", if done == 1 { "package" } else { "packages" }));
     }
-    fetch_notes(ctx, cmake, cargo);
+    fetches.notes(ctx);
     for (lib, r) in used.iter().zip(&latest) {
         let Some(r) = r else { continue };
         if let Err(e) = skills::give(ctx, home, &lib.name, &lib.repo, r, false) {

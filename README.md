@@ -11,7 +11,7 @@ curl -fsSL https://raw.githubusercontent.com/KosmosisDire/rant-cli/main/install.
 irm https://raw.githubusercontent.com/KosmosisDire/rant-cli/main/install.ps1 | iex                     # Windows
 ```
 
-Each lists what it will do, then a checklist of the CLI's skill and the packages to install,
+Each lists what it will do, then a checklist of the CLI's skill, the packages and the Arduino libraries to install,
 which is the only question: the `rant` command goes to `~/.rant/bin`, that folder onto PATH, and
 `rant setup` adds tab completion. Later, `rant update` moves it and
 the installed packages to their newest releases, and `rant uninstall` removes all of it again,

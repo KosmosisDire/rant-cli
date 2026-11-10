@@ -10,6 +10,7 @@ use crate::agents;
 use crate::context::Context;
 use crate::failure::{Failure, Result, failed, usage};
 use crate::github;
+use crate::library::{self, arduino};
 use crate::packages::sources::{Offer, Sources, carried, from_repo};
 use crate::packages::vsix::{self, Wanted};
 use crate::packages::{self, Source, skills};
@@ -125,15 +126,46 @@ fn cli_skill() -> Choice {
     Choice { label: "Rant Cli Skill".into(), note: format!("{state}teaches AI coding agents to use rant-cli"), checked: found && !given }
 }
 
+/// The checklist's row for the libraries with an Arduino release, ticked while a sketchbook is there.
+fn arduino_row() -> Choice {
+    let book = arduino::sketchbook();
+    let found = book.as_ref().is_some_and(|b| b.is_dir());
+    let note = match &book {
+        Some(b) if found => format!("puts Rant's libraries for Arduino sketches in {}", rant_config::paths::slash(&b.join("libraries"))),
+        _ => "no Arduino sketchbook found, puts Rant's libraries for Arduino sketches where the Arduino IDE looks".into(),
+    };
+    Choice { label: "Arduino libraries".into(), note, checked: found }
+}
+
+/// Installs every library whose latest release carries an Arduino library into the sketchbook,
+/// then offers each one's skill. False when one failed, after a warning.
+fn install_arduino(ctx: &Context, home: &std::path::Path, sources: &mut Sources) -> Result<bool> {
+    let libs: Vec<library::Library> = library::all(sources)?;
+    let latest = github::latest(&libs.iter().map(|l| l.repo.clone()).collect::<Vec<_>>())?;
+    let mut ok = true;
+    for (lib, r) in libs.iter().zip(latest) {
+        let Some(r) = r.filter(|r| arduino::carried(r, lib).is_some()) else { continue };
+        let placed = arduino::install(ctx, home, lib, &r).and_then(|at| {
+            ctx.out.note(&format!("installed {} {} in {}", lib.name, r.version, rant_config::paths::slash(&at)));
+            skills::give(ctx, home, &lib.name, &lib.repo, &r, true)
+        });
+        if let Err(e) = placed {
+            ctx.out.failure(&e);
+            ok = false;
+        }
+    }
+    Ok(ok)
+}
+
 /// The checklist's last row, the agent_skills setting of config.rant, ticked unless it says ask.
 fn auto_skills(setting: Option<AgentSkills>) -> Choice {
     let note = "gives the skill a package or library carries to AI coding agents without asking";
     Choice { label: "Auto install agent skills".into(), note: note.into(), checked: setting != Some(AgentSkills::Ask) }
 }
 
-/// With no names on a terminal: a checklist of the CLI's skill, every package there is and the
-/// auto skills setting, those of TICKED not installed ticked but an editor extension with no
-/// editor found.
+/// With no names on a terminal: a checklist of the CLI's skill, every package there is, the Arduino
+/// libraries and the auto skills setting, those of TICKED not installed ticked but an editor
+/// extension with no editor found.
 fn pick(ctx: &mut Context, args: &Args) -> Result<()> {
     if ctx.yes || !std::io::stdin().is_terminal() || !ctx.out.terminal_err() || args.version.is_some() || args.from.is_some() {
         return Err(usage("install needs a package, `rant ls packages --available` lists them"));
@@ -157,10 +189,11 @@ fn pick(ctx: &mut Context, args: &Args) -> Result<()> {
         });
     let home = ctx.home()?.to_path_buf();
     let setting = home::read(&home)?.agent_skills;
-    let choices = std::iter::once(cli_skill()).chain(packages).chain([auto_skills(setting)]).collect();
+    let choices = std::iter::once(cli_skill()).chain(packages).chain([arduino_row(), auto_skills(setting)]).collect();
     // the installers read the exit code to tell a cancel from a confirm
     let Some(ticked) = pick::pick(&ctx.out, "To install", "Install", choices) else { return Err(Failure::Cancelled) };
-    let auto = if ticked.contains(&(offers.len() + 1)) { AgentSkills::Auto } else { AgentSkills::Ask };
+    let (arduino_at, auto_at) = (offers.len() + 1, offers.len() + 2);
+    let auto = if ticked.contains(&auto_at) { AgentSkills::Auto } else { AgentSkills::Ask };
     if setting != Some(auto) {
         home::set_agent_skills(&home, auto)?;
         let word = if auto == AgentSkills::Auto { "auto" } else { "ask" };
@@ -175,7 +208,8 @@ fn pick(ctx: &mut Context, args: &Args) -> Result<()> {
     }
     let names: Vec<String> = ticked.iter().filter(|&&i| i > 0 && i <= offers.len()).map(|&i| offers[i - 1].source.name.clone()).collect();
     let (_, any_failed) = install_all(ctx, args, &names)?;
-    if any_failed || skill_failed { Err(Failure::Reported) } else { Ok(()) }
+    let arduino_ok = !ticked.contains(&arduino_at) || install_arduino(ctx, &home, &mut sources)?;
+    if any_failed || skill_failed || !arduino_ok { Err(Failure::Reported) } else { Ok(()) }
 }
 
 pub fn run(ctx: &mut Context, args: &Args) -> Result<()> {

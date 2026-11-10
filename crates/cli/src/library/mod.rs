@@ -1,6 +1,7 @@
 //! Libraries packages build on, such as Rant: which ones the sources name, and where each
 //! package takes them from.
 
+pub mod arduino;
 mod edit;
 mod moves;
 mod uses;
@@ -34,6 +35,8 @@ pub enum Kind {
     Python,
     CSharp,
     Rust,
+    PlatformIO,
+    Arduino,
 }
 
 impl Kind {
@@ -43,6 +46,8 @@ impl Kind {
             Kind::Python => "python",
             Kind::CSharp => "csharp",
             Kind::Rust => "rust",
+            Kind::PlatformIO => "platformio",
+            Kind::Arduino => "arduino",
         }
     }
 }
@@ -56,6 +61,8 @@ impl Library {
             Kind::Python => n.python.is_some(),
             Kind::CSharp => n.csharp.is_some(),
             Kind::Rust => n.rust.is_some(),
+            // the release tells, by the zip it carries
+            Kind::PlatformIO | Kind::Arduino => true,
         }
     }
 }

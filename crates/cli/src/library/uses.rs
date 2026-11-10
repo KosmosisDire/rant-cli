@@ -9,7 +9,7 @@ use rant_config::python::{self, Folder};
 use rant_config::scan::NodeKind;
 use regex::Regex;
 
-use super::{DEFAULT_LIBRARY, Kind, Library};
+use super::{DEFAULT_LIBRARY, Kind, Library, arduino};
 use crate::cmake;
 
 /// One place a package takes a library from. how says which, such as "CPM", "venv" or "Cargo
@@ -34,7 +34,7 @@ pub struct Use {
 }
 
 impl Use {
-    fn of(lib: &Library, kind: Kind, how: &'static str) -> Use {
+    pub(super) fn of(lib: &Library, kind: Kind, how: &'static str) -> Use {
         Use {
             library: lib.name.clone(),
             kind,
@@ -369,7 +369,7 @@ pub fn in_folder(dir: &Path, libs: &[Library], adding: bool) -> Vec<Use> {
             out.push(u);
         }
     };
-    let (cmake, cargo) = (dir.join("CMakeLists.txt"), dir.join("Cargo.toml"));
+    let (cmake, cargo, ini) = (dir.join("CMakeLists.txt"), dir.join("Cargo.toml"), dir.join("platformio.ini"));
     let mut projects: Vec<PathBuf> =
         std::fs::read_dir(dir).into_iter().flatten().flatten().map(|e| e.path()).filter(|p| p.extension().is_some_and(|x| x.eq_ignore_ascii_case("csproj"))).collect();
     projects.sort();
@@ -383,6 +383,12 @@ pub fn in_folder(dir: &Path, libs: &[Library], adding: bool) -> Vec<Use> {
         if lib.supports(Kind::Rust) && cargo.is_file() {
             found(cargo_use(&read(&cargo), lib), &cargo);
         }
+        if ini.is_file() {
+            found(arduino::pio_use(&read(&ini), lib), &ini);
+        }
+    }
+    if arduino::is_sketch(dir) {
+        out.extend(libs.iter().filter_map(|lib| arduino::sketchbook_use(dir, lib)));
     }
     let python: Vec<&Library> = libs.iter().filter(|l| l.supports(Kind::Python)).collect();
     python_uses(dir, &python, adding, &mut out);
@@ -390,14 +396,14 @@ pub fn in_folder(dir: &Path, libs: &[Library], adding: bool) -> Vec<Use> {
 }
 
 /// The uses in every folder under start, by folder, the walk following the workspace's ignore
-/// globs. A venv holding a library is listed once, under the folder that holds it.
+/// globs, then the sketchbook's. A venv or sketchbook copy is listed once, under the folder holding it.
 pub fn under(start: &Path, libs: &[Library]) -> Vec<Use> {
     let walk = discover::folders(start);
     let mut out: Vec<Use> = Vec::new();
-    let listed = |out: &[Use], venv: &Path, lib: &str| out.iter().any(|o| o.how == "venv" && o.file == venv && o.library == lib);
+    let listed = |out: &[Use], held: &Path, lib: &str| out.iter().any(|o| matches!(o.how, "venv" | "sketchbook") && o.file == held && o.library == lib);
     for d in &walk.dirs {
         for mut u in in_folder(d, libs, false) {
-            if u.how == "venv" && u.venv_exists {
+            if u.how == "sketchbook" || (u.how == "venv" && u.venv_exists) {
                 if listed(&out, &u.file, &u.library) {
                     continue;
                 }
@@ -415,6 +421,12 @@ pub fn under(start: &Path, libs: &[Library]) -> Vec<Use> {
             let mut u = Use::of(lib, Kind::Python, "venv");
             u.dir = venv.parent().map(Path::to_path_buf).unwrap_or_default();
             (u.file, u.venv_exists, u.version, u.venv_python) = (venv.clone(), true, Some(held), python::venv_python(venv));
+            out.push(u);
+        }
+    }
+    let libraries = arduino::sketchbook().map(|b| b.join("libraries"));
+    for lib in libs {
+        if let Some(u) = libraries.as_deref().and_then(|l| arduino::sketchbook_use(l, lib)).filter(|u| !listed(&out, &u.file, &lib.name)) {
             out.push(u);
         }
     }

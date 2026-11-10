@@ -6,7 +6,7 @@ use std::path::Path;
 use regex::{NoExpand, Regex};
 
 use super::uses::{cargo_entry, cargo_versions, element_version, fetches, is_fetch, pin_pattern, reference_pattern, version_pattern};
-use super::{DEFAULT_LIBRARY, Kind, Library};
+use super::{DEFAULT_LIBRARY, Kind, Library, arduino};
 use crate::cmake::{self, Call};
 use crate::failure::{Result, failed};
 use crate::files;
@@ -42,6 +42,7 @@ pub fn set_version(file: &Path, lib: &Library, version: &str) -> Result<()> {
         "cmakelists.txt" => cmake_set,
         "pyproject.toml" => pyproject_set,
         "cargo.toml" => cargo_set,
+        "platformio.ini" => arduino::pio_set,
         n if n.ends_with(".csproj") => csharp_set,
         _ => return Err(failed(format!("{} names no {} version rant can move", file.display(), lib.name))),
     };
@@ -60,7 +61,9 @@ pub fn add(kind: Kind, file: &Path, lib: &Library, version: &str, tag: &str) -> 
         })?,
         Kind::CSharp => files::edit(file, |text| csharp_add(text, lib, version))?,
         Kind::Rust => files::edit(file, |text| cargo_add(text, lib, version))?,
+        Kind::PlatformIO => files::edit(file, |text| arduino::pio_add(text, &arduino::zip_url(lib, tag, version)))?,
         Kind::Python => return Err(failed(format!("Python gets {} in its venv, not its files", lib.name))),
+        Kind::Arduino => return Err(failed(format!("a sketch gets {} in the sketchbook, not its files", lib.name))),
     }
     Ok(hint)
 }
