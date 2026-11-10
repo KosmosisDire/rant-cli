@@ -40,15 +40,18 @@ pub struct Library {
     pub csharp: Option<String>,
     /// The Rust crate, fetched from the repo at the tag crate-v<version>.
     pub rust: Option<String>,
+    /// The PLCnext Engineer library's title, its <name>-<version>.pcwlx attached to each release.
+    pub plcnext: Option<String>,
 }
 
 /// Each language's key and the characters its names take, so a name never escapes the line
 /// it is written into.
-const LIBRARY_KEYS: [(&str, &str); 4] = [
+const LIBRARY_KEYS: [(&str, &str); 5] = [
     ("cmake", r"^[A-Za-z0-9_.+-]+(::[A-Za-z0-9_.+-]+)?$"),
     ("python", r"^[A-Za-z0-9]([A-Za-z0-9._-]*[A-Za-z0-9])?$"),
     ("csharp", r"^[A-Za-z0-9_][A-Za-z0-9_.-]*$"),
     ("rust", r"^[A-Za-z][A-Za-z0-9_-]*$"),
+    ("plcnext", r"^[A-Za-z_][A-Za-z0-9_.-]*$"),
 ];
 
 #[derive(Debug, Clone)]
@@ -143,8 +146,8 @@ fn from_source(src: Source, dir: &Path, workspace: &Path) -> Result<PackageBlock
             }
             names.push(Some(name));
         }
-        let [cmake, python, csharp, rust]: [Option<String>; 4] = names.try_into().unwrap();
-        let library = Library { cmake, python, csharp, rust };
+        let [cmake, python, csharp, rust, plcnext]: [Option<String>; 5] = names.try_into().unwrap();
+        let library = Library { cmake, python, csharp, rust, plcnext };
         if library == Library::default() {
             return Err(src.diag_at(block, format!("`library` names no language, give one of: {}", keys.join(", "))));
         }
@@ -212,6 +215,7 @@ node "raw" {
             ("library {\n  npm = \"a\"\n}\n", "unknown attribute `npm`"),
             ("library {\n  cmake = \"a)\\nexecute_process(x\"\n}\n", "is no cmake name"),
             ("library {\n  python = \"-a\"\n}\n", "is no python name"),
+            ("library {\n  plcnext = \"a'b\"\n}\n", "is no plcnext name"),
         ] {
             let err = from_text(&t.path("x"), text.into(), t.root()).err().unwrap();
             assert!(err.message.contains(want), "{text}: {}", err.message);

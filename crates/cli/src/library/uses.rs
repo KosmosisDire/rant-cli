@@ -11,7 +11,7 @@ use rant_config::scan::NodeKind;
 use regex::Regex;
 
 use super::arduino::Book;
-use super::{DEFAULT_LIBRARY, Kind, Library, arduino, icase, read};
+use super::{DEFAULT_LIBRARY, Kind, Library, arduino, icase, plcnext, read};
 use crate::cmake;
 
 /// One place a package takes a library from. how says which, such as "CPM", "venv" or "Cargo
@@ -368,7 +368,7 @@ fn uses_in(dir: &Path, libs: &[Library], adding: bool, book: &LazyCell<Book>) ->
             out.push(u);
         }
     };
-    let (cmake, cargo, ini) = (dir.join("CMakeLists.txt"), dir.join("Cargo.toml"), dir.join("platformio.ini"));
+    let (cmake, cargo, ini, pcwex) = (dir.join("CMakeLists.txt"), dir.join("Cargo.toml"), dir.join("platformio.ini"), dir.join(plcnext::WORKSPACE));
     let mut projects: Vec<PathBuf> =
         std::fs::read_dir(dir).into_iter().flatten().flatten().map(|e| e.path()).filter(|p| p.extension().is_some_and(|x| x.eq_ignore_ascii_case("csproj"))).collect();
     projects.sort();
@@ -385,9 +385,16 @@ fn uses_in(dir: &Path, libs: &[Library], adding: bool, book: &LazyCell<Book>) ->
         if ini.is_file() {
             found(arduino::pio_use(&read(&ini), lib), &ini);
         }
+        if lib.supports(Kind::Plcx) && pcwex.is_file() {
+            found(plcnext::workspace_use(&read(&pcwex), lib), &pcwex);
+        }
     }
     if arduino::is_sketch(dir) {
         out.extend(libs.iter().filter_map(|lib| book.use_in(dir, lib)));
+    }
+    if plcnext::is_project(dir) {
+        let folders = plcnext::folders();
+        out.extend(libs.iter().filter(|l| l.supports(Kind::Engineer)).filter_map(|lib| plcnext::user_use(dir, lib, &folders)));
     }
     let python: Vec<&Library> = libs.iter().filter(|l| l.supports(Kind::Python)).collect();
     python_uses(dir, &python, adding, &mut out);
@@ -395,15 +402,17 @@ fn uses_in(dir: &Path, libs: &[Library], adding: bool, book: &LazyCell<Book>) ->
 }
 
 /// The uses in every folder under start, by folder, the walk following the workspace's ignore
-/// globs, then the sketchbook's. A venv or sketchbook copy is listed once, under the folder holding it.
+/// globs, then the sketchbook's and Engineer's user libraries. A venv, sketchbook or user library copy
+/// is listed once, under the folder holding it.
 pub fn under(start: &Path, libs: &[Library]) -> Vec<Use> {
     let walk = discover::folders(start);
     let mut out: Vec<Use> = Vec::new();
-    let book = LazyCell::new(Book::load as fn() -> Book);
-    let listed = |out: &[Use], held: &Path, lib: &str| out.iter().any(|o| (o.kind == Kind::Arduino || o.how == "venv") && o.file == held && o.library == lib);
+    let (book, folders) = (LazyCell::new(Book::load as fn() -> Book), plcnext::folders());
+    let held_once = |u: &Use| matches!(u.kind, Kind::Arduino | Kind::Engineer) || u.how == "venv";
+    let listed = |out: &[Use], held: &Path, lib: &str| out.iter().any(|o| held_once(o) && o.file == held && o.library == lib);
     for d in &walk.dirs {
         for mut u in uses_in(d, libs, false, &book) {
-            if u.kind == Kind::Arduino || (u.how == "venv" && u.venv_exists) {
+            if held_once(&u) && (u.how != "venv" || u.venv_exists) {
                 if listed(&out, &u.file, &u.library) {
                     continue;
                 }
@@ -428,6 +437,11 @@ pub fn under(start: &Path, libs: &[Library]) -> Vec<Use> {
         if let Some(u) = book.use_in(book.root(), lib).filter(|u| !listed(&out, &u.file, &lib.name)) {
             out.push(u);
         }
+        let copy = lib.supports(Kind::Engineer).then(|| plcnext::user_use(Path::new(""), lib, &folders)).flatten();
+        if let Some(mut u) = copy.filter(|u| !listed(&out, &u.file, &lib.name)) {
+            u.dir = u.file.parent().map(Path::to_path_buf).unwrap_or_default();
+            out.push(u);
+        }
     }
     out.sort_by(|a, b| a.dir.cmp(&b.dir));
     out
@@ -440,7 +454,7 @@ pub(super) mod tests {
     use rant_config::package;
 
     fn lib(name: &str, repo: &str, cmake: &str, python: &str, csharp: &str, rust: &str) -> Library {
-        let names = package::Library { cmake: Some(cmake.into()), python: Some(python.into()), csharp: Some(csharp.into()), rust: Some(rust.into()) };
+        let names = package::Library { cmake: Some(cmake.into()), python: Some(python.into()), csharp: Some(csharp.into()), rust: Some(rust.into()), plcnext: None };
         Library { name: name.into(), repo: repo.into(), names }
     }
 

@@ -624,7 +624,7 @@ fn list_available(ctx: &mut Context, kind: Kind, pattern: &str) -> Result<()> {
         let s = &o.source;
         let from = if s.repo.is_empty() { rant_config::paths::slash(&s.path) } else { s.repo.clone() };
         if let Some(b) = &s.library {
-            let languages: Vec<&str> = [("cmake", &b.cmake), ("python", &b.python), ("csharp", &b.csharp), ("rust", &b.rust)].into_iter().filter(|(_, n)| n.is_some()).map(|(k, _)| k).collect();
+            let languages: Vec<&str> = [("cmake", &b.cmake), ("python", &b.python), ("csharp", &b.csharp), ("rust", &b.rust), ("plcnext", &b.plcnext)].into_iter().filter(|(_, n)| n.is_some()).map(|(k, _)| k).collect();
             out.rows.push(json!({"name": s.name, "repo": s.repo, "description": o.description, "languages": languages}));
             out.lines.push([s.name.clone(), from, languages.join(" "), o.description.clone()]);
             continue;

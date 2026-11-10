@@ -10,7 +10,7 @@ use crate::agents;
 use crate::context::Context;
 use crate::failure::{Failure, Result, failed, usage};
 use crate::github;
-use crate::library::{self, arduino};
+use crate::library::{self, Kind, arduino, plcnext};
 use crate::packages::sources::{Offer, Sources, carried, from_repo};
 use crate::packages::vsix::{self, Wanted};
 use crate::packages::{self, Source, skills};
@@ -116,8 +116,8 @@ fn extensions(ctx: &Context, offers: &[Offer]) -> Vec<bool> {
     out
 }
 
-/// The packages the checklist ticks while they are not installed. The CLI skill and Arduino rows
-/// have their own rules.
+/// The packages the checklist ticks while they are not installed. The CLI skill, Arduino and
+/// Engineer rows have their own rules.
 const TICKED: [&str; 2] = ["explorer", "vscode"];
 
 /// The checklist's row for the CLI's own skill, ticked while an agent is found that has it not.
@@ -138,9 +138,22 @@ fn arduino_row() -> Choice {
     Choice { label: "Arduino libraries".into(), note, checked: found }
 }
 
-/// Installs every library whose latest release carries an Arduino library into the sketchbook,
-/// then offers each one's skill. False when one failed, after a warning.
-fn install_arduino(ctx: &Context, home: &std::path::Path, sources: &mut Sources) -> Result<bool> {
+/// The checklist's row for the libraries with a PLCnext Engineer release, ticked while Engineer
+/// is found. None where Engineer cannot run.
+fn engineer_row() -> Option<Choice> {
+    let at = rant_config::paths::slash(plcnext::folders().first()?);
+    let found = plcnext::engineer_found();
+    let state = if found { "" } else { "PLCnext Engineer not found, " };
+    Some(Choice { label: "PLCnext Engineer libraries".into(), note: format!("{state}puts Rant's libraries for PLCnext Engineer in {at}"), checked: found })
+}
+
+/// Installs every library whose latest release carries a library for one of kinds, Arduino or
+/// Engineer, where that kind takes it, then offers each one's skill. False when one failed, after
+/// a warning.
+fn install_libraries(ctx: &Context, home: &std::path::Path, sources: &mut Sources, kinds: &[Kind]) -> Result<bool> {
+    if kinds.is_empty() {
+        return Ok(true);
+    }
     let looked = library::all(sources).and_then(|libs| github::latest(&libs.iter().map(|l| l.repo.clone()).collect::<Vec<_>>()).map(|latest| (libs, latest)));
     let (libs, latest) = match looked {
         Ok(found) => found,
@@ -151,14 +164,26 @@ fn install_arduino(ctx: &Context, home: &std::path::Path, sources: &mut Sources)
     };
     let mut ok = true;
     for (lib, r) in libs.iter().zip(latest) {
-        let Some(r) = r.filter(|r| arduino::carried(r, lib).is_some()) else { continue };
-        let placed = arduino::install(ctx, home, lib, &r).and_then(|at| {
-            if let Some(at) = at {
-                ctx.out.note(&format!("installed {} {} in {}", lib.name, r.version, rant_config::paths::slash(&at)));
+        let Some(r) = r else { continue };
+        let mut placed_any = Ok(false);
+        for &kind in kinds {
+            let installed = match kind {
+                Kind::Arduino if arduino::carried(&r, lib).is_some() => arduino::install(ctx, home, lib, &r).map(|at| at.into_iter().collect()),
+                Kind::Engineer if lib.supports(kind) && plcnext::carried(&r, lib).is_some() => plcnext::install(ctx, home, lib, &r),
+                _ => continue,
+            };
+            placed_any = installed.map(|at: Vec<std::path::PathBuf>| {
+                for a in &at {
+                    ctx.out.note(&format!("installed {} {} in {}", lib.name, r.version, rant_config::paths::slash(a)));
+                }
+                true
+            });
+            if placed_any.is_err() {
+                break;
             }
-            skills::give(ctx, home, &lib.name, &lib.repo, &r, true)
-        });
-        if let Err(e) = placed {
+        }
+        let given = placed_any.and_then(|any| if any { skills::give(ctx, home, &lib.name, &lib.repo, &r, true) } else { Ok(()) });
+        if let Err(e) = given {
             ctx.out.failure(&e);
             ok = false;
         }
@@ -173,9 +198,10 @@ fn auto_skills(setting: Option<AgentSkills>) -> Choice {
 }
 
 /// With no names on a terminal: a checklist of the CLI's skill, every package there is, the Arduino
-/// libraries and the auto skills setting. Ticked: those of TICKED not installed (an editor extension
-/// with no editor found excepted), the CLI skill when an agent lacks it, the Arduino row when a
-/// sketchbook is there, and the auto skills row unless the setting says ask.
+/// and Engineer libraries and the auto skills setting. Ticked: those of TICKED not installed (an
+/// editor extension with no editor found excepted), the CLI skill when an agent lacks it, the
+/// Arduino row when a sketchbook is there, the Engineer row when Engineer is, and the auto skills
+/// row unless the setting says ask.
 fn pick(ctx: &mut Context, args: &Args) -> Result<()> {
     if ctx.yes || !std::io::stdin().is_terminal() || !ctx.out.terminal_err() || args.version.is_some() || args.from.is_some() {
         return Err(usage("install needs a package, `rant ls packages --available` lists them"));
@@ -199,14 +225,18 @@ fn pick(ctx: &mut Context, args: &Args) -> Result<()> {
         });
     let home = ctx.home()?.to_path_buf();
     let setting = home::read(&home)?.agent_skills;
-    let choices = std::iter::once(cli_skill()).chain(packages).chain([arduino_row(), auto_skills(setting)]).collect();
+    let engineer = engineer_row();
+    let has_engineer = engineer.is_some();
+    let choices = std::iter::once(cli_skill()).chain(packages).chain(std::iter::once(arduino_row())).chain(engineer).chain([auto_skills(setting)]).collect();
     // the installers read the exit code to tell a cancel from a confirm
     let ticked = match pick::pick(&ctx.out, "To install", "Install", choices) {
         Picked::Ticked(t) => t,
         Picked::Cancelled => return Err(Failure::Cancelled),
         Picked::Unavailable => return Err(usage("install needs a package, `rant ls packages --available` lists them")),
     };
-    let (arduino_at, auto_at) = (offers.len() + 1, offers.len() + 2);
+    let arduino_at = offers.len() + 1;
+    let engineer_at = has_engineer.then_some(arduino_at + 1);
+    let auto_at = arduino_at + 1 + usize::from(has_engineer);
     let auto = if ticked.contains(&auto_at) { AgentSkills::Auto } else { AgentSkills::Ask };
     if setting != Some(auto) {
         home::set_agent_skills(&home, auto)?;
@@ -222,8 +252,9 @@ fn pick(ctx: &mut Context, args: &Args) -> Result<()> {
     }
     let names: Vec<String> = ticked.iter().filter(|&&i| i > 0 && i <= offers.len()).map(|&i| offers[i - 1].source.name.clone()).collect();
     let (_, any_failed) = install_all(ctx, args, &names)?;
-    let arduino_ok = !ticked.contains(&arduino_at) || install_arduino(ctx, &home, &mut sources)?;
-    if any_failed || skill_failed || !arduino_ok { Err(Failure::Reported) } else { Ok(()) }
+    let kinds: Vec<Kind> = [(Some(arduino_at), Kind::Arduino), (engineer_at, Kind::Engineer)].into_iter().filter(|(at, _)| at.is_some_and(|at| ticked.contains(&at))).map(|(_, k)| k).collect();
+    let libraries_ok = install_libraries(ctx, &home, &mut sources, &kinds)?;
+    if any_failed || skill_failed || !libraries_ok { Err(Failure::Reported) } else { Ok(()) }
 }
 
 pub fn run(ctx: &mut Context, args: &Args) -> Result<()> {

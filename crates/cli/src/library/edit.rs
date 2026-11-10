@@ -60,6 +60,7 @@ pub fn add(kind: Kind, file: &Path, lib: &Library, version: &str, tag: &str) -> 
         Kind::PlatformIO => files::edit(file, |text| arduino::pio_add(text, lib, &arduino::zip_url(lib, tag, version)))?,
         Kind::Python => return Err(failed(format!("Python gets {} in its venv, not its files", lib.name))),
         Kind::Arduino => return Err(failed(format!("a sketch gets {} in the sketchbook, not its files", lib.name))),
+        Kind::Plcx | Kind::Engineer => return Err(failed(format!("an Engineer project gets {} as a file, not an edit", lib.name))),
     }
     Ok(hint)
 }

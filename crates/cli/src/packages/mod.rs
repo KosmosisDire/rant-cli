@@ -3,7 +3,6 @@
 
 mod install;
 mod links;
-pub mod pcwlx;
 pub mod skills;
 pub mod sources;
 pub mod vsix;
@@ -81,7 +80,7 @@ pub fn cached(home: &Path, read: bool) -> Vec<Source> {
             }
             let text = |v: &Value| v.as_str().filter(|s| !s.is_empty()).map(str::to_string);
             let b = &e["library"];
-            let library = b.is_object().then(|| package::Library { cmake: text(&b["cmake"]), python: text(&b["python"]), csharp: text(&b["csharp"]), rust: text(&b["rust"]) });
+            let library = b.is_object().then(|| package::Library { cmake: text(&b["cmake"]), python: text(&b["python"]), csharp: text(&b["csharp"]), rust: text(&b["rust"]), plcnext: text(&b["plcnext"]) });
             let path = PathBuf::from(e["path"].as_str().unwrap_or_default());
             out.push(Source { name: name.to_string(), repo: e["repo"].as_str().unwrap_or_default().to_string(), path, named_by: l.clone(), library });
         }
@@ -104,8 +103,6 @@ pub struct Record {
     /// And the editor and profile that took it.
     pub editor: PathBuf,
     pub profile: String,
-    /// The PLCnext Engineer libraries it placed.
-    pub libraries: Vec<PathBuf>,
     /// The links that give its skill to AI coding agents.
     pub skills: Vec<PathBuf>,
 }
@@ -130,7 +127,6 @@ pub fn record(home: &Path, name: &str) -> Option<Record> {
         extension: text(&e["id"]),
         editor: PathBuf::from(text(&e["editor"])),
         profile: text(&e["profile"]),
-        libraries: j["engineer_libraries"].as_array().into_iter().flatten().filter_map(Value::as_str).map(PathBuf::from).collect(),
         skills: j["skills"].as_array().into_iter().flatten().filter_map(Value::as_str).map(PathBuf::from).collect(),
     })
 }
@@ -149,9 +145,6 @@ fn save(home: &Path, r: &Record) -> Result<()> {
     put("version", &r.version);
     if !r.extension.is_empty() {
         j.insert("extension".into(), json!({"id": r.extension, "editor": paths::slash(&r.editor), "profile": r.profile}));
-    }
-    if !r.libraries.is_empty() {
-        j.insert("engineer_libraries".into(), json!(r.libraries.iter().map(|l| paths::slash(l)).collect::<Vec<_>>()));
     }
     if !r.skills.is_empty() {
         j.insert("skills".into(), json!(r.skills.iter().map(|l| paths::slash(l)).collect::<Vec<_>>()));

@@ -4,6 +4,7 @@
 pub mod arduino;
 mod edit;
 mod moves;
+pub mod plcnext;
 mod uses;
 
 pub use moves::{add, all, find, nuget_feed_added, update};
@@ -48,6 +49,10 @@ pub enum Kind {
     Rust,
     PlatformIO,
     Arduino,
+    /// A plcx workspace, its library in libs/.
+    Plcx,
+    /// An Engineer project left as its archive, its library in Engineer's user libraries.
+    Engineer,
 }
 
 impl Kind {
@@ -59,6 +64,8 @@ impl Kind {
             Kind::Rust => "rust",
             Kind::PlatformIO => "platformio",
             Kind::Arduino => "arduino",
+            Kind::Plcx => "plcx",
+            Kind::Engineer => "engineer",
         }
     }
 }
@@ -72,6 +79,7 @@ impl Library {
             Kind::Python => n.python.is_some(),
             Kind::CSharp => n.csharp.is_some(),
             Kind::Rust => n.rust.is_some(),
+            Kind::Plcx | Kind::Engineer => n.plcnext.is_some(),
             // the release tells, by the zip it carries
             Kind::PlatformIO | Kind::Arduino => true,
         }
