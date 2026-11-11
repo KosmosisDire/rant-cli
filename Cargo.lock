@@ -636,7 +636,7 @@ checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
 
 [[package]]
 name = "rant-cli"
-version = "0.0.41"
+version = "0.0.42"
 dependencies = [
  "clap",
  "libc",
@@ -654,7 +654,7 @@ dependencies = [
 
 [[package]]
 name = "rant-config"
-version = "0.0.41"
+version = "0.0.42"
 dependencies = [
  "globset",
  "goblin",
@@ -690,7 +690,7 @@ dependencies = [
 
 [[package]]
 name = "rant-process"
-version = "0.0.41"
+version = "0.0.42"
 dependencies = [
  "libc",
  "windows-sys 0.61.2",
