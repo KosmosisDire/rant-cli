@@ -5,11 +5,12 @@ use rant_config::refs::same_name;
 use rant_config::{ServiceCheck, Workspace};
 
 use crate::commands::enable::{keep, scope_at, scope_name, service_key, when_text};
-use crate::commands::run::{group_name, snapshot};
-use crate::commands::stop::stop_group;
+use crate::commands::run::group_name;
+use crate::commands::stop::stop_roots;
 use crate::context::Context;
 use crate::files::same_path;
-use crate::failure::{Failure, Result, failed, usage};
+use crate::failure::{Result, failed, usage};
+use crate::nodes::Session;
 use crate::services::{self, Enabled};
 use crate::state::Root;
 
@@ -20,24 +21,23 @@ pub struct Args {
     pub words: Vec<String>,
 }
 
-/// Stops the runs of these services of the scope that run, each run alone.
+/// Stops the runs of these services of the scope that run, all in one block.
 fn stop_services(ctx: &mut Context, ws: &Workspace, which: &[usize]) -> Result<()> {
-    ctx.enter(&ws.model.settings.root);
-    let st = snapshot(ctx)?;
+    let home = ctx.home()?.to_path_buf();
+    let mut s = Session::open(&home, &ws.model.settings.data)?;
     let checks = ws.services();
-    let mut failure = None;
+    let mut roots: Vec<Root> = Vec::new();
     for &i in which {
         let Ok(c) = &checks[i].checked else { continue };
         let root = Root::planned(&c.full, &c.values);
-        if st.root(&root.key()).is_none() {
-            continue;
-        }
-        if let Err(e) = stop_group(ctx, &c.full, &root.words()) {
-            ctx.out.failure(&e);
-            failure = Some(Failure::Reported);
+        if s.state().root(&root.key()).is_some() && !roots.contains(&root) {
+            roots.push(root);
         }
     }
-    failure.map_or(Ok(()), Err)
+    if roots.is_empty() {
+        return Ok(());
+    }
+    stop_roots(ctx, &home, s, &roots)
 }
 
 /// With no words, stops the scope's services and drops its start, keeping their blocks. With a

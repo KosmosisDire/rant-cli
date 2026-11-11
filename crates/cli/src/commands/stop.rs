@@ -340,10 +340,22 @@ pub fn stop_group(ctx: &mut Context, group: &str, words: &[String]) -> Result<()
         }
     }
     let roots = targets(ctx, s.state(), group, words)?;
+    stop_roots(ctx, &home, s, &roots)
+}
+
+/// Stops what these roots started in one block, the last root first. A node another root still
+/// needs keeps running.
+pub fn stop_roots(ctx: &Context, home: &Path, mut s: Session, roots: &[Root]) -> Result<()> {
     let params = if roots.len() == 1 { roots[0].words().join(" ") } else { String::new() };
-    let mut summary = Summary::new(ctx, &roots[0].name, &params);
-    for r in &roots {
-        for rel in release_root(&home, s.state(), &r.key()) {
+    let mut names: Vec<&str> = Vec::new();
+    for r in roots {
+        if !names.contains(&r.name.as_str()) {
+            names.push(&r.name);
+        }
+    }
+    let mut summary = Summary::new(ctx, &names.join(", "), &params);
+    for r in roots.iter().rev() {
+        for rel in release_root(home, s.state(), &r.key()) {
             let row = if rel.kept_for.is_empty() {
                 Row::stopped(&rel.name, rel.how)
             } else {

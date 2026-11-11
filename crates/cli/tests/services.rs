@@ -111,8 +111,10 @@ fn services() {
     let r = t.rant(&["run", "--dry-run"]).ok();
     expect_match(&r.out, "desk_left");
     let r = t.rant(&["run"]).ok();
+    expect_match(&r.out, r"^Plain, Desk seat=left\n\n");
     expect_match(&r.out, "steady +already running");
     expect_match(&r.out, "desk_left +started");
+    expect_match(&r.out, r"\n\n1 already running, 1 started, all running after 2 s\n$");
 
     // Outside every workspace the services are those of services.rant in rant's home.
     let outside = format!("{}-outside", t.scratch);

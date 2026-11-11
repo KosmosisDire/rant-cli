@@ -81,12 +81,11 @@ pub fn start(data: &Path, rec: &Instance) -> Result<Child> {
     Ok(rant_process::start_child(&c, log, &job_name(data, &rec.name))?)
 }
 
-/// Starts a plan instance under name and gives its record, with no roots. One with restart set,
-/// or meant for another session, is left to a service process and has no process until hand_over.
-pub fn spawn(home: &Path, ws: &Settings, inst: &Planned, name: &str, session: Option<u32>) -> Result<Instance> {
+/// The record of a plan instance under name, before it starts.
+pub fn record(ws: &Settings, inst: &Planned, name: &str) -> Instance {
     // a prefixed name like left/lidar logs to a folder of its prefix
     let log = ws.logs.join(format!("{name}.log"));
-    let mut rec = Instance {
+    Instance {
         name: name.to_string(),
         node_type: inst.type_ref(),
         argv: inst.argv.clone(),
@@ -97,7 +96,13 @@ pub fn spawn(home: &Path, ws: &Settings, inst: &Planned, name: &str, session: Op
         expect_mesh: inst.node.expect_mesh,
         restart: inst.restart,
         ..Instance::default()
-    };
+    }
+}
+
+/// Starts a plan instance under name and gives its record, with no roots. One with restart set,
+/// or meant for another session, is left to a service process and has no process until hand_over.
+pub fn spawn(home: &Path, ws: &Settings, inst: &Planned, name: &str, session: Option<u32>) -> Result<Instance> {
+    let mut rec = record(ws, inst, name);
     state::remember(home, &ws.data);
     let here = services::session();
     rec.session = session.filter(|&s| s != here && services::running_in(home, s)).unwrap_or(here);

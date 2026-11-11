@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 
-use rant_config::Workspace;
+use rant_config::{GroupPlan, Settings, Workspace};
 use rant_config::param;
 use rant_config::plan::{Named, Plan};
 use rant_config::refs::same_name;
@@ -17,10 +17,10 @@ use crate::commands::summary::{Row, RowState, Summary, Watch, bring_up, held_by}
 use crate::context::Context;
 use crate::failure::{Failure, Result, failed, usage};
 use crate::files::path_key;
-use crate::mesh::{Client, FULL_SETTLE};
+use crate::mesh::{Client, FULL_SETTLE, Peer};
 use crate::names::renames;
 use crate::nodes::{self, Session, managed_peers, same_spec, spawn};
-use crate::output::{Data, Format, Style, Table, Text};
+use crate::output::{Data, Style, Table, Text};
 use crate::pick::{Choice, Picked, pick};
 use crate::state::{self, Root, RootKind, State, Store};
 
@@ -157,32 +157,29 @@ enum Action {
     External,
 }
 
-/// A group's nodes in plan order. One running for another root with the same settings is
-/// shared, one on the mesh rant did not start stands in after a question. All checks come first.
+/// A group's nodes in plan order, started as run_planned starts groups.
 pub fn run_group(ctx: &mut Context, group: &str, words: &[String], args: &Args) -> Result<()> {
-    let ws = ctx.require_scope()?;
-    let gp = ws.plan_group(group, words)?;
-    let mut plan = gp.plan;
-    place_on_domain(ctx, &mut plan);
-    note_renames(ctx, std::slice::from_ref(&gp.group), &plan);
-    if args.dry_run {
-        ctx.show(&PlanView::new(&ws, &plan));
-        return Ok(());
-    }
+    let gp = ctx.require_scope()?.plan_group(group, words)?;
+    run_planned(ctx, vec![gp], args)
+}
+
+/// A group ready to start: its root, and what each node of its plan does.
+struct Prepared {
+    group: String,
+    root: Root,
+    plan: Plan,
+    actions: Vec<Action>,
+}
+
+/// Checks each node of a group against what runs. One running for another root with the same
+/// settings is shared, one on the mesh rant did not start stands in after a question. seen holds
+/// the nodes of the groups checked before as if they ran, so groups started together share a node.
+fn prepare(ctx: &Context, settings: &Settings, gp: GroupPlan, seen: &mut State, peers: &[Peer], managed: &BTreeMap<u32, String>) -> Result<Prepared> {
     let root = Root::planned(&gp.group, &gp.values);
     let key = root.key();
-    let home = ctx.home()?.to_path_buf();
-    let settings = &ws.model.settings;
-
-    let mesh = Client::new(ctx.domain()?, Some(&home))?;
-    mesh.settle(FULL_SETTLE);
-    let mut s = Session::open(&home, &settings.data)?;
-    let managed = managed_peers(&mesh, s.state());
-    let peers = mesh.peers();
-    drop(mesh);
     let mut actions = Vec::new();
-    for inst in &plan.instances {
-        if let Some(running) = s.state().instance(&inst.name) {
+    for inst in &gp.plan.instances {
+        if let Some(running) = seen.instance(&inst.name) {
             if !same_spec(running, inst) {
                 return Err(failed(format!(
                     "`{}` is already running with other settings for {}, stop it first or give one of them another name",
@@ -195,81 +192,139 @@ pub fn run_group(ctx: &mut Context, group: &str, words: &[String], args: &Args) 
         if peers.iter().any(|p| p.name == inst.name && !managed.contains_key(&p.id)) {
             let question = format!("`{}` is already running on the mesh, but rant did not start it. Use it for {}?", inst.name, gp.group);
             if !ctx.confirm(&question) {
-                return Err(failed("nothing was started"));
+                return Err(failed(format!("{} was not started", gp.group)));
             }
             actions.push(Action::External);
             continue;
         }
         actions.push(Action::Start);
     }
+    for (inst, _) in gp.plan.instances.iter().zip(&actions).filter(|(_, a)| **a == Action::Start) {
+        let mut rec = nodes::record(settings, inst, &inst.name);
+        rec.roots.push(key.clone());
+        seen.instances.push(rec);
+    }
+    Ok(Prepared { group: gp.group, root, plan: gp.plan, actions })
+}
+
+/// Starts groups together: every node is checked first, then built once, started, and waited
+/// for as one. A group that fails its checks is named and the rest still start.
+fn run_planned(ctx: &mut Context, mut gps: Vec<GroupPlan>, args: &Args) -> Result<()> {
+    let ws = ctx.require_scope()?;
+    for gp in &mut gps {
+        place_on_domain(ctx, &mut gp.plan);
+        note_renames(ctx, std::slice::from_ref(&gp.group), &gp.plan);
+    }
+    if args.dry_run {
+        let all = Plan { instances: gps.iter().flat_map(|gp| gp.plan.instances.iter().cloned()).collect() };
+        ctx.show(&PlanView::new(&ws, &all));
+        return Ok(());
+    }
+    let home = ctx.home()?.to_path_buf();
+    let settings = &ws.model.settings;
+
+    let mesh = Client::new(ctx.domain()?, Some(&home))?;
+    mesh.settle(FULL_SETTLE);
+    let mut s = Session::open(&home, &settings.data)?;
+    let managed = managed_peers(&mesh, s.state());
+    let peers = mesh.peers();
+    drop(mesh);
+    let mut seen = s.state().clone();
+    let mut prepared = Vec::new();
+    let mut failure = None;
+    for gp in gps {
+        match prepare(ctx, settings, gp, &mut seen, &peers, &managed) {
+            Ok(p) => prepared.push(p),
+            Err(f) => {
+                ctx.out.failure(&f);
+                failure = Some(Failure::Reported);
+            }
+        }
+    }
+    if prepared.is_empty() {
+        return Err(Failure::Reported);
+    }
 
     // only what starts is built: a running node's program may be in use
-    let starting = Plan { instances: plan.instances.iter().zip(&actions).filter(|(_, a)| **a == Action::Start).map(|(i, _)| i.clone()).collect() };
+    let starts = |p: &Prepared| p.plan.instances.iter().zip(&p.actions).filter(|(_, a)| **a == Action::Start).map(|(i, _)| i.clone()).collect::<Vec<_>>();
+    let starting = Plan { instances: prepared.iter().flat_map(starts).collect() };
     let built = args.watch.no_build || build_for(ctx, &[&starting])?;
 
-    if s.state().root(&key).is_none() {
-        s.state().roots.push(root.clone());
-    }
-    let mut summary = Summary::new(ctx, &gp.group, &root.words().join(" "));
+    let (header, params) = match prepared.as_slice() {
+        [p] => (p.group.clone(), p.root.words().join(" ")),
+        _ => (prepared.iter().map(|p| p.root.key()["group ".len()..].to_string()).collect::<Vec<_>>().join(", "), String::new()),
+    };
+    let mut summary = Summary::new(ctx, &header, &params);
     let mut started = Vec::new();
-    for (inst, action) in plan.instances.iter().zip(&actions) {
-        let row = match action {
-            Action::Start => match spawn(&home, settings, inst, &inst.name, None) {
-                Ok(mut rec) => {
-                    rec.roots.push(key.clone());
-                    s.state().instances.push(rec.clone());
-                    let row = Row::started(&rec);
-                    started.push(rec);
-                    row
+    for p in &prepared {
+        let key = p.root.key();
+        if s.state().root(&key).is_none() {
+            s.state().roots.push(p.root.clone());
+        }
+        for (inst, action) in p.plan.instances.iter().zip(&p.actions) {
+            let row = match action {
+                Action::Start => match spawn(&home, settings, inst, &inst.name, None) {
+                    Ok(mut rec) => {
+                        rec.roots.push(key.clone());
+                        s.state().instances.push(rec.clone());
+                        let row = Row::started(&rec);
+                        started.push(rec);
+                        row
+                    }
+                    Err(e) => {
+                        // what did start stays tracked
+                        s.save()?;
+                        let _ = summary.finish(ctx);
+                        return Err(e);
+                    }
+                },
+                Action::Shared | Action::Running => {
+                    let running = s.state().instance_mut(&inst.name).expect("checked above");
+                    let with = if *action == Action::Shared { held_by(&running.roots, "shared with") } else { String::new() };
+                    if *action == Action::Shared {
+                        running.roots.push(key.clone());
+                    }
+                    if running.group.is_empty() {
+                        running.group = inst.group.clone().unwrap_or_default();
+                    }
+                    Row::new(&inst.name, RowState::Running, "already running", &with)
                 }
-                Err(e) => {
-                    // what did start stays tracked
-                    s.save()?;
-                    let _ = summary.finish(ctx);
-                    return Err(e);
-                }
-            },
-            Action::Shared | Action::Running => {
-                let running = s.state().instance_mut(&inst.name).expect("checked above");
-                let with = if *action == Action::Shared { held_by(&running.roots, "shared with") } else { String::new() };
-                if *action == Action::Shared {
-                    running.roots.push(key.clone());
-                }
-                if running.group.is_empty() {
-                    running.group = inst.group.clone().unwrap_or_default();
-                }
-                Row::new(&inst.name, RowState::Running, "already running", &with)
-            }
-            Action::External => Row::new(&inst.name, RowState::Running, "already running", "started outside rant"),
-        };
-        summary.add(ctx, row);
+                Action::External => Row::new(&inst.name, RowState::Running, "already running", "started outside rant"),
+            };
+            summary.add(ctx, row);
+        }
     }
     s.save()?;
     // unlocks the state before the watch
     drop(s);
-    finish_started(ctx, summary, &settings.data, started, &gp.group, "started", &args.watch, built)
+    let group = if let [p] = prepared.as_slice() { p.group.as_str() } else { "" };
+    let ran = finish_started(ctx, summary, &settings.data, started, group, "started", &args.watch, built);
+    ran.and(failure.map_or(Ok(()), Err))
 }
 
-/// A bare `rant run`: each service of the workspace, or of rant's home outside one, run as its
-/// group from the folder of its file, as every boot runs them once it is enabled.
+/// A bare `rant run`: the services of the workspace, or of rant's home outside one, each run as
+/// its group from the folder of its file and all started together, as every boot runs them
+/// once it is enabled. One that does not plan is named and the rest still start.
 pub fn run_services(ctx: &mut Context, args: &Args) -> Result<()> {
     let ws = ctx.require_scope()?;
     if ws.model.settings.services.is_empty() {
         return Err(usage("say which group to run: `rant run <group>`, or one node with `rant run node <node>`"));
     }
     ctx.enter(&ws.model.settings.root);
+    let here = ctx.require_scope()?;
+    let mut plans = Vec::new();
     let mut failure = None;
-    for (i, check) in ws.services().into_iter().enumerate() {
-        if i > 0 && ctx.out.format() == Format::Text {
-            ctx.out.line("");
-        }
-        let ran = check.checked.map_err(Failure::from).and_then(|c| run_group(ctx, &c.full, &c.words, args));
-        if let Err(f) = ran {
-            ctx.out.failure(&f);
-            failure.get_or_insert(Failure::Reported);
+    for check in ws.services() {
+        match check.checked.map_err(Failure::from).and_then(|c| Ok(here.plan_group(&c.full, &c.words)?)) {
+            Ok(gp) => plans.push(gp),
+            Err(f) => {
+                ctx.out.failure(&f);
+                failure = Some(Failure::Reported);
+            }
         }
     }
-    failure.map_or(Ok(()), Err)
+    let ran = if plans.is_empty() { Ok(()) } else { run_planned(ctx, plans, args) };
+    ran.and(failure.map_or(Ok(()), Err))
 }
 
 /// A group as the workspace names it in full, such as drivers/Base, or the word itself when it
