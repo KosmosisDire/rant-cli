@@ -153,7 +153,7 @@ enum Action {
     Running,
     /// Running for another root, and now for this one too.
     Shared,
-    /// On the mesh, started without rant.
+    /// On the mesh, started without rant, so left as it is.
     External,
 }
 
@@ -172,9 +172,9 @@ struct Prepared {
 }
 
 /// Checks each node of a group against what runs. One running for another root with the same
-/// settings is shared, one on the mesh rant did not start stands in after a question. seen holds
-/// the nodes of the groups checked before as if they ran, so groups started together share a node.
-fn prepare(ctx: &Context, settings: &Settings, gp: GroupPlan, seen: &mut State, peers: &[Peer], managed: &BTreeMap<u32, String>) -> Result<Prepared> {
+/// settings is shared, one on the mesh rant did not start is left as it is. seen holds the nodes
+/// of the groups checked before as if they ran, so groups started together share a node.
+fn prepare(settings: &Settings, gp: GroupPlan, seen: &mut State, peers: &[Peer], managed: &BTreeMap<u32, String>) -> Result<Prepared> {
     let root = Root::planned(&gp.group, &gp.values);
     let key = root.key();
     let mut actions = Vec::new();
@@ -190,10 +190,6 @@ fn prepare(ctx: &Context, settings: &Settings, gp: GroupPlan, seen: &mut State, 
             continue;
         }
         if peers.iter().any(|p| p.name == inst.name && !managed.contains_key(&p.id)) {
-            let question = format!("`{}` is already running on the mesh, but rant did not start it. Use it for {}?", inst.name, gp.group);
-            if !ctx.confirm(&question) {
-                return Err(failed(format!("{} was not started", gp.group)));
-            }
             actions.push(Action::External);
             continue;
         }
@@ -233,7 +229,7 @@ fn run_planned(ctx: &mut Context, mut gps: Vec<GroupPlan>, args: &Args) -> Resul
     let mut prepared = Vec::new();
     let mut failure = None;
     for gp in gps {
-        match prepare(ctx, settings, gp, &mut seen, &peers, &managed) {
+        match prepare(settings, gp, &mut seen, &peers, &managed) {
             Ok(p) => prepared.push(p),
             Err(f) => {
                 ctx.out.failure(&f);
@@ -289,7 +285,7 @@ fn run_planned(ctx: &mut Context, mut gps: Vec<GroupPlan>, args: &Args) -> Resul
                     }
                     Row::new(&inst.name, RowState::Running, "already running", &with)
                 }
-                Action::External => Row::new(&inst.name, RowState::Running, "already running", "started outside rant"),
+                Action::External => Row::outside(&inst.name),
             };
             summary.add(ctx, row);
         }

@@ -50,15 +50,15 @@ fn groups() {
     let r = t.rant(&["sub", "scan", "--count", "1"]).ok();
     expect_match(&r.out, "seq");
 
-    // A node of the same name that rant did not start can stand in, after a question.
+    // A node of the same name that rant did not start is left as it is, and the rest starts.
     mkdir(&t.other);
     copy_into(&t.path("demo"), &t.other);
     write(&format!("{}/workspace.rant", t.other), "");
     write(&format!("{}/demo/package.rant", t.other), "name = \"demo\"\nnode \"planner\" {\n  run = [\"./bin/test_node\", \"--life\", \"60\"]\n}\n");
     t.rant(&["run", "node", "planner"]).cwd(&t.other).ok();
     let r = t.rant(&["run", "nav"]).ok();
-    expect_match(&r.err, r"`planner` is already running on the mesh, but rant did not start it. Use it for nav\? \[y/N\] y");
-    expect_match(&r.out, "planner +already running +started outside rant");
+    expect_no_match(&r.err, r"\[y/N\]");
+    expect_match(&r.out, "planner +already running +started outside rant, left as it is");
     let r = t.rant(&["stop", "nav"]).ok();
     expect_no_match(&r.out, "planner");
     let r = t.rant(&["ls", "nodes"]).cwd(&t.other).ok();

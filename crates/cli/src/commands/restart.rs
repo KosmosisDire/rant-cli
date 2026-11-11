@@ -151,7 +151,7 @@ fn start_root(ctx: &mut Context, home: &Path, s: &mut Session, h: Halted, starte
             continue;
         }
         if inst.is_none() && elsewhere.contains(&p.name) {
-            summary.add(ctx, Row::new(&p.name, RowState::Running, "already running", "started outside rant"));
+            summary.add(ctx, Row::outside(&p.name));
             continue;
         }
         // a node roots share starts once, a second start would leave the first untracked

@@ -25,6 +25,9 @@ pub enum RowState {
     /// Exited soon after it started, or never came up.
     Failed,
     Stopped,
+    /// Running, but started outside rant, which leaves it be. Reads as running in JSON.
+    #[serde(rename = "running")]
+    Outside,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -55,6 +58,11 @@ impl Row {
         Row { pid: Some(rec.pid), log: Some(rec.log.clone()), ..Row::new(&rec.name, RowState::Starting, "starting", "") }
     }
 
+    /// A node of the plan already running outside rant, which neither starts nor stops it.
+    pub fn outside(name: &str) -> Row {
+        Row::new(name, RowState::Outside, "already running", "started outside rant, left as it is")
+    }
+
     /// A stopped node's row, saying how it stopped.
     pub fn stopped(name: &str, how: Stopped) -> Row {
         let (status, detail) = match how {
@@ -69,6 +77,7 @@ impl Row {
     fn mark(&self, t: &Text) -> String {
         match self.state {
             RowState::Starting | RowState::Running => t.paint(Style::Green, "\u{25cf}"),
+            RowState::Outside => t.paint(Style::Amber, "\u{25cf}"),
             RowState::Stopped => t.paint(Style::Dim, "\u{25cb}"),
             RowState::Failed => t.paint(Style::Red, "\u{2715}"),
         }
@@ -371,7 +380,7 @@ pub fn bring_up(ctx: &mut Context, summary: &mut Summary, data: &Path, started: 
         let mut bad: Vec<String> = exited.keys().map(|n| format!("{n} exited")).collect();
         bad.extend(late.iter().map(|n| format!("{n} never came up")));
         let rows = &summary.report.rows;
-        let running = rows.iter().filter(|r| matches!(r.state, RowState::Running | RowState::Starting)).count();
+        let running = rows.iter().filter(|r| matches!(r.state, RowState::Running | RowState::Starting | RowState::Outside)).count();
         let target = if exited.len() + late.len() == 1 || group.is_empty() { exited.keys().next().unwrap_or_else(|| &late[0]).clone() } else { group.to_string() };
         summary.report.closing = format!("{running} of {} running, {}. `rant log {target}` shows why", rows.len(), crate::output::spoken(&bad));
         summary.failed = true;
@@ -406,6 +415,8 @@ mod tests {
         assert_eq!(serde_json::to_string(&r).unwrap(), r#"{"name":"brief","state":"failed","status":"exited after 0.3 s","detail":"logs/brief.log","pid":5,"log":"l","running":false}"#);
         let r = Row::new("a", RowState::Running, "already running", "");
         assert_eq!(serde_json::to_string(&r).unwrap(), r#"{"name":"a","state":"running","status":"already running"}"#);
+        let r = Row::outside("a");
+        assert_eq!(serde_json::to_string(&r).unwrap(), r#"{"name":"a","state":"running","status":"already running","detail":"started outside rant, left as it is"}"#);
     }
 
     #[test]
