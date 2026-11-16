@@ -38,13 +38,13 @@ fn uninstall() {
     let r = t.rant(&["uninstall"]).ok();
     expect_match(&r.out, r"^rant-cli left nothing here to remove\n$");
 
-    // The bridge config holds the user's passphrase, so it stays when the rest goes. No login
+    // The bridge config holds the user's settings, so it stays when the rest goes. No login
     // entry names this home, so the real one stays untouched.
-    write(&format!("{home}/.rant/bridge.yaml"), "passphrase: secret\n");
+    write(&format!("{home}/.rant/bridge.yaml"), "allowed_origins: [local]\n");
     write(&format!("{home}/.rant/packages/bridge/package.rant"), "name = \"bridge\"\n");
     let r = t.rant(&["uninstall"]).ok();
     expect_match(&r.err, r"[.]rant\n");
-    expect_match(&r.err, "bridge[.]yaml stays, it holds your bridge passphrase and settings");
+    expect_match(&r.err, "bridge[.]yaml stays, it holds your bridge settings");
     let left = list(&format!("{home}/.rant"));
     assert!(left.len() == 1 && exists(&format!("{home}/.rant/bridge.yaml")), "expected only bridge.yaml to stay, got: {left:?}");
     let r = t.rant(&["uninstall"]).ok();

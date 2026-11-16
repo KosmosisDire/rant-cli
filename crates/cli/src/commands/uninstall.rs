@@ -1,5 +1,5 @@
 //! `rant uninstall`: rant-cli, the packages it installed and what setup added, never a
-//! workspace. The bridge config stays, since it holds the user's passphrase.
+//! workspace. The bridge config stays, since it holds the user's settings.
 
 use std::path::{Path, PathBuf};
 
@@ -204,7 +204,7 @@ pub fn run(ctx: &mut Context, args: &Args) -> Result<()> {
     steps.iter().for_each(|s| ctx.out.note(&format!("  {}", shown(s))));
     ctx.out.note("Workspaces stay as they are, and running nodes keep running.");
     if bridge_config(&home).exists() {
-        ctx.out.note(&format!("{} stays, it holds your bridge passphrase and settings.", bridge_config(&home).display()));
+        ctx.out.note(&format!("{} stays, it holds your bridge settings.", bridge_config(&home).display()));
     }
     if !ctx.confirm("Uninstall?") {
         return Err(Failure::Reported);
