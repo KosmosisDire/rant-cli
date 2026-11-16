@@ -309,6 +309,36 @@ fn placement_follows_workspace_package_groups_and_node() {
 }
 
 #[test]
+fn remap_reaches_the_node_as_rant_remap() {
+    let t = workspace_with(&[
+        ("filtered.run", "  param \"raw\" {
+    default = \"Wrench/Raw\"
+  }
+  node \"lidar\" {
+    remap = { \"Wrench\" = param.raw, \"/Clock\" = \"/Time/Clock\" }
+  }
+  node \"planner/odom\" {}
+"),
+        ("bad.run", "  node \"lidar\" {
+    remap = { \"Wrench\" = \"a@b\" }
+  }
+"),
+        ("both.run", "  node \"lidar\" {
+    env   = { RANT_REMAP = \"a=b\" }
+    remap = { \"Wrench\" = \"Raw\" }
+  }
+"),
+    ]);
+    let ws = load(&t);
+    let p = plan(&ws, "filtered", &[]).unwrap().plan;
+    assert_eq!(p.instances[0].env["RANT_REMAP"], "Wrench=Wrench/Raw,/Clock=/Time/Clock");
+    assert!(!p.instances[1].env.contains_key("RANT_REMAP"), "only the node that remaps");
+    let err = plan(&ws, "bad", &[]).unwrap_err();
+    assert!(err.message.contains("`a@b` cannot be empty"), "{err}");
+    assert!(plan(&ws, "both", &[]).unwrap_err().message.contains("not both"));
+}
+
+#[test]
 fn restart_comes_from_the_innermost_that_sets_it() {
     let t = workspace_with(&[
         ("inner.run", "  node \"lidar\" {}\n  node \"planner/odom\" {\n    restart = \"never\"\n  }\n"),

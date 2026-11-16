@@ -152,6 +152,17 @@ fn groups() {
     let r = t.rant(&["stop", "cell"]).ok();
     expect_match(&r.out, "left/lidar +stopped");
 
+    // A remap reaches its node as RANT_REMAP, beside the prefix it composes with.
+    write(&t.path("filtered.run"), "prefix = \"left\"
+node \"sensor\" {
+  remap = { \"Reading\" = \"Reading/Raw\" }
+}
+");
+    let r = t.rant(&["run", "filtered", "--dry-run"]).ok();
+    expect_match(&r.out, r"env  RANT_PREFIX=plant/left
+  env  RANT_REMAP=Reading=Reading/Raw
+");
+
     // A group another workspace runs is restarted, read and stopped from here, its runs together.
     // A name two workspaces run needs a pick, so without a terminal it fails.
     write(&format!("{}/Plan.run", t.other), "node \"demo/planner\" {}\n");

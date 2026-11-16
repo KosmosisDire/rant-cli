@@ -122,9 +122,10 @@ include "Arm" {                # another group, package/Arm when unclear, with i
   node_prefix = "left"
 }
 node "planner" {               # the label names the node to run, package/name when unclear
-  name = "planner"             # the name on the mesh, the node's own by default
-  args = "--speed ${param.speed}"
-  env  = { LEVEL = "debug" }
+  name  = "planner"            # the name on the mesh, the node's own by default
+  args  = "--speed ${param.speed}"
+  env   = { LEVEL = "debug" }
+  remap = { "Path" = "Path/Raw" } # renames a name the node creates, see below
 }
 ```
 
@@ -138,6 +139,18 @@ Placement: `domain`, `prefix` and `node_prefix` may go in workspace.rant, packag
 group's top level, an `include` and a group `node`, the innermost winning. `prefix` goes in
 front of every entity name a node makes, `node_prefix` in front of its node name. Place nodes
 this way, never with names or domains hard coded in the program.
+
+`remap` in a group `node` renames names that node creates, of any kind. The key is the name as
+the code writes it, and the value takes the prefix like any name, or skips it with a leading
+`/`. To put a filter between a node and its readers, move the source aside and let the filter
+take its name:
+
+```hcl
+node "ft_sensor" {
+  remap = { "Wrench" = "Wrench/Raw" }
+}
+node "wrench_filter" {}        # reads Wrench/Raw, publishes Wrench
+```
 
 `restart` says whether a node that exits starts again: `"never"` (the default),
 `"on-failure"` or `"always"`. It goes where placement does.

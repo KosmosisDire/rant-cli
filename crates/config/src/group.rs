@@ -98,6 +98,11 @@ fn shared_keys() -> Vec<&'static str> {
     [&placement::KEYS[..], &[Restart::KEY][..]].concat()
 }
 
+/// The keys a group's node block takes.
+fn node_keys() -> Vec<&'static str> {
+    [&["name", "args", "env", "remap"][..], &shared_keys()[..]].concat()
+}
+
 /// A `restart` value, checked.
 fn read_restart(src: &Source, a: &Attribute, scope: &Scope) -> Result<Restart, Diag> {
     Restart::parse(&eval::string(src, a, scope)?)
@@ -141,7 +146,7 @@ fn parse(file: GroupFile, root: &Path) -> Result<GroupDef, Diag> {
             "include" => items.push(Item::Include(parse_include(&src, b, &scope)?)),
             "node" => {
                 one_label(&src, b)?;
-                Fields::of(&src, b, &[&["name", "args", "env"][..], &shared_keys()[..]].concat(), &[])?;
+                Fields::of(&src, b, &node_keys(), &[])?;
                 items.push(Item::Node(b.clone()));
             }
             _ => {}
@@ -389,7 +394,7 @@ impl<'m> Groups<'m> {
 
     fn node(&self, def: &GroupDef, b: &Block, scope: &Scope, chain: &Placement, restart: Restart) -> Result<Instance, Diag> {
         let src = &def.src;
-        let fields = Fields::of(src, b, &[&["name", "args", "env"][..], &shared_keys()[..]].concat(), &[])?;
+        let fields = Fields::of(src, b, &node_keys(), &[])?;
         // the label says what runs, `name` what the running node is called, its own name by default
         let reference = one_label(src, b)?;
         let node = refs::resolve(self.model, reference, scope.file_dir).map_err(|e| src.diag_at(b, e))?;
@@ -422,6 +427,12 @@ impl<'m> Groups<'m> {
                 }
                 v => return Err(src.diag_at(&a.value, format!("`env` must be an object, found {}", eval::type_name(&v)))),
             }
+        }
+        if let Some(a) = fields.attr("remap") {
+            if env.contains_key("RANT_REMAP") {
+                return Err(src.diag_at(&a.value, "rename in `remap` or in `env`, not both"));
+            }
+            env.insert("RANT_REMAP".into(), placement::read_remap(src, a, scope)?);
         }
         // the shell, workspace and package, then the groups, then the node itself
         let placed = self.model.placement_of(&node).inner(chain).inner(&Placement::read(src, &fields.attrs, scope)?);

@@ -16,10 +16,11 @@ pub const KEYS: [&str; 3] = ["domain", "prefix", "node_prefix"];
 /// The shell variables that place a node, which Rant reads.
 pub const ENV: [&str; 3] = ["RANT_DOMAIN", "RANT_PREFIX", "RANT_NODE_NAME_PREFIX"];
 
-/// What the Rant library allows: a node name of 32 bytes, and a prefix that leaves room in a
-/// 64 byte name for a `/` and one byte.
+/// What the Rant library allows: a node name of 32 bytes, an entity name of 64, and a prefix
+/// that leaves room in one for a `/` and one byte.
 const NODE_NAME_MAX: usize = 32;
-const PREFIX_MAX: usize = 62;
+const NAME_MAX: usize = 64;
+const PREFIX_MAX: usize = NAME_MAX - 2;
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Placement {
@@ -93,6 +94,28 @@ impl Placement {
         }
         Ok(full)
     }
+}
+
+/// A node's `remap` as the RANT_REMAP Rant reads: `from=to` entries joined by `,`, each side
+/// checked as Rant would.
+pub fn read_remap(src: &Source, a: &Attribute, scope: &Scope) -> Result<String, Diag> {
+    let Value::Object(map) = eval::value(src, a, scope)? else {
+        return Err(src.diag_at(&a.value, "`remap` is an object of names, such as { \"Wrench\" = \"Wrench/Raw\" }"));
+    };
+    let mut entries = Vec::new();
+    for (from, to) in map {
+        let Value::String(to) = to else {
+            return Err(src.diag_at(&a.value, format!("`remap` value `{from}` must be a name")));
+        };
+        for side in [&from, &to] {
+            let bare = side.strip_prefix('/').unwrap_or(side);
+            if bare.is_empty() || bare.len() > NAME_MAX || bare.contains(['@', '=', ',']) {
+                return Err(src.diag_at(&a.value, format!("`remap`: `{side}` cannot be empty, longer than {NAME_MAX} bytes, or contain @, = or ,")));
+            }
+        }
+        entries.push(format!("{from}={to}"));
+    }
+    Ok(entries.join(","))
 }
 
 #[cfg(test)]
