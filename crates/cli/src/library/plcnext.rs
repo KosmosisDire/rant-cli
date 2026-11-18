@@ -1,5 +1,5 @@
 //! PLCnext Engineer, from the `<name>-<version>.pcwlx` a release carries. A plcx workspace keeps it in
-//! libs/ and names it in pcwex.toml, and a project left as its archive takes Engineer's user libraries.
+//! libs/ and names it in pcwex.toml, and Engineer's user libraries hold it for every project.
 //! Engineer finds a library only by a file named after its title, so a version goes in a folder name.
 
 use std::path::{Path, PathBuf};
@@ -32,12 +32,6 @@ fn title_of(lib: &Library) -> &str {
 
 pub fn is_workspace(dir: &Path) -> bool {
     dir.join(WORKSPACE).is_file()
-}
-
-/// An Engineer project left as its archive, which takes libraries from Engineer's user libraries.
-pub fn is_project(dir: &Path) -> bool {
-    let archives = std::fs::read_dir(dir).into_iter().flatten().flatten();
-    !is_workspace(dir) && archives.into_iter().any(|e| e.path().extension().is_some_and(|x| x.eq_ignore_ascii_case("pcwex")))
 }
 
 // ---- the user libraries ----
@@ -104,15 +98,15 @@ fn version_file(copy: &Path, lib: &Library) -> PathBuf {
     copy.with_file_name(format!("{}.version", lib.name))
 }
 
-/// The copy in Engineer's user libraries as a use of the project in dir. Its version is the one
-/// every folder holds, None when they differ or one was placed without rant.
-pub fn user_use(dir: &Path, lib: &Library, folders: &[PathBuf]) -> Option<Use> {
+/// The copy in Engineer's user libraries, as a use of its folder. Its version is the one every
+/// folder holds, None when they differ or one was placed without rant.
+pub fn user_copy(lib: &Library, folders: &[PathBuf]) -> Option<Use> {
     let title = title_of(lib);
     let copies: Vec<PathBuf> = folders.iter().map(|f| f.join(title).join(format!("{title}.pcwlx"))).filter(|c| c.is_file()).collect();
     let first = copies.first()?;
     let versions: Vec<String> = copies.iter().map(|c| read(&version_file(c, lib)).trim().to_string()).collect();
     let mut u = Use::of(lib, Kind::Engineer, "user libraries");
-    (u.dir, u.file) = (dir.to_path_buf(), first.clone());
+    (u.dir, u.file) = (first.parent().map(Path::to_path_buf).unwrap_or_default(), first.clone());
     u.version = versions.iter().all(|v| !v.is_empty() && *v == versions[0]).then(|| versions[0].clone());
     Some(u)
 }
@@ -137,6 +131,24 @@ pub fn install(ctx: &Context, home: &Path, lib: &Library, r: &Release) -> Result
         placed.push(target);
     }
     Ok(placed)
+}
+
+/// Removes the library's copies from Engineer's user libraries, with the folder rant made for each.
+pub fn uninstall(lib: &Library) -> Result<Vec<PathBuf>> {
+    let title = title_of(lib);
+    let mut removed = Vec::new();
+    for f in folders() {
+        let copy = f.join(title).join(format!("{title}.pcwlx"));
+        if !copy.is_file() {
+            continue;
+        }
+        std::fs::remove_file(&copy).map_err(|e| failed(format!("cannot remove {}: {e}, close PLCnext Engineer if a project open there uses it", paths::slash(&copy))))?;
+        let _ = std::fs::remove_file(version_file(&copy, lib));
+        // only when nothing else is in it
+        let _ = std::fs::remove_dir(f.join(title));
+        removed.push(copy);
+    }
+    Ok(removed)
 }
 
 /// Downloads the release's library, refused when its title is not the one package.rant names.
@@ -330,24 +342,15 @@ mod tests {
         let t = Scratch::new("pcwlx-user");
         let lib = plcnext();
         let folders = vec![t.path("a"), t.path("b")];
-        assert_eq!(user_use(&t.path("p"), &lib, &folders), None);
+        assert_eq!(user_copy(&lib, &folders), None);
         library(&t, "a/Rant/Rant.pcwlx", "Rant");
-        assert_eq!(user_use(&t.path("p"), &lib, &folders).unwrap().version, None);
+        assert_eq!(user_copy(&lib, &folders).unwrap().version, None);
         t.write("a/Rant/plcnext.version", "0.0.1\n");
-        assert_eq!(user_use(&t.path("p"), &lib, &folders).unwrap().version.as_deref(), Some("0.0.1"));
+        assert_eq!(user_copy(&lib, &folders).unwrap().version.as_deref(), Some("0.0.1"));
         library(&t, "b/Rant/Rant.pcwlx", "Rant");
         t.write("b/Rant/plcnext.version", "0.0.2\n");
-        assert_eq!(user_use(&t.path("p"), &lib, &folders).unwrap().version, None);
+        assert_eq!(user_copy(&lib, &folders).unwrap().version, None);
         assert!(title(&library(&t, "bad.pcwlx", "../x")).is_err());
         assert_eq!(title(&library(&t, "good.pcwlx", "Rant")).unwrap(), "Rant");
-    }
-
-    #[test]
-    fn a_project_is_an_archive_without_a_workspace() {
-        let t = Scratch::new("pcwlx-project");
-        t.write("p/golf.pcwex", "");
-        assert!(is_project(&t.path("p")));
-        t.write("p/pcwex.toml", "");
-        assert!(!is_project(&t.path("p")) && is_workspace(&t.path("p")));
     }
 }

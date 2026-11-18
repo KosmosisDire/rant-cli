@@ -1,5 +1,5 @@
 //! Arduino and PlatformIO, both from the `<name>-<version>-arduino.zip` a release carries. PlatformIO
-//! pins its URL in platformio.ini, and an Arduino sketch takes the library unpacked into the sketchbook.
+//! pins its URL in platformio.ini, and the sketchbook holds the library unpacked for every sketch.
 
 use std::path::{Path, PathBuf};
 
@@ -21,11 +21,6 @@ pub fn zip_name(library: &str, version: &str) -> String {
 /// The library's zip in the release, None when the release has no Arduino library.
 pub fn carried<'r>(r: &'r Release, lib: &Library) -> Option<&'r Asset> {
     r.asset(&zip_name(&lib.name, &r.version))
-}
-
-/// A folder holding `<folder>.ino`, as the Arduino IDE requires of a sketch.
-pub fn is_sketch(dir: &Path) -> bool {
-    dir.file_name().is_some_and(|n| dir.join(format!("{}.ino", n.to_string_lossy())).is_file())
 }
 
 // ---- the sketchbook ----
@@ -112,21 +107,16 @@ impl Book {
         Book { root: libraries.map(Path::to_path_buf).unwrap_or_default(), libraries: dirs.into_iter().map(|d| (d.clone(), read(&d.join("library.properties")))).collect() }
     }
 
-    /// The sketchbook's libraries folder, empty when there is no sketchbook.
-    pub fn root(&self) -> &Path {
-        &self.root
-    }
-
     /// The folder holding the library, with its version.
     fn find(&self, lib: &Library) -> Option<(PathBuf, Option<String>)> {
         self.libraries.iter().find(|(_, text)| is_own(text, lib)).map(|(d, text)| (d.clone(), property(text, "version")))
     }
 
-    /// The sketchbook's copy of the library as a use of the sketch in dir, or of the sketchbook itself.
-    pub fn use_in(&self, dir: &Path, lib: &Library) -> Option<Use> {
+    /// The sketchbook's copy of the library, as a use of the sketchbook.
+    pub fn copy(&self, lib: &Library) -> Option<Use> {
         let (folder, version) = self.find(lib)?;
         let mut u = Use::of(lib, Kind::Arduino, "sketchbook");
-        (u.dir, u.file, u.version) = (dir.to_path_buf(), folder, version);
+        (u.dir, u.file, u.version) = (self.root.clone(), folder, version);
         Some(u)
     }
 }
@@ -187,6 +177,18 @@ fn place(zip_file: &Path, staging: &Path, libraries: &Path, lib: &Library, name:
         let _ = std::fs::remove_dir_all(to);
     }
     Ok(Some(target))
+}
+
+/// Removes the sketchbook's copy of the library. Returns its folder, None when there is none or it
+/// is a link, which rant leaves alone.
+pub fn uninstall(ctx: &Context, lib: &Library) -> Result<Option<PathBuf>> {
+    let Some((folder, _)) = Book::load().find(lib) else { return Ok(None) };
+    if is_link(&folder) {
+        ctx.out.note(&format!("the {} in {} is a link, so rant leaves it", lib.name, paths::slash(&folder)));
+        return Ok(None);
+    }
+    std::fs::remove_dir_all(&folder).map_err(|e| failed(format!("cannot remove {}: {e}", paths::slash(&folder))))?;
+    Ok(Some(folder))
 }
 
 /// Puts the folders moved aside back where they were.

@@ -278,9 +278,6 @@ fn link_skills(ctx: &Context, home: &Path, rec: &mut Record, had: &[PathBuf]) ->
 
 /// Installs a package from its source, version picking a release of a repo's.
 pub fn install(ctx: &Context, home: &Path, s: &Source, version: &str, wanted: &Wanted) -> Result<()> {
-    if s.library.is_some() {
-        return Err(failed(format!("{} is a library, add it to a package with `rant add {}`", s.name, s.name)));
-    }
     let _ = std::fs::create_dir_all(dir(home));
     // a link names a package by its own word, so it never quietly takes the place of another
     let had = record(home, &s.name);

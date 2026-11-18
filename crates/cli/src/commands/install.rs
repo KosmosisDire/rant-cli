@@ -69,6 +69,18 @@ fn source_of(ctx: &Context, args: &Args, sources: &mut Option<Sources>, word: &s
     }
 }
 
+/// Installs a library where this machine keeps it for every project, refused when its release
+/// carries nothing kept so.
+fn install_library(ctx: &Context, home: &std::path::Path, s: &Source, version: &str) -> Result<()> {
+    let lib = library::of(s)?;
+    let r = github::release(&lib.repo, version)?;
+    let kinds = library::carried(&lib, &r);
+    if kinds.is_empty() {
+        return Err(failed(format!("{} {} has nothing to install on this machine, add it to a package with `rant add {}`", lib.name, r.version, lib.name)));
+    }
+    library::install(ctx, home, &lib, &r, &kinds, !version.is_empty())
+}
+
 /// Each package named. With several, one that fails leaves the rest to go on. Returns the names
 /// that installed, and whether one failed.
 fn install_all(ctx: &Context, args: &Args, words: &[String]) -> Result<(Vec<String>, bool)> {
@@ -86,7 +98,11 @@ fn install_all(ctx: &Context, args: &Args, words: &[String]) -> Result<(Vec<Stri
             if args.version.is_some() && s.repo.is_empty() {
                 return Err(usage(format!("--version picks a release, and {word} comes from {} in config.rant", rant_config::paths::slash(&s.path))));
             }
-            packages::install(ctx, &home, &s, args.version.as_deref().unwrap_or_default(), &wanted).map(|_| s.name)
+            let version = args.version.as_deref().unwrap_or_default();
+            if s.library.is_some() {
+                return install_library(ctx, &home, &s, version).map(|_| s.name);
+            }
+            packages::install(ctx, &home, &s, version, &wanted).map(|_| s.name)
         });
         match one {
             Ok(name) => done.push(name),
@@ -147,9 +163,8 @@ fn engineer_row() -> Option<Choice> {
     Some(Choice { label: "PLCnext Engineer libraries".into(), note: format!("{state}puts Rant's libraries for PLCnext Engineer in {at}"), checked: found })
 }
 
-/// Installs every library whose latest release carries a library for one of kinds, Arduino or
-/// Engineer, where that kind takes it, then offers each one's skill. False when one failed, after
-/// a warning.
+/// Installs every library whose latest release carries a file for one of kinds where that kind
+/// keeps it, then offers each one's skill. False when one failed, after a warning.
 fn install_libraries(ctx: &Context, home: &std::path::Path, sources: &mut Sources, kinds: &[Kind]) -> Result<bool> {
     if kinds.is_empty() {
         return Ok(true);
@@ -165,25 +180,11 @@ fn install_libraries(ctx: &Context, home: &std::path::Path, sources: &mut Source
     let mut ok = true;
     for (lib, r) in libs.iter().zip(latest) {
         let Some(r) = r else { continue };
-        let mut placed_any = Ok(false);
-        for &kind in kinds {
-            let installed = match kind {
-                Kind::Arduino if arduino::carried(&r, lib).is_some() => arduino::install(ctx, home, lib, &r).map(|at| at.into_iter().collect()),
-                Kind::Engineer if lib.supports(kind) && plcnext::carried(&r, lib).is_some() => plcnext::install(ctx, home, lib, &r),
-                _ => continue,
-            };
-            placed_any = installed.map(|at: Vec<std::path::PathBuf>| {
-                for a in &at {
-                    ctx.out.note(&format!("installed {} {} in {}", lib.name, r.version, rant_config::paths::slash(a)));
-                }
-                true
-            });
-            if placed_any.is_err() {
-                break;
-            }
+        let ticked: Vec<Kind> = library::carried(lib, &r).into_iter().filter(|k| kinds.contains(k)).collect();
+        if ticked.is_empty() {
+            continue;
         }
-        let given = placed_any.and_then(|any| if any { skills::give(ctx, home, &lib.name, &lib.repo, &r, true) } else { Ok(()) });
-        if let Err(e) = given {
+        if let Err(e) = library::install(ctx, home, lib, &r, &ticked, false) {
             ctx.out.failure(&e);
             ok = false;
         }

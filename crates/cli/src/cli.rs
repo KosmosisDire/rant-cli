@@ -102,13 +102,13 @@ pub enum Command {
     /// set up tab completion for your shells, or the named ones, and `skill` gives rant-cli's skill to the AI coding agents found
     #[command(override_usage = "rant setup [shell...|skill]")]
     Setup(setup::Args),
-    /// install packages, or another release of one, by name from ~/.rant/config.rant and the package databases, `rant ls sources` shows where it looks, or from any GitHub repo as owner/name or its link. With none named, pick them from a list
+    /// install packages, or another release of one, by name from ~/.rant/config.rant and the package databases, `rant ls sources` shows where it looks, or from any GitHub repo as owner/name or its link. A library such as Rant goes where this machine keeps it for every project, as the Arduino sketchbook. With none named, pick them from a list
     #[command(override_usage = "rant install [package|repo...]")]
     Install(install::Args),
-    /// remove installed packages, or the skill rant add gave a library, a linked build folder stays as it is
+    /// remove installed packages, or a library's copies on this machine and the skill rant gave it, a linked build folder stays as it is
     #[command(override_usage = "rant remove <package>...")]
     Remove(remove::Args),
-    /// update rant-cli and the installed packages, then the libraries this workspace's packages use. With names, only those
+    /// update rant-cli and the installed packages, then the libraries this workspace's packages use and those installed on this machine. With names, only those
     #[command(override_usage = "rant update [package|library...]")]
     Update(update::Args),
     /// add a library to the package here or in folder, Rant when none is named, or move it to another release

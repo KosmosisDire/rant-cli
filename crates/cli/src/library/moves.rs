@@ -8,7 +8,7 @@ use rant_config::database;
 use rant_process::Command;
 
 use super::edit;
-use super::{Kind, Library, Use, arduino, in_folder, plcnext, uses::dist_name};
+use super::{Kind, Library, Use, arduino, in_folder, machine, plcnext, uses::dist_name};
 use crate::context::Context;
 use crate::failure::{Result, failed, usage};
 use crate::github::{self, Asset, Release};
@@ -18,7 +18,7 @@ use crate::packages::sources::{Sources, from_repo};
 use crate::packages::{Source, skills};
 
 /// A source as a library, refused when it names a package or a folder.
-fn of(s: &Source) -> Result<Library> {
+pub fn of(s: &Source) -> Result<Library> {
     let Some(names) = &s.library else { return Err(failed(format!("{} is a package, install it with `rant install {}`", s.name, s.name))) };
     if s.repo.is_empty() {
         return Err(failed(format!("{} is a folder in config.rant, and a library comes from a repo's releases", s.name)));
@@ -145,7 +145,7 @@ fn lacks(u: &Use, r: &Release) -> Option<String> {
 /// A use the release would change. An unpinned pyproject dependency takes what its venv has,
 /// and an unpinned Cargo one what its source has, and Arduino and Engineer need the release's
 /// file. Only a version asked for moves one back.
-fn changes(u: &Use, r: &Release, asked: bool) -> bool {
+pub(super) fn changes(u: &Use, r: &Release, asked: bool) -> bool {
     if lacks(u, r).is_some() || !u.wanted || u.version.as_deref() == Some(r.version.as_str()) || (matches!(u.how, "pyproject" | "Cargo") && u.version.is_none()) {
         return false;
     }
@@ -166,12 +166,8 @@ fn bring(ctx: &Context, home: &Path, u: &Use, lib: &Library, r: &Release, asked:
         install_python(ctx, u, lib, r)?;
         return Ok(moved);
     }
-    if u.kind == Kind::Arduino {
-        return Ok(if arduino::install(ctx, home, lib, r)?.is_some() { moved } else { String::new() });
-    }
-    if u.kind == Kind::Engineer {
-        plcnext::install(ctx, home, lib, r)?;
-        return Ok(moved);
+    if u.kind.machine_wide() {
+        return Ok(if machine::place_in(ctx, home, lib, r, &[u.kind])? { moved } else { String::new() });
     }
     if u.kind == Kind::Plcx {
         plcnext::into_workspace(ctx, home, &u.dir, lib, r)?;
@@ -184,9 +180,8 @@ fn bring(ctx: &Context, home: &Path, u: &Use, lib: &Library, r: &Release, asked:
     Ok(moved)
 }
 
-/// The build files in a folder that could take the library but do not name it yet. A sketch takes
-/// the sketchbook and an Engineer archive the user libraries. Each of the last four needs the
-/// release's file.
+/// The build files in a folder that could take the library but do not name it yet. The last two
+/// need the release's file.
 fn missing(dir: &Path, lib: &Library, uses: &[Use], r: &Release) -> Vec<(Kind, PathBuf)> {
     let used = |f: &Path| uses.iter().any(|u| u.file == f);
     let mut out = Vec::new();
@@ -204,27 +199,19 @@ fn missing(dir: &Path, lib: &Library, uses: &[Use], r: &Release) -> Vec<(Kind, P
         out.push((Kind::Rust, cargo));
     }
     let ini = dir.join("platformio.ini");
-    let zip = arduino::carried(r, lib).is_some();
-    if zip && ini.is_file() && !used(&ini) {
+    if arduino::carried(r, lib).is_some() && ini.is_file() && !used(&ini) {
         out.push((Kind::PlatformIO, ini));
-    }
-    if zip && arduino::is_sketch(dir) && !uses.iter().any(|u| u.kind == Kind::Arduino) {
-        // with no sketchbook the path stays empty and install says so
-        out.push((Kind::Arduino, arduino::sketchbook().map(|b| b.join("libraries")).unwrap_or_default()));
     }
     let (pcwlx, pcwex) = (lib.supports(Kind::Plcx) && plcnext::carried(r, lib).is_some(), dir.join(plcnext::WORKSPACE));
     if pcwlx && pcwex.is_file() && !used(&pcwex) {
         out.push((Kind::Plcx, pcwex));
-    }
-    if pcwlx && plcnext::is_project(dir) && !uses.iter().any(|u| u.kind == Kind::Engineer) {
-        out.push((Kind::Engineer, plcnext::folders().first().cloned().unwrap_or_default()));
     }
     out
 }
 
 /// The build files a library goes in, as a sentence names them: "CMakeLists.txt or Cargo.toml".
 fn takes(lib: &Library) -> String {
-    let files = [(Kind::CMake, "CMakeLists.txt"), (Kind::CSharp, "C# project"), (Kind::Rust, "Cargo.toml"), (Kind::PlatformIO, "platformio.ini"), (Kind::Arduino, "Arduino sketch"), (Kind::Plcx, "plcx workspace"), (Kind::Engineer, "PLCnext Engineer project"), (Kind::Python, "Python file")];
+    let files = [(Kind::CMake, "CMakeLists.txt"), (Kind::CSharp, "C# project"), (Kind::Rust, "Cargo.toml"), (Kind::PlatformIO, "platformio.ini"), (Kind::Plcx, "plcx workspace"), (Kind::Python, "Python file")];
     alternatives(&files.iter().filter(|(k, _)| lib.supports(*k)).map(|(_, f)| *f).collect::<Vec<_>>())
 }
 
@@ -233,7 +220,7 @@ fn report(ctx: &Context, d: &Path, k: Kind, what: &str) {
 }
 
 #[derive(Default)]
-struct Fetches {
+pub(super) struct Fetches {
     cmake: bool,
     cargo: bool,
     pio: bool,
@@ -242,7 +229,7 @@ struct Fetches {
 }
 
 impl Fetches {
-    fn after(&mut self, k: Kind) {
+    pub(super) fn after(&mut self, k: Kind) {
         self.cmake |= k == Kind::CMake;
         self.cargo |= k == Kind::Rust;
         self.pio |= k == Kind::PlatformIO;
@@ -250,7 +237,7 @@ impl Fetches {
         self.engineer |= k == Kind::Engineer;
     }
 
-    fn notes(&self, ctx: &Context) {
+    pub(super) fn notes(&self, ctx: &Context) {
         if self.cmake {
             ctx.out.note("CMake fetches it on the next configure, which `rant build` runs");
         }
@@ -275,13 +262,17 @@ pub fn add(ctx: &Context, home: &Path, dir: &Path, lib: &Library, r: &Release, a
     let uses = in_folder(dir, std::slice::from_ref(lib), true);
     let adds = missing(dir, lib, &uses, r);
     if uses.is_empty() && adds.is_empty() {
-        if arduino::carried(r, lib).is_none() && (dir.join("platformio.ini").is_file() || arduino::is_sketch(dir)) {
+        if arduino::carried(r, lib).is_none() && dir.join("platformio.ini").is_file() {
             return Err(failed(format!("{} {} carries no {}, so it has no Arduino library", lib.name, r.version, arduino::zip_name(&lib.name, &r.version))));
         }
-        if lib.supports(Kind::Plcx) && plcnext::carried(r, lib).is_none() && (plcnext::is_workspace(dir) || plcnext::is_project(dir)) {
+        if lib.supports(Kind::Plcx) && plcnext::carried(r, lib).is_none() && plcnext::is_workspace(dir) {
             return Err(failed(format!("{} {} carries no {}, so it has no PLCnext Engineer library", lib.name, r.version, plcnext::file_name(&lib.name, &r.version))));
         }
-        return Err(failed(format!("no {} in {} to add {} to", takes(lib), ctx.shown(dir), lib.name)));
+        let nothing = format!("no {} in {} to add {} to", takes(lib), ctx.shown(dir), lib.name);
+        return Err(failed(match machine::offered(lib, r) {
+            Some(there) => format!("{nothing}, `rant install {}` puts it {there}", lib.name),
+            None => nothing,
+        }));
     }
     let moves: Vec<&Use> = uses.iter().filter(|u| changes(u, r, asked)).collect();
     if adds.is_empty() && moves.is_empty() {
@@ -313,15 +304,12 @@ pub fn add(ctx: &Context, home: &Path, dir: &Path, lib: &Library, r: &Release, a
     }
     for (kind, file) in adds {
         let added = match kind {
-            Kind::Arduino => arduino::install(ctx, home, lib, r).map(|placed| placed.map(|_| String::new())),
-            Kind::Engineer => plcnext::install(ctx, home, lib, r).map(|_| Some(String::new())),
-            Kind::Plcx => plcnext::into_workspace(ctx, home, dir, lib, r).map(|_| Some(String::new())),
-            Kind::CSharp => edit::add(kind, &file, lib, &r.version, &r.tag).and_then(|hint| install_nupkg(ctx, home, lib, r).map(|_| Some(hint))),
-            _ => edit::add(kind, &file, lib, &r.version, &r.tag).map(Some),
+            Kind::Plcx => plcnext::into_workspace(ctx, home, dir, lib, r).map(|_| String::new()),
+            Kind::CSharp => edit::add(kind, &file, lib, &r.version, &r.tag).and_then(|hint| install_nupkg(ctx, home, lib, r).map(|_| hint)),
+            _ => edit::add(kind, &file, lib, &r.version, &r.tag),
         };
         match added {
-            Ok(None) => {}
-            Ok(Some(hint)) => {
+            Ok(hint) => {
                 report(ctx, dir, kind, &format!("added to {}", ctx.shown(&file)));
                 if !hint.is_empty() {
                     ctx.out.note(&format!("    link it to your target: {hint}"));

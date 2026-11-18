@@ -3,11 +3,13 @@
 
 pub mod arduino;
 mod edit;
+mod machine;
 mod moves;
 pub mod plcnext;
 mod uses;
 
-pub use moves::{add, all, find, nuget_feed_added, update};
+pub use machine::{carried, copies, install, uninstall};
+pub use moves::{add, all, find, nuget_feed_added, of, update};
 pub use uses::{Use, in_folder, node_source, under};
 
 use std::path::Path;
@@ -51,11 +53,18 @@ pub enum Kind {
     Arduino,
     /// A plcx workspace, its library in libs/.
     Plcx,
-    /// An Engineer project left as its archive, its library in Engineer's user libraries.
+    /// Engineer's user libraries.
     Engineer,
 }
 
+/// The kinds that keep a library once per machine for every project, which rant install fills.
+pub const MACHINE: [Kind; 2] = [Kind::Arduino, Kind::Engineer];
+
 impl Kind {
+    pub fn machine_wide(self) -> bool {
+        MACHINE.contains(&self)
+    }
+
     pub fn name(self) -> &'static str {
         match self {
             Kind::CMake => "cmake",

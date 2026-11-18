@@ -1,5 +1,5 @@
-//! `rant update`: rant-cli and the installed packages, then the libraries the workspace here
-//! uses, each after its own question. Named ones alone go without the rest.
+//! `rant update`: rant-cli and the installed packages, then the libraries the workspace here uses
+//! and those kept on this machine, each after its own question. Named ones alone go without the rest.
 
 use std::path::Path;
 
@@ -165,20 +165,19 @@ pub fn run(ctx: &mut Context, args: &Args) -> Result<()> {
     if !all && libs.is_empty() {
         return if ok { Ok(()) } else { Err(Failure::Reported) };
     }
-    let Some(root) = ctx.workspace().map(|ws| ws.root.clone()) else {
-        if !all {
-            return Err(failed("rant update moves a library through a workspace, and none is here"));
-        }
-        return if ok { Ok(()) } else { Err(Failure::Reported) };
-    };
     if all {
         libs = library::all(&mut sources)?;
     }
-    let uses = library::under(&root, &libs);
+    let root = ctx.workspace().map(|ws| ws.root.clone());
+    let uses = match &root {
+        Some(root) => library::under(root, &libs),
+        None => library::copies(&libs),
+    };
     if uses.is_empty() {
         if !all {
             let others = if libs.len() > 1 { " or the others named" } else { "" };
-            ctx.out.note(&format!("nothing in this workspace uses {}{others}", libs[0].name));
+            let place = if root.is_some() { "in this workspace or on this machine" } else { "on this machine" };
+            ctx.out.note(&format!("nothing {place} uses {}{others}", libs[0].name));
         }
         return if ok { Ok(()) } else { Err(Failure::Reported) };
     }

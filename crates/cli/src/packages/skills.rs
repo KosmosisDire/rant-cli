@@ -89,7 +89,7 @@ pub fn link(ctx: &Context, name: &str, skill: &Path, had: &[PathBuf]) -> Result<
     Ok(out)
 }
 
-/// The skill rant add gave a library, kept in rant's home with a record beside it.
+/// The skill rant add or rant install gave a library, kept in rant's home with a record beside it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Skill {
     pub name: String,

@@ -50,13 +50,12 @@ fn library() {
     let r = t.rant(&["add", "Not a name"]).fails();
     expect_match(&r.err, "is no library name");
 
-    // A library is added and a package installed, each refusing the other, and a library comes
-    // only from a repo's releases.
+    // A package is never added, and a library comes only from a repo's releases.
     write(&t.path("geometry/package.rant"), "name = \"geometry\"\nlibrary {\n  cmake = \"geometry\"\n}\n");
     write(&t.path("kit/package.rant"), "name = \"kit\"\n");
     write(&format!("{home}/config.rant"), &format!("paths = [\"{s}/geometry\", \"{s}/kit\"]\n", s = t.scratch));
     let r = t.rant(&["install", "geometry"]).fails();
-    expect_match(&r.err, "geometry is a library, add it to a package with `rant add geometry`");
+    expect_match(&r.err, "geometry is a folder in config[.]rant, and a library comes from a repo's releases");
     let r = t.rant(&["add", "kit"]).fails();
     expect_match(&r.err, "kit is a package, install it with `rant install kit`");
     let r = t.rant(&["add", "geometry", "tool"]).fails();
@@ -95,6 +94,33 @@ fn library() {
 
     let r = t.rant(&["ls", "libraries", "--available"]).ok();
     expect_match(&r.out, "rant +KosmosisDire/Rant +cmake python csharp rust");
+
+    // A library the release carries for the sketchbook installs there for every sketch, and rant
+    // add points a sketch to that. Update and remove reach the copy from outside a workspace.
+    write(&t.path("blink/blink.ino"), "void setup() {}
+void loop() {}
+");
+    let r = t.rant(&["add", "rant", "blink", "--version", "0.0.44"]).fails();
+    expect_match(&r.err, "or Python file in blink to add rant to, `rant install rant` puts it in the Arduino sketchbook for every sketch");
+    let r = t.rant(&["install", "rant", "--version", "0.0.17"]).fails();
+    expect_match(&r.err, "rant 0[.]0[.]17 has nothing to install on this machine, add it to a package with `rant add rant`");
+    let r = t.rant(&["install", "rant", "--version", "0.0.44"]).ok();
+    expect_match(&r.err, "installed rant 0[.]0[.]44 in [^
+]*home/Arduino/libraries/Rant
+");
+    let r = t.rant(&["install", "rant", "--version", "0.0.44"]).ok();
+    expect_match(&r.err, "rant 0[.]0[.]44 is in the Arduino sketchbook already");
+    let r = t.rant(&["ls", "libraries", "rant"]).ok();
+    expect_match(&r.out, "rant +arduino +0[.]0[.]44 +sketchbook");
+    let r = t.rant(&["update", "rant"]).ok();
+    expect_match(&r.out, r"^rant [0-9.]+
+  (everything here is at [0-9.]+ or newer|[^
+]*arduino: 0[.]0[.]44 -> )");
+    let r = t.rant(&["remove", "rant"]).ok();
+    expect_match(&r.err, "removed rant from [^
+]*home/Arduino/libraries/Rant
+");
+    assert!(!exists(&format!("{}/Arduino/libraries/Rant", t.home)), "rant remove left the sketchbook copy");
 
     // A release that carries a skill gives it to the agents found, and remove takes it back.
     mkdir(&format!("{}/.claude", t.home));

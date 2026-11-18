@@ -1,7 +1,6 @@
 //! Where packages take each library from and at which version. Build files are matched by
 //! pattern, never parsed, so hand edits work within reason.
 
-use std::cell::LazyCell;
 use std::path::{Path, PathBuf};
 
 use rant_config::discover;
@@ -10,8 +9,7 @@ use rant_config::python::{self, Folder};
 use rant_config::scan::NodeKind;
 use regex::Regex;
 
-use super::arduino::Book;
-use super::{DEFAULT_LIBRARY, Kind, Library, arduino, icase, plcnext, read};
+use super::{DEFAULT_LIBRARY, Kind, Library, arduino, icase, machine, plcnext, read};
 use crate::cmake;
 
 /// One place a package takes a library from. how says which, such as "CPM", "venv" or "Cargo
@@ -356,11 +354,6 @@ pub fn cargo_use(text: &str, lib: &Library) -> Option<Use> {
 /// The uses of each library in one folder. adding counts any Python file, so a library can be
 /// added to it, else Python counts that lists it, holds it, or imports rant for the default.
 pub fn in_folder(dir: &Path, libs: &[Library], adding: bool) -> Vec<Use> {
-    uses_in(dir, libs, adding, &LazyCell::new(Book::load as fn() -> Book))
-}
-
-/// in_folder with the sketchbook read at most once, however many folders share it.
-fn uses_in(dir: &Path, libs: &[Library], adding: bool, book: &LazyCell<Book>) -> Vec<Use> {
     let mut out = Vec::new();
     let mut found = |u: Option<Use>, file: &Path| {
         if let Some(mut u) = u {
@@ -389,30 +382,21 @@ fn uses_in(dir: &Path, libs: &[Library], adding: bool, book: &LazyCell<Book>) ->
             found(plcnext::workspace_use(&read(&pcwex), lib), &pcwex);
         }
     }
-    if arduino::is_sketch(dir) {
-        out.extend(libs.iter().filter_map(|lib| book.use_in(dir, lib)));
-    }
-    if plcnext::is_project(dir) {
-        let folders = plcnext::folders();
-        out.extend(libs.iter().filter(|l| l.supports(Kind::Engineer)).filter_map(|lib| plcnext::user_use(dir, lib, &folders)));
-    }
     let python: Vec<&Library> = libs.iter().filter(|l| l.supports(Kind::Python)).collect();
     python_uses(dir, &python, adding, &mut out);
     out
 }
 
 /// The uses in every folder under start, by folder, the walk following the workspace's ignore
-/// globs, then the sketchbook's and Engineer's user libraries. A venv, sketchbook or user library copy
-/// is listed once, under the folder holding it.
+/// globs, then the copies kept once per machine. A venv is listed once, under the folder holding it.
 pub fn under(start: &Path, libs: &[Library]) -> Vec<Use> {
     let walk = discover::folders(start);
     let mut out: Vec<Use> = Vec::new();
-    let (book, folders) = (LazyCell::new(Book::load as fn() -> Book), plcnext::folders());
-    let held_once = |u: &Use| matches!(u.kind, Kind::Arduino | Kind::Engineer) || u.how == "venv";
+    let held_once = |u: &Use| u.how == "venv";
     let listed = |out: &[Use], held: &Path, lib: &str| out.iter().any(|o| held_once(o) && o.file == held && o.library == lib);
     for d in &walk.dirs {
-        for mut u in uses_in(d, libs, false, &book) {
-            if held_once(&u) && (u.how != "venv" || u.venv_exists) {
+        for mut u in in_folder(d, libs, false) {
+            if held_once(&u) && u.venv_exists {
                 if listed(&out, &u.file, &u.library) {
                     continue;
                 }
@@ -433,16 +417,7 @@ pub fn under(start: &Path, libs: &[Library]) -> Vec<Use> {
             out.push(u);
         }
     }
-    for lib in libs {
-        if let Some(u) = book.use_in(book.root(), lib).filter(|u| !listed(&out, &u.file, &lib.name)) {
-            out.push(u);
-        }
-        let copy = lib.supports(Kind::Engineer).then(|| plcnext::user_use(Path::new(""), lib, &folders)).flatten();
-        if let Some(mut u) = copy.filter(|u| !listed(&out, &u.file, &lib.name)) {
-            u.dir = u.file.parent().map(Path::to_path_buf).unwrap_or_default();
-            out.push(u);
-        }
-    }
+    out.extend(machine::copies(libs));
     out.sort_by(|a, b| a.dir.cmp(&b.dir));
     out
 }

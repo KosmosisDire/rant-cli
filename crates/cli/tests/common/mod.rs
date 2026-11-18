@@ -49,11 +49,16 @@ impl Test {
         env.push(("HOME".into(), Some(home.clone())));
         env.push(("XDG_CONFIG_HOME".into(), Some(format!("{home}/.config"))));
         env.push(("RANT_HOME".into(), Some(format!("{home}/.rant"))));
+        // the sketchbook and Engineer's user libraries otherwise fall back to the real Documents
+        env.push(("ARDUINO_DIRECTORIES_USER".into(), Some(format!("{home}/Arduino"))));
+        env.push(("APPDATA".into(), Some(format!("{home}/AppData"))));
         let test = Test { other: format!("{scratch}-other"), rant_home: format!("{home}/.rant"), home, scratch, domain, env };
         test.stop_leftovers();
         remove(&test.scratch);
         remove(&test.other);
         mkdir(&test.scratch);
+        let engineer = format!("<ShellConfiguration>\n  <LibraryPath>{}/Engineer</LibraryPath>\n</ShellConfiguration>\n", test.home);
+        write(&format!("{}/AppData/PHOENIX CONTACT/PLCnext Engineer/test/User.config", test.home), &engineer);
         test.cache_database(&[]);
         write(&test.empty_stdin(), "");
         test
