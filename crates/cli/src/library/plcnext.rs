@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use rant_config::paths;
 use regex::Regex;
 
-use super::{Kind, Library, Use, icase, read};
+use super::{Kind, LOCAL_BUILD, Library, Use, icase, read};
 use crate::context::Context;
 use crate::failure::{Result, failed};
 use crate::files;
@@ -28,6 +28,11 @@ pub fn carried<'r>(r: &'r Release, lib: &Library) -> Option<&'r Asset> {
 
 fn title_of(lib: &Library) -> &str {
     lib.names.plcnext.as_deref().unwrap_or_default()
+}
+
+/// The .pcwlx of a local build: the file, or the newest in a build folder.
+pub fn built(path: &Path) -> Option<PathBuf> {
+    super::built(path, ".pcwlx")
 }
 
 pub fn is_workspace(dir: &Path) -> bool {
@@ -93,13 +98,16 @@ pub fn title(file: &Path) -> Result<String> {
     Ok(name.to_string())
 }
 
+/// What the version file says for a copy placed from a local build, which has no release.
+const LOCAL: &str = "local";
+
 /// The file beside a user library copy holding the version rant placed, since a .pcwlx names none.
 fn version_file(copy: &Path, lib: &Library) -> PathBuf {
     copy.with_file_name(format!("{}.version", lib.name))
 }
 
 /// The copy in Engineer's user libraries, as a use of its folder. Its version is the one every
-/// folder holds, None when they differ or one was placed without rant.
+/// folder holds, None when they differ, one was placed without rant or all came from a local build.
 pub fn user_copy(lib: &Library, folders: &[PathBuf]) -> Option<Use> {
     let title = title_of(lib);
     let copies: Vec<PathBuf> = folders.iter().map(|f| f.join(title).join(format!("{title}.pcwlx"))).filter(|c| c.is_file()).collect();
@@ -108,26 +116,49 @@ pub fn user_copy(lib: &Library, folders: &[PathBuf]) -> Option<Use> {
     let mut u = Use::of(lib, Kind::Engineer, "user libraries");
     (u.dir, u.file) = (first.parent().map(Path::to_path_buf).unwrap_or_default(), first.clone());
     u.version = versions.iter().all(|v| !v.is_empty() && *v == versions[0]).then(|| versions[0].clone());
+    if u.version.as_deref() == Some(LOCAL) {
+        (u.version, u.how) = (None, LOCAL_BUILD);
+    }
     Some(u)
+}
+
+fn user_folders() -> Result<Vec<PathBuf>> {
+    let folders = folders();
+    if folders.is_empty() {
+        return Err(failed("PLCnext Engineer runs only on Windows, so its user libraries are not here"));
+    }
+    Ok(folders)
 }
 
 /// Copies the release's library into each of Engineer's user library folders as title/title.pcwlx,
 /// in place of the copy there, so every project that took it keeps its path. Returns the copies.
 pub fn install(ctx: &Context, home: &Path, lib: &Library, r: &Release) -> Result<Vec<PathBuf>> {
-    let folders = folders();
-    if folders.is_empty() {
-        return Err(failed("PLCnext Engineer runs only on Windows, so its user libraries are not here"));
-    }
+    let folders = user_folders()?;
     let download = fetch(ctx, home, lib, r)?;
-    let file = download.file().expect("a download");
+    place(&folders, download.file().expect("a download"), lib, &r.version)
+}
+
+/// The same from a local build's file. Returns the copies.
+pub fn install_local(lib: &Library, built: &Path) -> Result<Vec<PathBuf>> {
+    let folders = user_folders()?;
+    place_checked(&folders, built, lib)
+}
+
+fn place_checked(folders: &[PathBuf], file: &Path, lib: &Library) -> Result<Vec<PathBuf>> {
+    check(file, lib, &paths::slash(file))?;
+    place(folders, file, lib, LOCAL)
+}
+
+fn place(folders: &[PathBuf], file: &Path, lib: &Library, version: &str) -> Result<Vec<PathBuf>> {
     let mut placed = Vec::new();
-    for f in &folders {
+    for f in folders {
         let dir = f.join(title_of(lib));
         let target = dir.join(format!("{}.pcwlx", title_of(lib)));
         std::fs::create_dir_all(&dir).map_err(|e| failed(format!("cannot create {}: {e}", paths::slash(&dir))))?;
         put(file, &target)?;
         let v = version_file(&target, lib);
-        std::fs::write(&v, format!("{}\n", r.version)).map_err(|e| failed(format!("cannot write {}: {e}", paths::slash(&v))))?;
+        std::fs::write(&v, format!("{version}
+")).map_err(|e| failed(format!("cannot write {}: {e}", paths::slash(&v))))?;
         placed.push(target);
     }
     Ok(placed)
@@ -151,15 +182,21 @@ pub fn uninstall(lib: &Library) -> Result<Vec<PathBuf>> {
     Ok(removed)
 }
 
+/// Refuses a file whose title is not the one package.rant names.
+fn check(file: &Path, lib: &Library, name: &str) -> Result<()> {
+    let title = title(file)?;
+    if title != title_of(lib) {
+        return Err(failed(format!("{name} holds the Engineer library {title}, not the {} its package.rant names", title_of(lib))));
+    }
+    Ok(())
+}
+
 /// Downloads the release's library, refused when its title is not the one package.rant names.
 fn fetch(ctx: &Context, home: &Path, lib: &Library, r: &Release) -> Result<Download> {
     let name = file_name(&lib.name, &r.version);
     let Some(asset) = carried(r, lib) else { return Err(failed(format!("{} {} carries no {name}", lib.name, r.version))) };
     let download = Download::new(ctx, home, Some(asset))?;
-    let title = title(download.file().expect("a download"))?;
-    if title != title_of(lib) {
-        return Err(failed(format!("{name} holds the Engineer library {title}, not the {} its package.rant names", title_of(lib))));
-    }
+    check(download.file().expect("a download"), lib, &name)?;
     Ok(download)
 }
 
@@ -352,5 +389,40 @@ mod tests {
         assert_eq!(user_copy(&lib, &folders).unwrap().version, None);
         assert!(title(&library(&t, "bad.pcwlx", "../x")).is_err());
         assert_eq!(title(&library(&t, "good.pcwlx", "Rant")).unwrap(), "Rant");
+    }
+
+    #[test]
+    fn a_local_build_is_placed_as_a_local_copy_and_a_wrong_title_refused() {
+        let t = Scratch::new("pcwlx-local");
+        let lib = plcnext();
+        let folders = vec![t.path("a"), t.path("b")];
+        let file = library(&t, "plcnext/bin/Rant.pcwlx", "Rant");
+        t.write("a/Rant/Rant.pcwlx", "old");
+        let placed = place_checked(&folders, &file, &lib).unwrap();
+        assert_eq!(placed, vec![t.path("a/Rant/Rant.pcwlx"), t.path("b/Rant/Rant.pcwlx")]);
+        assert_eq!(std::fs::read(&placed[0]).unwrap(), std::fs::read(&file).unwrap());
+        let u = user_copy(&lib, &folders).unwrap();
+        assert_eq!((u.version, u.how), (None, crate::library::LOCAL_BUILD));
+        assert_eq!(std::fs::read_to_string(t.path("b/Rant/plcnext.version")).unwrap(), "local
+");
+        // a release placed after it is a plain versioned copy again
+        place(&folders, &file, &lib, "0.0.3").unwrap();
+        let u = user_copy(&lib, &folders).unwrap();
+        assert_eq!((u.version.as_deref(), u.how), (Some("0.0.3"), "user libraries"));
+        let wrong = library(&t, "other/Other.pcwlx", "Other");
+        assert!(place_checked(&folders, &wrong, &lib).unwrap_err().messages().join(" ").contains("holds the Engineer library Other"));
+    }
+
+    #[test]
+    fn a_build_folder_gives_its_newest_pcwlx() {
+        let t = Scratch::new("pcwlx-built");
+        assert_eq!(built(&t.path("plcnext")), None);
+        t.write("plcnext/notes.txt", "x");
+        let old = library(&t, "plcnext/bin/Old.pcwlx", "Rant");
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        let new = library(&t, "plcnext/bin/Rant.pcwlx", "Rant");
+        assert_eq!(built(&t.path("plcnext")), Some(new.clone()));
+        assert_eq!(built(&old), Some(old));
+        assert_eq!(built(&t.path("plcnext/notes.txt")), None);
     }
 }

@@ -8,7 +8,7 @@ use rant_config::paths;
 use super::moves::{Fetches, changes};
 use super::{Kind, Library, MACHINE, Use, arduino, plcnext};
 use crate::context::Context;
-use crate::failure::Result;
+use crate::failure::{Result, failed};
 use crate::github::Release;
 use crate::packages::skills;
 
@@ -65,12 +65,47 @@ pub(super) fn place_in(ctx: &Context, home: &Path, lib: &Library, r: &Release, k
     Ok(any)
 }
 
+/// Puts a local build where each kind keeps it: a file a release would carry, or a build folder
+/// holding one. A kind whose file the path lacks is skipped, and none at all is refused.
+pub fn install_local(ctx: &Context, lib: &Library, path: &Path) -> Result<()> {
+    let from = paths::slash(path);
+    let mut kinds = Vec::new();
+    for k in MACHINE.into_iter().filter(|&k| lib.supports(k)) {
+        let file = match k {
+            Kind::Arduino => arduino::built(path),
+            _ => plcnext::built(path),
+        };
+        if let Some(file) = file {
+            kinds.push((k, file));
+        }
+    }
+    if kinds.is_empty() {
+        return Err(failed(format!("{from} holds no {} file for this machine: a .pcwlx or a -arduino.zip, or a folder with one in it, its bin or its dist", lib.name)));
+    }
+    let mut fetches = Fetches::default();
+    for (k, file) in &kinds {
+        let placed: Vec<PathBuf> = match k {
+            Kind::Arduino => arduino::install_local(ctx, lib, file)?.into_iter().collect(),
+            _ => plcnext::install_local(lib, file)?,
+        };
+        for at in &placed {
+            ctx.out.note(&format!("installed {} from {} in {}", lib.name, paths::slash(file), paths::slash(at)));
+        }
+        if !placed.is_empty() {
+            fetches.after(*k);
+        }
+    }
+    fetches.notes(ctx);
+    Ok(())
+}
+
 /// Installs the library where each kind keeps it, unless the copy there is at the release or newer,
 /// then offers its skill. asked may move one back.
 pub fn install(ctx: &Context, home: &Path, lib: &Library, r: &Release, kinds: &[Kind], asked: bool) -> Result<()> {
     let mut moving = Vec::new();
     for &k in kinds {
         match copy(lib, k) {
+            Some(u) if u.how == super::LOCAL_BUILD && !asked => ctx.out.note(&format!("{} in {} is a local build, so it stays, `--version` replaces it", lib.name, place(k).0)),
             Some(u) if !changes(&u, r, asked) => match u.version.filter(|v| *v != r.version) {
                 Some(newer) => ctx.out.note(&format!("{} {newer} in {} is newer than the release {}, so it stays", lib.name, place(k).0, r.version)),
                 None => ctx.out.note(&format!("{} {} is in {} already", lib.name, r.version, place(k).0)),

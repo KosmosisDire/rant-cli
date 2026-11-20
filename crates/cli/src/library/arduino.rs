@@ -18,6 +18,11 @@ pub fn zip_name(library: &str, version: &str) -> String {
     format!("{library}-{version}-arduino.zip")
 }
 
+/// The zip of a local build: the file, or the newest in a build folder.
+pub fn built(path: &Path) -> Option<PathBuf> {
+    super::built(path, "-arduino.zip")
+}
+
 /// The library's zip in the release, None when the release has no Arduino library.
 pub fn carried<'r>(r: &'r Release, lib: &Library) -> Option<&'r Asset> {
     r.asset(&zip_name(&lib.name, &r.version))
@@ -126,11 +131,20 @@ impl Book {
 pub fn install(ctx: &Context, home: &Path, lib: &Library, r: &Release) -> Result<Option<PathBuf>> {
     let name = zip_name(&lib.name, &r.version);
     let Some(asset) = carried(r, lib) else { return Err(failed(format!("{} {} carries no {name}", lib.name, r.version))) };
+    let download = Download::new(ctx, home, Some(asset))?;
+    install_zip(ctx, download.file().expect("a download"), lib, &name)
+}
+
+/// The same from a local build's zip.
+pub fn install_local(ctx: &Context, lib: &Library, zip_file: &Path) -> Result<Option<PathBuf>> {
+    install_zip(ctx, zip_file, lib, &paths::slash(zip_file))
+}
+
+fn install_zip(ctx: &Context, zip_file: &Path, lib: &Library, name: &str) -> Result<Option<PathBuf>> {
     let Some(book) = sketchbook() else { return Err(failed("cannot tell where the Arduino sketchbook is, set ARDUINO_DIRECTORIES_USER")) };
     let libraries = book.join("libraries");
-    let download = Download::new(ctx, home, Some(asset))?;
     let staging = libraries.join(format!(".rant-{}", files::stamp()));
-    let placed = place(download.file().expect("a download"), &staging, &libraries, lib, &name);
+    let placed = place(zip_file, &staging, &libraries, lib, name);
     let _ = std::fs::remove_dir_all(&staging);
     if let Ok(None) = placed {
         ctx.out.note(&format!("the {} in {} is a link, so rant leaves it", lib.name, paths::slash(&libraries)));

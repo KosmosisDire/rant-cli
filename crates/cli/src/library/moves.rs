@@ -144,9 +144,9 @@ fn lacks(u: &Use, r: &Release) -> Option<String> {
 
 /// A use the release would change. An unpinned pyproject dependency takes what its venv has,
 /// and an unpinned Cargo one what its source has, and Arduino and Engineer need the release's
-/// file. Only a version asked for moves one back.
+/// file. Only a version asked for moves one back, and a copy of a local build stays unless asked.
 pub(super) fn changes(u: &Use, r: &Release, asked: bool) -> bool {
-    if lacks(u, r).is_some() || !u.wanted || u.version.as_deref() == Some(r.version.as_str()) || (matches!(u.how, "pyproject" | "Cargo") && u.version.is_none()) {
+    if (u.how == super::LOCAL_BUILD && !asked) || lacks(u, r).is_some() || !u.wanted || u.version.as_deref() == Some(r.version.as_str()) || (matches!(u.how, "pyproject" | "Cargo") && u.version.is_none()) {
         return false;
     }
     asked || u.version.as_ref().is_none_or(|v| !github::newer(v, &r.version))

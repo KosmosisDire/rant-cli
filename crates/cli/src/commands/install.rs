@@ -1,17 +1,18 @@
-//! `rant install`: packages by name from the sources, from a repo by its link, or from a local
-//! build folder or archive with --from. None named on a terminal is a checklist.
+//! `rant install`: packages and libraries by name from the sources, from a repo by its link, or
+//! from a local build with --from. None named on a terminal is a checklist.
 
 use std::io::IsTerminal;
 
 use rant_config::database;
 use rant_config::home::{self, AgentSkills};
+use rant_config::package::PACKAGE_FILE;
 
 use crate::agents;
 use crate::context::Context;
 use crate::failure::{Failure, Result, failed, usage};
 use crate::github;
 use crate::library::{self, Kind, arduino, plcnext};
-use crate::packages::sources::{Offer, Sources, carried, from_repo};
+use crate::packages::sources::{Offer, Sources, carried, from_repo, named, read_text};
 use crate::packages::vsix::{self, Wanted};
 use crate::packages::{self, Source, skills};
 use crate::pick::{self, Choice, Picked};
@@ -24,7 +25,7 @@ pub struct Args {
     /// with one package: this release instead of the newest
     #[arg(long, value_name = "V")]
     pub version: Option<String>,
-    /// with one package: a local build folder, linked, or a .tar.gz archive, instead of its source
+    /// with one package or library: a local build instead of its source. A package takes a build folder, linked, or a .tar.gz archive. A library takes its file (.pcwlx or -arduino.zip) or a build folder holding one, in the folder, its bin or its dist
     #[arg(long, value_name = "PATH")]
     pub from: Option<String>,
     /// for a VS Code extension: the editor's command line program, default `code`, such as `cursor`
@@ -41,6 +42,15 @@ impl Args {
     }
 }
 
+/// Whether a --from path holds a library: a folder whose package.rant has a library block, or a
+/// file a library release carries.
+fn holds_library(path: &std::path::Path) -> bool {
+    if path.is_dir() {
+        return named(path, "", read_text(&path.join(PACKAGE_FILE))).is_ok_and(|(_, p)| p.library.is_some());
+    }
+    path.file_name().is_some_and(|n| n.to_string_lossy().ends_with(".pcwlx") || n.to_string_lossy().ends_with(".zip"))
+}
+
 /// The source a word names: a package through the sources, a repo by its link, or --from.
 fn source_of(ctx: &Context, args: &Args, sources: &mut Option<Sources>, word: &str) -> Result<Source> {
     let repo = if database::is_name(word) { None } else { database::repo_of(word) };
@@ -51,7 +61,18 @@ fn source_of(ctx: &Context, args: &Args, sources: &mut Option<Sources>, word: &s
         if repo.is_some() {
             return Err(usage("--from takes the name of the package it holds, not a repo"));
         }
-        return Ok(Source { name: word.into(), repo: String::new(), path: ctx.cwd()?.join(from), named_by: "--from".into(), library: None });
+        let path = ctx.cwd()?.join(from);
+        if !holds_library(&path) {
+            return Ok(Source { name: word.into(), repo: String::new(), path, named_by: "--from".into(), library: None });
+        }
+        // the sources give the library its repo and names, --from only the build to place
+        if sources.is_none() {
+            *sources = Some(Sources::new(ctx.home()?)?);
+        }
+        return match sources.as_mut().expect("just made").find(word)? {
+            Some(s) if s.library.is_some() => Ok(Source { path, named_by: "--from".into(), ..s }),
+            _ => Err(failed(format!("no library `{word}` in config.rant or the package databases for {} to install", rant_config::paths::slash(&path)))),
+        };
     }
     if let Some(r) = repo {
         return from_repo(&r);
@@ -69,10 +90,13 @@ fn source_of(ctx: &Context, args: &Args, sources: &mut Option<Sources>, word: &s
     }
 }
 
-/// Installs a library where this machine keeps it for every project, refused when its release
-/// carries nothing kept so.
+/// Installs a library where this machine keeps it for every project, from a local build with --from,
+/// refused when its release carries nothing kept so.
 fn install_library(ctx: &Context, home: &std::path::Path, s: &Source, version: &str) -> Result<()> {
     let lib = library::of(s)?;
+    if s.named_by == "--from" {
+        return library::install_local(ctx, &lib, &s.path);
+    }
     let r = github::release(&lib.repo, version)?;
     let kinds = library::carried(&lib, &r);
     if kinds.is_empty() {
