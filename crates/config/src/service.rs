@@ -1,5 +1,6 @@
 //! Services: `service "Hmi" { project = "hmi" }` blocks in workspace.rant, or services.rant in
 //! rant's home, which a bare `rant run` starts and every boot once the workspace is enabled.
+//! A block takes what an include does: its group's params, placement and `restart`.
 
 use std::collections::BTreeMap;
 use std::ops::Range;
@@ -11,10 +12,12 @@ use hcl_edit::Span;
 
 use crate::diag::Diag;
 use crate::eval::{self, Scope};
-use crate::group::{GroupDef, Groups};
+use crate::group::{self, GroupDef, Groups};
 use crate::model::Model;
 use crate::param::{self, ParamType};
 use crate::paths;
+use crate::placement::Placement;
+use crate::plan::{Instance, Restart};
 use crate::source::{Fields, Loc, Source, one_label};
 
 /// The file in rant's home that lists its services.
@@ -38,8 +41,11 @@ pub struct Checked {
     pub full: String,
     /// Its params as key=value words, in the block's order.
     pub words: Vec<String>,
-    /// Every param the run resolves, defaults included, which tells two runs of a group apart.
+    /// Every param the run resolves, defaults included, and the placement and restart the block
+    /// sets, which tell two runs of a group apart.
     pub values: BTreeMap<String, Value>,
+    /// The nodes it starts.
+    pub nodes: Vec<Instance>,
 }
 
 /// The service blocks among a file's fields.
@@ -52,7 +58,7 @@ fn read(src: &Source, b: &Block, scope: &Scope) -> Result<Service, Diag> {
     let mut values: Vec<(String, Value, Loc)> = Vec::new();
     for s in b.body.iter() {
         match s {
-            Structure::Block(inner) => return Err(src.diag_at(inner, "a service holds only param values of its group")),
+            Structure::Block(inner) => return Err(src.diag_at(inner, "a service holds only its group's param values, placement and `restart`")),
             Structure::Attribute(a) => {
                 let key = a.key.as_str();
                 if values.iter().any(|(k, ..)| k == key) {
@@ -77,15 +83,45 @@ impl Service {
         let mut words = Vec::new();
         let mut given = BTreeMap::new();
         for (key, v, at) in &self.values {
+            if group::shared_keys().contains(&key.as_str()) {
+                group::apply_shared(key, v, &mut Placement::default(), &mut Restart::Never).map_err(|m| at.diag(m))?;
+                words.push(format!("{key}={}", param::text(v)));
+                given.insert(key.clone(), v.clone());
+                continue;
+            }
             let p = iface.iter().find(|p| p.name == *key).ok_or_else(|| at.diag(format!("group `{}` has no param `{key}`", file.name)))?;
             let v = param::checked(p, v.clone()).map_err(|m| at.diag(m))?;
             words.push(format!("{key}={}", param::text(&v)));
             given.insert(key.clone(), param::placed(p, v, root));
         }
         let located = |d: Diag| if d.has_place() { d } else { self.at.diag(d.message) };
-        let (_, values) = groups.plan(&def, given).map_err(located)?;
-        Ok(Checked { full: file.name.clone(), words, values })
+        let (plan, values) = groups.plan(&def, given).map_err(located)?;
+        Ok(Checked { full: file.name.clone(), words, values, nodes: plan.instances })
     }
+}
+
+/// Every service checked. A service that starts a node of the same name as an earlier one, set
+/// up another way, fails at its line, since one workspace runs one node of a name.
+pub(crate) fn check_all(model: &Model, groups: &Groups) -> Vec<Result<Checked, Diag>> {
+    let services = &model.settings.services;
+    let mut out: Vec<Result<Checked, Diag>> = Vec::new();
+    for s in services {
+        let checked = s.check(model, groups).and_then(|c| {
+            for (earlier, done) in services.iter().zip(&out) {
+                let Ok(e) = done else { continue };
+                if let Some(n) = c.nodes.iter().find(|n| e.nodes.iter().any(|m| m.name == n.name && m != *n)) {
+                    return Err(s.at.diag(format!(
+                        "node `{}` also starts from the service on line {}, set `node_prefix` in one of them to tell them apart",
+                        n.name,
+                        earlier.at.line()
+                    )));
+                }
+            }
+            Ok(c)
+        });
+        out.push(checked);
+    }
+    out
 }
 
 /// Adds a block for a group started with these params to the file that lists the services,
@@ -220,7 +256,7 @@ mod tests {
     fn checked(t: &TestDir) -> Vec<Result<Checked, Diag>> {
         let m = model(t);
         let groups = Groups::new(&m);
-        m.settings.services.iter().map(|s| s.check(&m, &groups)).collect()
+        check_all(&m, &groups)
     }
 
     #[test]
@@ -243,6 +279,31 @@ mod tests {
         assert_eq!(err(2).line, 6);
         assert!(err(2).message.contains("no group named `Nope`"), "{}", err(2).message);
         assert_eq!((err(3).line, err(3).message.as_str()), (8, "group `hmi/Hmi` has no param `colour`"));
+    }
+
+    #[test]
+    fn a_service_takes_what_an_include_does() {
+        let t = workspace_with("service \"Hmi\" {\n  project = \"a\"\n}\nservice \"Hmi\" {\n  project     = \"b\"\n  domain      = 3\n  node_prefix = \"d3\"\n  restart     = \"always\"\n}\n");
+        let all = checked(&t);
+        let c = all[1].as_ref().unwrap();
+        assert_eq!(c.words, ["project=b", "domain=3", "node_prefix=d3", "restart=always"]);
+        assert_eq!(c.nodes[0].name, "d3/hmi");
+        assert_eq!(c.nodes[0].env["RANT_DOMAIN"], "3");
+        assert_eq!(c.nodes[0].restart, Restart::Always);
+        assert_eq!(c.values["domain"], Value::from(3));
+        let t = workspace_with("service \"Hmi\" {\n  project = \"a\"\n  domain  = -1\n}\n");
+        let err = checked(&t).remove(0).err().unwrap();
+        assert_eq!((err.line, err.message.as_str()), (3, "`domain` is a number from 0 to 65535"));
+    }
+
+    #[test]
+    fn two_services_of_one_node_name_are_told_apart() {
+        let t = workspace_with("service \"Hmi\" {\n  project = \"a\"\n}\n\nservice \"Hmi\" {\n  project = \"a\"\n  domain  = 3\n}\n");
+        let all = checked(&t);
+        assert!(all[0].is_ok());
+        let err = all[1].as_ref().err().unwrap();
+        assert_eq!(err.line, 5);
+        assert_eq!(err.message, "node `hmi` also starts from the service on line 1, set `node_prefix` in one of them to tell them apart");
     }
 
     #[test]
@@ -271,6 +332,9 @@ mod tests {
         assert!(add_words(&t, &[("project", Value::from("C:/elsewhere/a \"b\" ${c}"))]));
         let c = checked(&t).remove(1).unwrap();
         assert_eq!(c.words, ["project=C:/elsewhere/a \"b\" ${c}"]);
+        assert!(add_words(&t, &[("project", Value::from("x")), ("domain", Value::from(3)), ("node_prefix", Value::from("d3"))]));
+        let text = std::fs::read_to_string(t.path("workspace.rant")).unwrap();
+        assert!(text.ends_with("service \"Hmi\" {\r\n  project     = \"x\"\r\n  domain      = 3\r\n  node_prefix = \"d3\"\r\n}\r\n"), "{text}");
     }
 
     #[test]

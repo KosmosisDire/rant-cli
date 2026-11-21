@@ -182,7 +182,7 @@ fn prepare(settings: &Settings, gp: GroupPlan, seen: &mut State, peers: &[Peer],
         if let Some(running) = seen.instance(&inst.name) {
             if !same_spec(running, inst) {
                 return Err(failed(format!(
-                    "`{}` is already running with other settings for {}, stop it first or give one of them another name",
+                    "`{}` is already running with other settings for {}, stop it first or tell them apart with `node_prefix` or `name`",
                     inst.name, running.roots[0]
                 )));
             }

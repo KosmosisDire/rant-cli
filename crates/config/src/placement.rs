@@ -39,31 +39,37 @@ impl Placement {
     /// The placement attributes among attrs, evaluated in scope and checked as Rant would.
     pub fn read(src: &Source, attrs: &[&Attribute], scope: &Scope) -> Result<Placement, Diag> {
         let mut out = Placement::default();
-        for a in attrs {
-            match a.key.as_str() {
-                "domain" => {
-                    let v = eval::value(src, a, scope)?;
-                    let d = match &v {
-                        Value::Number(n) => n.as_u64().filter(|d| *d <= 65535),
-                        _ => None,
-                    };
-                    out.domain = Some(d.ok_or_else(|| src.diag_at(&a.value, "`domain` is a number from 0 to 65535"))? as u16);
-                }
-                key @ ("prefix" | "node_prefix") => {
-                    let p = eval::string(src, a, scope)?;
-                    if p.is_empty() || p.contains('@') || p.starts_with('/') || p.ends_with('/') {
-                        return Err(src.diag_at(&a.value, format!("`{key}` cannot be empty, contain @, or start or end with /")));
-                    }
-                    if key == "prefix" {
-                        out.prefix.push(p);
-                    } else {
-                        out.node_prefix.push(p);
-                    }
-                }
-                _ => {}
-            }
+        for a in attrs.iter().filter(|a| KEYS.contains(&a.key.as_str())) {
+            let v = eval::value(src, a, scope)?;
+            out.set(a.key.as_str(), &v).map_err(|m| src.diag_at(&a.value, m))?;
         }
         Ok(out)
+    }
+
+    /// Sets one of KEYS from its value, checked as Rant would.
+    pub(crate) fn set(&mut self, key: &str, v: &Value) -> Result<(), String> {
+        match key {
+            "domain" => {
+                let d = match v {
+                    Value::Number(n) => n.as_u64().filter(|d| *d <= 65535),
+                    _ => None,
+                };
+                self.domain = Some(d.ok_or("`domain` is a number from 0 to 65535")? as u16);
+            }
+            _ => {
+                let Value::String(p) = v else { return Err(format!("`{key}` must be a string, found {}", eval::type_name(v))) };
+                if p.is_empty() || p.contains('@') || p.starts_with('/') || p.ends_with('/') {
+                    return Err(format!("`{key}` cannot be empty, contain @, or start or end with /"));
+                }
+                let p = p.clone();
+                if key == "prefix" {
+                    self.prefix.push(p);
+                } else {
+                    self.node_prefix.push(p);
+                }
+            }
+        }
+        Ok(())
     }
 
     /// This placement with one set further in.

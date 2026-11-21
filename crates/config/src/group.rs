@@ -92,9 +92,9 @@ enum Item {
     Node(Block),
 }
 
-/// The keys a group file, an include and a node block share: where its nodes land and
-/// whether they start again.
-fn shared_keys() -> Vec<&'static str> {
+/// The keys a group file, an include, a node block and a run of a group share: where its
+/// nodes land and whether they start again.
+pub(crate) fn shared_keys() -> Vec<&'static str> {
     [&placement::KEYS[..], &[Restart::KEY][..]].concat()
 }
 
@@ -103,10 +103,32 @@ fn node_keys() -> Vec<&'static str> {
     [&["name", "args", "env", "remap"][..], &shared_keys()[..]].concat()
 }
 
+const RESTART_VALUES: &str = "`restart` is \"never\", \"on-failure\" or \"always\"";
+
 /// A `restart` value, checked.
 fn read_restart(src: &Source, a: &Attribute, scope: &Scope) -> Result<Restart, Diag> {
-    Restart::parse(&eval::string(src, a, scope)?)
-        .ok_or_else(|| src.diag_at(&a.value, "`restart` is \"never\", \"on-failure\" or \"always\""))
+    Restart::parse(&eval::string(src, a, scope)?).ok_or_else(|| src.diag_at(&a.value, RESTART_VALUES))
+}
+
+/// Applies one of shared_keys, given to a run of a group, as an include's would apply.
+pub(crate) fn apply_shared(key: &str, v: &Value, place: &mut Placement, restart: &mut Restart) -> Result<(), String> {
+    if key != Restart::KEY {
+        return place.set(key, v);
+    }
+    *restart = match v {
+        Value::String(s) => Restart::parse(s),
+        _ => None,
+    }
+    .ok_or(RESTART_VALUES)?;
+    Ok(())
+}
+
+/// A shared key's value as a command line word gives it: a domain as a number.
+pub(crate) fn shared_word(key: &str, raw: &str) -> Value {
+    match raw.parse::<u64>() {
+        Ok(n) if key == "domain" => Value::from(n),
+        _ => Value::from(raw),
+    }
 }
 
 /// A parsed group file. Expressions stay unevaluated until the group is expanded.
@@ -302,9 +324,16 @@ impl<'m> Groups<'m> {
         Ok(params)
     }
 
-    /// The flat plan for a group started with `given`. Instances come depth first in the
-    /// order the files write them, and one name twice is merged when both are the same.
+    /// The flat plan for a group started with `given`, its params and any shared keys, which
+    /// place it as an include's would. Instances come depth first in the order the files write
+    /// them, and one name twice is merged when both are the same.
     pub fn plan(&self, def: &GroupDef, given: BTreeMap<String, Value>) -> Result<(Plan, BTreeMap<String, Value>), Diag> {
+        let (shared, given): (BTreeMap<String, Value>, BTreeMap<String, Value>) =
+            given.into_iter().partition(|(k, _)| shared_keys().contains(&k.as_str()));
+        let (mut chain, mut restart) = (Placement::default(), Restart::Never);
+        for (k, v) in &shared {
+            apply_shared(k, v, &mut chain, &mut restart).map_err(Diag::plain)?;
+        }
         let iface = self.interface(def)?;
         for name in given.keys() {
             if !iface.iter().any(|p| p.name == *name) {
@@ -312,9 +341,11 @@ impl<'m> Groups<'m> {
             }
         }
         let help = format!(", see `rant run {} --help`", def.file.name);
-        let values = param::bind(&iface, given, &|m| Diag::plain(format!("{m}{help}")), "")?;
+        let mut values = param::bind(&iface, given, &|m| Diag::plain(format!("{m}{help}")), "")?;
         let mut found = Vec::new();
-        self.expand(def, &iface, &values, &Placement::default(), Restart::Never, &mut found)?;
+        self.expand(def, &iface, &values, &chain, restart, &mut found)?;
+        // a param is never named as a shared key, so these tell runs apart with the params
+        values.extend(shared);
 
         let mut plan = Plan::default();
         let mut origins: Vec<Loc> = Vec::new();

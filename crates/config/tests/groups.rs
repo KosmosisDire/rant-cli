@@ -373,3 +373,20 @@ fn services_are_checked_added_and_removed() {
     let groups: Vec<String> = load(&t).services().iter().map(|s| s.service.group.clone()).collect();
     assert_eq!(groups, ["nav", "cameras"]);
 }
+
+#[test]
+fn a_run_takes_placement_and_restart_as_an_include_does() {
+    let t = workspace_with(&[("drivers/launch/front.run", "  include \"cameras\" {
+    side = \"left\"
+  }
+")]);
+    let ws = load(&t);
+    let p = plan(&ws, "drivers/front", &["domain=3", "node_prefix=d3", "prefix=cell", "restart=always"]).unwrap();
+    let i = &p.plan.instances[0];
+    assert_eq!(i.name, "d3/camera_left");
+    assert_eq!((i.env["RANT_DOMAIN"].as_str(), i.env["RANT_PREFIX"].as_str()), ("3", "cell"));
+    assert_eq!(i.restart, rant_config::plan::Restart::Always);
+    assert_eq!(p.values["domain"], rant_config::Value::from(3));
+    assert_eq!(plan(&ws, "drivers/front", &["domain=x"]).unwrap_err().message, "`domain` is a number from 0 to 65535");
+    assert!(plan(&ws, "drivers/front", &["restart=often"]).unwrap_err().message.starts_with("`restart` is"));
+}

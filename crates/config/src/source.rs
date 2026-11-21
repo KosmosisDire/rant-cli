@@ -138,6 +138,10 @@ impl Loc {
         Diag::new(&self.file, self.line, self.column, message)
     }
 
+    pub fn line(&self) -> u32 {
+        self.line
+    }
+
     pub fn shown(&self) -> String {
         format!("{}:{}:{}", crate::paths::slash(&self.file), self.line, self.column)
     }

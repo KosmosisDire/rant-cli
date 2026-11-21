@@ -9,7 +9,7 @@ use hcl::Value;
 
 use crate::build_plan::{self, BuildPlan};
 use crate::diag::Diag;
-use crate::group::{GroupDef, GroupFile, Groups};
+use crate::group::{self, GroupDef, GroupFile, Groups};
 use crate::model::{Model, NodeType};
 use crate::param::{self, Param};
 use crate::paths;
@@ -108,8 +108,8 @@ impl Workspace {
 
     pub fn services(&self) -> Vec<ServiceCheck<'_>> {
         let groups = Groups::new(&self.model);
-        let check = |service| ServiceCheck { service, checked: service.check(&self.model, &groups) };
-        self.model.settings.services.iter().map(check).collect()
+        let checks = service::check_all(&self.model, &groups);
+        self.model.settings.services.iter().zip(checks).map(|(service, checked)| ServiceCheck { service, checked }).collect()
     }
 
     /// Adds a service block for a group started with `key=value` words to the file that lists
@@ -142,10 +142,20 @@ impl Workspace {
         Ok((def, params))
     }
 
-    /// A group and the values `key=value` words give its params, a path counted from here.
+    /// A group and the values `key=value` words give its params and the keys an include
+    /// takes, a path counted from here.
     fn group_given(&self, groups: &Groups, reference: &str, words: &[String]) -> Result<(Rc<GroupDef>, Given), Diag> {
         let (def, params) = self.group_def(groups, reference)?;
-        let given = param::from_words(&params, &def.file.name, words, &self.here)?;
+        let is_shared = |w: &String| w.split_once('=').is_some_and(|(k, _)| group::shared_keys().contains(&k));
+        let (shared, own): (Vec<String>, Vec<String>) = words.iter().cloned().partition(is_shared);
+        let mut given = param::from_words(&params, &def.file.name, &own, &self.here)?;
+        for w in &shared {
+            let (k, v) = w.split_once('=').expect("partitioned on it");
+            if given.iter().any(|(n, _)| n == k) {
+                return Err(Diag::plain(format!("`{k}` is given twice")));
+            }
+            given.push((k.to_string(), group::shared_word(k, v)));
+        }
         Ok((def, given))
     }
 }

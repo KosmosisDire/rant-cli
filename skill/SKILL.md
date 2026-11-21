@@ -65,9 +65,9 @@ agent_skills = "auto"                    # give a package's or library's skill u
 | new project | `rant new workspace [folder] --lang cpp\|python\|csharp\|rust` (talker, listener, group) |
 | new package or node | `rant new package [folder] --lang L`, `rant new node [name]`, `rant new group [name]` |
 | build | `rant build [package...]`, `--dry-run` shows order and commands, `--clean` removes the build output first |
-| run | `rant run <Group> key=value...`, one node alone with `rant run node <node>`, `--dry-run` first. It builds first (`--no-build` skips that), waits for the nodes to come up (`--wait S`), watches them a moment (`--watch S`) and fails with the log of one that exited |
+| run | `rant run <Group> key=value...` (also `domain`, `prefix`, `node_prefix` and `restart`, as an include takes), one node alone with `rant run node <node>`, `--dry-run` first. It builds first (`--no-build` skips that), waits for the nodes to come up (`--wait S`), watches them a moment (`--watch S`) and fails with the log of one that exited |
 | stop, restart | `rant stop [name]` and `rant restart [name]` (nothing named: all this workspace started), `rant stop --all` (every node on this machine). restart stops, builds, then starts. A name is the group, else the node, and `rant stop node <node>` takes the node alone. They find a name wherever rant started it on this machine, and fail without a terminal when several workspaces run it |
-| services, at every boot | workspace.rant lists services as `service "Hmi" { project = "line-hmi" }` blocks, a group with its param values. `rant enable [Group key=value...]` runs them now and at every boot (`--login`: at login), asking for admin once. `rant disable [Group]` undoes it. `rant ls services` shows them |
+| services, at every boot | workspace.rant lists services as `service "Hmi" { project = "line-hmi" }` blocks, a group with what an include takes but `expose`. Two services of one group need a `node_prefix` on one. `rant enable [Group key=value...]` runs them now and at every boot (`--login`: at login), asking for admin once. `rant disable [Group]` undoes it. `rant ls services` shows them |
 | node output | `rant log [name...]`, `-f` to follow, `-n N` lines, a group shows all its nodes, `rant log node <node>` the node alone |
 | see the mesh | `rant ls <nodes\|entities\|topics\|variables\|functions\|tasks\|types\|packages\|groups\|sources\|services\|recordings> [pattern]`, `rant ls` alone lists every entity, `rant ls -h` the kinds, `rant ls nodes --no-mesh` for only what this workspace started |
 | explain one thing | `rant info [kind] <name>`, a type shows its fields and who uses it, a node its source file |
@@ -120,6 +120,7 @@ param "speed" {
 include "Arm" {                # another group, package/Arm when unclear, with its param values
   side        = "left"
   node_prefix = "left"
+  expose      = ["reach"]      # Arm's unset reach becomes a param here, true for all of them
 }
 node "planner" {               # the label names the node to run, package/name when unclear
   name  = "planner"            # the name on the mesh, the node's own by default
