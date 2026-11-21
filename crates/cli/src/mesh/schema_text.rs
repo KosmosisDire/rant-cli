@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::{CStr, c_char};
 
-use rant::{Entity, Field, FieldType, Schema};
+use rant::{Entity, Field, SchemaTypeKind, Schema};
 
 use crate::output::{Style, Text};
 
@@ -66,8 +66,8 @@ pub fn types_in_use(entities: &[Entity]) -> BTreeMap<String, TypeUse> {
     out
 }
 
-fn scalar_name(kind: FieldType) -> &'static str {
-    use FieldType::*;
+fn scalar_name(kind: SchemaTypeKind) -> &'static str {
+    use SchemaTypeKind::*;
     match kind {
         U8 => "u8",
         U16 => "u16",
@@ -165,16 +165,16 @@ impl Printer<'_> {
         };
         let faint = |p: &Self, s: &str| p.paint(Style::Faint, s);
         match f.kind {
-            FieldType::Struct => self.struct_type(i),
-            FieldType::String => {
+            SchemaTypeKind::Struct => self.struct_type(i),
+            SchemaTypeKind::String => {
                 let base = format!("{}{}{}{}", self.paint(Style::Amber, "string"), faint(self, "<"), f.str_cap, faint(self, ">"));
                 vec![alias(self, base)]
             }
-            FieldType::VString => vec![alias(self, self.paint(Style::Amber, "string"))],
-            FieldType::Map => vec![alias(self, self.paint(Style::Amber, "map"))],
-            FieldType::Enum => vec![alias(self, self.enum_text(i))],
-            FieldType::Array | FieldType::VArray => {
-                let count = if f.kind == FieldType::Array { f.count.to_string() } else { String::new() };
+            SchemaTypeKind::VString => vec![alias(self, self.paint(Style::Amber, "string"))],
+            SchemaTypeKind::Map => vec![alias(self, self.paint(Style::Amber, "map"))],
+            SchemaTypeKind::Enum => vec![alias(self, self.enum_text(i))],
+            SchemaTypeKind::Array | SchemaTypeKind::VArray => {
+                let count = if f.kind == SchemaTypeKind::Array { f.count.to_string() } else { String::new() };
                 let suffix = format!("{}{count}{}", faint(self, "["), faint(self, "]"));
                 // the element is the next row, any type, a list of lists too
                 let mut elem = self.type_lines(i + 1);

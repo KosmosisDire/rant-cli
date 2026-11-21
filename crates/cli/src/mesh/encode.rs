@@ -1,7 +1,7 @@
 //! Messages built from command line values, field by field through the paths the schema
 //! resolves, on top of the schema's default message.
 
-use rant::{Field, FieldType, MapWriter, MessageBuilder, Schema};
+use rant::{Field, SchemaTypeKind, MapWriter, MessageBuilder, Schema};
 use serde_json::Value;
 
 use super::text::Assignments;
@@ -61,14 +61,14 @@ impl Encoder<'_> {
         let f = self.fields[at as usize].clone();
         let refused = |_| wrong(path, v, "a value that fits it");
         match f.kind {
-            FieldType::Struct => {
+            SchemaTypeKind::Struct => {
                 let Value::Object(o) = v else { return Err(wrong(path, v, "an object of its fields")) };
                 o.iter().try_for_each(|(k, e)| self.set(&join(path, k), e))?;
             }
-            FieldType::Array | FieldType::VArray => {
+            SchemaTypeKind::Array | SchemaTypeKind::VArray => {
                 let Value::Array(items) = v else { return Err(wrong(path, v, "a list")) };
                 let e = self.fields[at as usize + 1].clone();
-                if f.kind == FieldType::Array && items.len() > f.count as usize {
+                if f.kind == SchemaTypeKind::Array && items.len() > f.count as usize {
                     return Err(failed(format!("{} holds at most {} items", shown(path), f.count)));
                 }
                 if is_number(e.kind) && e.size != 0 {
@@ -80,7 +80,7 @@ impl Encoder<'_> {
                     self.b.set_array(path, &raw).map_err(refused)?;
                 } else {
                     // any other element by its own path: an object, text, an option or another list
-                    if f.kind == FieldType::VArray {
+                    if f.kind == SchemaTypeKind::VArray {
                         self.b.set_array_count(path, items.len() as u32).map_err(refused)?;
                     }
                     for (i, item) in items.iter().enumerate() {
@@ -88,10 +88,10 @@ impl Encoder<'_> {
                     }
                 }
             }
-            FieldType::String | FieldType::VString => {
+            SchemaTypeKind::String | SchemaTypeKind::VString => {
                 self.b.set_string(path, &text_of(v)).map_err(refused)?;
             }
-            FieldType::Enum => {
+            SchemaTypeKind::Enum => {
                 let variants = self.schema.enum_variants(at);
                 let name = match v {
                     Value::Number(n) => n.as_i64().and_then(|n| variants.iter().find(|o| o.value == n)).map(|o| o.name.clone()),
@@ -103,19 +103,19 @@ impl Encoder<'_> {
                     return Err(wrong(path, v, &format!("one of {}", options())));
                 }
             }
-            FieldType::Map => {
+            SchemaTypeKind::Map => {
                 let Value::Object(_) = v else { return Err(wrong(path, v, "an object")) };
                 self.b.set_map(path, &map_body(v)?).map_err(refused)?;
             }
-            FieldType::Bool => {
+            SchemaTypeKind::Bool => {
                 let Value::Bool(b) = v else { return Err(wrong(path, v, "true or false")) };
                 self.b.set_bool(path, *b).map_err(refused)?;
             }
-            FieldType::F32 | FieldType::F64 => {
+            SchemaTypeKind::F32 | SchemaTypeKind::F64 => {
                 let Some(n) = v.as_f64() else { return Err(wrong(path, v, "a number")) };
                 self.b.set_f64(path, n).map_err(refused)?;
             }
-            FieldType::U8 | FieldType::U16 | FieldType::U32 | FieldType::U64 => {
+            SchemaTypeKind::U8 | SchemaTypeKind::U16 | SchemaTypeKind::U32 | SchemaTypeKind::U64 => {
                 let Some(n) = v.as_u64() else {
                     let want = if v.is_i64() { "a whole number from 0 up" } else { "a whole number" };
                     return Err(wrong(path, v, want));
@@ -152,7 +152,7 @@ impl Encoder<'_> {
             let Ok(index) = path[open + 1..open + close].parse::<u32>() else { continue };
             let Some(at) = self.schema.field_index(prefix) else { continue };
             let now = self.schema.view(self.b.bytes()).get_array_count(prefix);
-            if self.fields[at as usize].kind == FieldType::VArray && now <= index {
+            if self.fields[at as usize].kind == SchemaTypeKind::VArray && now <= index {
                 self.b.set_array_count(prefix, index + 1).map_err(|_| failed(format!("{} cannot hold {} items", shown(prefix), index + 1)))?;
             }
         }
@@ -160,20 +160,20 @@ impl Encoder<'_> {
     }
 }
 
-fn kind_word(kind: FieldType) -> &'static str {
+fn kind_word(kind: SchemaTypeKind) -> &'static str {
     match kind {
-        FieldType::Bool => "true or false",
-        FieldType::F32 | FieldType::F64 => "a number",
+        SchemaTypeKind::Bool => "true or false",
+        SchemaTypeKind::F32 | SchemaTypeKind::F64 => "a number",
         _ => "a whole number",
     }
 }
 
 /// One scalar of kind, little endian as on the wire, eight bytes of which the kind takes its size.
-fn scalar_bytes(v: &Value, kind: FieldType) -> Option<[u8; 8]> {
+fn scalar_bytes(v: &Value, kind: SchemaTypeKind) -> Option<[u8; 8]> {
     let bits = match kind {
-        FieldType::F32 => (v.as_f64()? as f32).to_bits() as u64,
-        FieldType::F64 => v.as_f64()?.to_bits(),
-        FieldType::Bool => v.as_bool()? as u64,
+        SchemaTypeKind::F32 => (v.as_f64()? as f32).to_bits() as u64,
+        SchemaTypeKind::F64 => v.as_f64()?.to_bits(),
+        SchemaTypeKind::Bool => v.as_bool()? as u64,
         _ if v.is_u64() => v.as_u64()?,
         _ => v.as_i64()? as u64,
     };

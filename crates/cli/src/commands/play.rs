@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use rant::types::Timestamp;
-use rant::{Bytes, EntityKind, FieldType, NodeOptions, Qos, Schema, VariableOptions};
+use rant::{Bytes, EntityKind, SchemaTypeKind, NodeOptions, Qos, Schema, VariableOptions};
 use serde::Serialize;
 
 use crate::context::Context;
@@ -222,7 +222,7 @@ fn open(mesh: &Client, t: &Track, schema: Option<&Schema>) -> Result<Out> {
 
 /// Where a schema holds a Timestamp outside every array, as byte offsets into a value.
 fn stamp_offsets(schema: &Schema) -> Vec<usize> {
-    let stamp = |f: &rant::Field| f.type_name.as_deref() == Some("Timestamp") && f.kind == FieldType::I64 && f.arr_parent == 0xFFFF;
+    let stamp = |f: &rant::Field| f.type_name.as_deref() == Some("Timestamp") && f.kind == SchemaTypeKind::I64 && f.arr_parent == 0xFFFF;
     schema.fields().iter().filter(|f| stamp(f)).map(|f| f.offset as usize).collect()
 }
 

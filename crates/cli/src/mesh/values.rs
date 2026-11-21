@@ -1,7 +1,7 @@
 //! Messages as JSON, walked through their schema at run time, so rant reads any type without
 //! compiling it in.
 
-use rant::{Field, FieldType, FieldView, MapValue, Schema};
+use rant::{Field, SchemaTypeKind, FieldView, MapValue, Schema};
 use serde_json::{Map, Value};
 
 /// A message as JSON: an object for a struct, the bare value for a bare root. Bytes with no
@@ -42,8 +42,8 @@ impl Walk<'_> {
         let f = &self.fields[*i];
         *i += 1;
         match f.kind {
-            FieldType::Struct => return self.members(i, f.depth + 1, path),
-            FieldType::Array | FieldType::VArray => {}
+            SchemaTypeKind::Struct => return self.members(i, f.depth + 1, path),
+            SchemaTypeKind::Array | SchemaTypeKind::VArray => {}
             _ => return self.leaf(f, path),
         }
         let elem = *i;
@@ -60,13 +60,13 @@ impl Walk<'_> {
     fn leaf(&self, f: &Field, path: &str) -> Value {
         let v = &self.view;
         match f.kind {
-            FieldType::String | FieldType::VString => Value::String(v.get_string(path).into_owned()),
-            FieldType::Map => map(v.get_map(path).iter()),
-            FieldType::Enum => v.get_enum_name(path).map_or_else(|| Value::from(v.get_int(path)), Value::from),
-            FieldType::Bool => Value::Bool(v.get_bool(path)),
-            FieldType::F32 | FieldType::F64 => float(v.get_f64(path)),
-            FieldType::I8 | FieldType::I16 | FieldType::I32 | FieldType::I64 => Value::from(v.get_int(path)),
-            FieldType::U8 | FieldType::U16 | FieldType::U32 | FieldType::U64 => Value::from(v.get_uint(path)),
+            SchemaTypeKind::String | SchemaTypeKind::VString => Value::String(v.get_string(path).into_owned()),
+            SchemaTypeKind::Map => map(v.get_map(path).iter()),
+            SchemaTypeKind::Enum => v.get_enum_name(path).map_or_else(|| Value::from(v.get_int(path)), Value::from),
+            SchemaTypeKind::Bool => Value::Bool(v.get_bool(path)),
+            SchemaTypeKind::F32 | SchemaTypeKind::F64 => float(v.get_f64(path)),
+            SchemaTypeKind::I8 | SchemaTypeKind::I16 | SchemaTypeKind::I32 | SchemaTypeKind::I64 => Value::from(v.get_int(path)),
+            SchemaTypeKind::U8 | SchemaTypeKind::U16 | SchemaTypeKind::U32 | SchemaTypeKind::U64 => Value::from(v.get_uint(path)),
             _ => Value::Null,
         }
     }
@@ -77,22 +77,22 @@ fn packed(e: &Field) -> bool {
     e.size != 0 && is_number(e.kind)
 }
 
-pub fn is_number(k: FieldType) -> bool {
-    use FieldType::*;
+pub fn is_number(k: SchemaTypeKind) -> bool {
+    use SchemaTypeKind::*;
     matches!(k, U8 | U16 | U32 | U64 | I8 | I16 | I32 | I64 | F32 | F64 | Bool)
 }
 
 /// One fixed scalar, little endian as on the wire.
-fn scalar(b: &[u8], kind: FieldType) -> Value {
+fn scalar(b: &[u8], kind: SchemaTypeKind) -> Value {
     let u = b.iter().rev().fold(0u64, |u, &x| (u << 8) | x as u64);
     match kind {
-        FieldType::I8 => Value::from(u as u8 as i8),
-        FieldType::I16 => Value::from(u as u16 as i16),
-        FieldType::I32 => Value::from(u as u32 as i32),
-        FieldType::I64 => Value::from(u as i64),
-        FieldType::F32 => float(f32::from_bits(u as u32) as f64),
-        FieldType::F64 => float(f64::from_bits(u)),
-        FieldType::Bool => Value::Bool(u != 0),
+        SchemaTypeKind::I8 => Value::from(u as u8 as i8),
+        SchemaTypeKind::I16 => Value::from(u as u16 as i16),
+        SchemaTypeKind::I32 => Value::from(u as u32 as i32),
+        SchemaTypeKind::I64 => Value::from(u as i64),
+        SchemaTypeKind::F32 => float(f32::from_bits(u as u32) as f64),
+        SchemaTypeKind::F64 => float(f64::from_bits(u)),
+        SchemaTypeKind::Bool => Value::Bool(u != 0),
         _ => Value::from(u),
     }
 }
@@ -108,7 +108,7 @@ fn map<'a>(entries: impl Iterator<Item = (&'a str, MapValue<'a>)>) -> Value {
 }
 
 fn tagged(v: &MapValue) -> Value {
-    use FieldType::*;
+    use SchemaTypeKind::*;
     match v.kind() {
         U8 | U16 | U32 | U64 => Value::from(v.as_uint()),
         I8 | I16 | I32 | I64 => Value::from(v.as_int()),

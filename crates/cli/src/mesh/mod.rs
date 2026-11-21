@@ -16,7 +16,7 @@ use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use rant::{Bytes, Entity, EntityKind, MetaSections, Node, NodeOptions, SendError, VariableOptions};
+use rant::{Bytes, Entity, EntityKind, MetaSection, Node, NodeOptions, SendError, VariableOptions};
 use serde::{Deserialize, Serialize};
 
 use crate::failure::{Result, failed};
@@ -169,7 +169,7 @@ impl Client {
         let r = self.node.reflection();
         std::thread::scope(|s| {
             let r = &r;
-            let asks: Vec<_> = peers.iter().map(|&p| (p, s.spawn(move || r.meta(p, MetaSections::PROC, limit)))).collect();
+            let asks: Vec<_> = peers.iter().map(|&p| (p, s.spawn(move || r.meta(p, MetaSection::PROC, limit)))).collect();
             asks.into_iter().filter_map(|(p, ask)| Some((p, ask.join().ok()?.ok()?.process?.pid))).collect()
         })
     }
@@ -183,7 +183,7 @@ pub fn send_failure(e: SendError) -> &'static str {
         SendError::BadRole => "the other side does not take writes",
         SendError::OutOfMemory => "out of memory",
         SendError::State => "refused right now",
-        SendError::NoSys => "switched off on this node",
+        SendError::Disabled => "switched off on this node",
         SendError::Schema => "the value does not fit the type",
         _ => "failed",
     }
