@@ -387,9 +387,17 @@ pub fn in_folder(dir: &Path, libs: &[Library], adding: bool) -> Vec<Use> {
     out
 }
 
-/// The uses in every folder under start, by folder, the walk following the workspace's ignore
-/// globs, then the copies kept once per machine. A venv is listed once, under the folder holding it.
+/// The uses in every folder under start, then the copies kept once per machine, by folder.
 pub fn under(start: &Path, libs: &[Library]) -> Vec<Use> {
+    let mut out = walked(start, libs);
+    out.extend(machine::copies(libs));
+    out.sort_by(|a, b| a.dir.cmp(&b.dir));
+    out
+}
+
+/// The uses in every folder under start, by folder, the walk following the workspace's ignore
+/// globs. A venv is listed once, under the folder holding it.
+fn walked(start: &Path, libs: &[Library]) -> Vec<Use> {
     let walk = discover::folders(start);
     let mut out: Vec<Use> = Vec::new();
     let held_once = |u: &Use| u.how == "venv";
@@ -417,7 +425,6 @@ pub fn under(start: &Path, libs: &[Library]) -> Vec<Use> {
             out.push(u);
         }
     }
-    out.extend(machine::copies(libs));
     out.sort_by(|a, b| a.dir.cmp(&b.dir));
     out
 }
@@ -531,7 +538,7 @@ pub(super) mod tests {
         t.write("py/.venv/pyvenv.cfg", "home = x\n");
         t.write("py/.venv/Lib/site-packages/rant_middleware-0.0.17.dist-info/METADATA", "x");
         t.write("other/readme.md", "x");
-        let uses = under(&t.0, &[rant()]);
+        let uses = walked(&t.0, &[rant()]);
         assert_eq!(uses.iter().map(|u| (u.how, u.version.clone())).collect::<Vec<_>>(), [("CPM", Some("0.0.16".into())), ("venv", Some("0.0.17".into()))]);
         assert_eq!(uses[1].dir, t.0.join("py"));
     }
@@ -544,7 +551,7 @@ pub(super) mod tests {
         t.write("py/.venv/Lib/site-packages/rant_middleware-0.0.17.dist-info/METADATA", "x");
         t.write("py/.venv/Lib/site-packages/Rant_Middleware_Extra-1.2.0.dist-info/METADATA", "x");
         t.write("tool/tool.py", "print(1)\n");
-        let uses = under(&t.0, &[rant(), extra()]);
+        let uses = walked(&t.0, &[rant(), extra()]);
         assert_eq!(uses.iter().map(|u| (u.library.as_str(), u.version.clone())).collect::<Vec<_>>(), [("rant", Some("0.0.17".into())), ("extra", Some("1.2.0".into()))]);
         assert!(in_folder(&t.0.join("tool"), &[rant(), extra()], false).is_empty());
         assert_eq!(in_folder(&t.0.join("tool"), &[extra()], true).len(), 1);
@@ -557,7 +564,7 @@ pub(super) mod tests {
         t.write(".venv/pyvenv.cfg", "home = x\n");
         t.write("io/ft/ft.py", "import rant\n");
         t.write("services/pick/main.py", "from rant import Node\n");
-        let uses = under(&t.0, &[rant()]);
+        let uses = walked(&t.0, &[rant()]);
         assert_eq!(uses.len(), 1);
         assert!(rant_config::paths::same(&uses[0].dir, &t.0));
     }
@@ -574,7 +581,7 @@ pub(super) mod tests {
         t.write("tools/bare/pyvenv.cfg", "home = x\n");
         t.write("old/env/pyvenv.cfg", "home = x\n");
         t.write("old/env/Lib/site-packages/rant_middleware-0.0.16.dist-info/METADATA", "x");
-        let uses = under(&t.0, &[rant()]);
+        let uses = walked(&t.0, &[rant()]);
         assert_eq!(uses.iter().map(|u| u.version.clone()).collect::<Vec<_>>(), [Some("0.0.18".into()), Some("0.0.17".into())]);
         assert!(uses[0].wanted && rant_config::paths::same(&uses[1].file, &t.0.join("tools/env")));
     }
